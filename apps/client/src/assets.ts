@@ -41,13 +41,13 @@ export function frame(t: Texture, x: number, y: number, w: number, h: number): T
   return f;
 }
 
-/** Frame i of an FTL anim (by name) or null. */
-export function animFrame(db: GameDB, name: string, i: number): Texture | null {
+/** Frame i of an FTL anim (by name) or null. `file` swaps the sheet image (e.g. a crew colour layer). */
+export function animFrame(db: GameDB, name: string, i: number, file?: string): Texture | null {
   const a = db.anims[name];
   if (!a) return null;
   const sh = db.animSheets[a.sheet];
   if (!sh) return null;
-  const t = texNow(sh.file);
+  const t = texNow(file ?? sh.file);
   if (!t) return null;
   const fx = (a.x + (i % a.frames)) * sh.fw;
   // FTL counts sheet rows from the bottom.
@@ -78,8 +78,31 @@ export async function preload(db: GameDB): Promise<boolean> {
   }
   for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"])
     for (const c of ["green", "orange", "red", "grey"]) files.add(`icons/s_${sys}_${c}1.png`);
-  for (const sh of Object.values(db.animSheets)) if (/^(weapons|effects|people\/human)/.test(sh.file)) files.add(sh.file);
+  for (const sh of Object.values(db.animSheets)) if (/^(weapons|effects|people)\//.test(sh.file)) files.add(sh.file);
+  for (const r of Object.keys(db.crew)) files.add(`people/${r}_color.png`);
+  for (const id of db.hangar) {
+    const s = db.ships[id];
+    for (const g of db.layouts[s.layout]?.gibs ?? []) files.add(`ship/${s.img}_gib${g.n}.png`);
+    files.add(`ship/${s.img}_shields1.png`);
+    files.add(`customizeUI/miniship_${s.img}.png`);
+  }
+  for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"]) files.add(`icons/s_${sys}_blue1.png`);
+  for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
   const r = await Promise.all([...files].map(tex));
   return r.some(Boolean);
 }
+
+/** FTL HUD art the battle screen uses. */
+export const UI_FILES = [
+  "statusUI/top_hull.png", "statusUI/top_hull_red.png", "statusUI/top_hull_bar_mask.png", "statusUI/top_hull_label.png", "statusUI/top_hull_red_label.png",
+  "statusUI/top_shields4_on.png", "statusUI/top_shields4_red.png", "statusUI/top_shieldsquare1_on.png", "statusUI/top_shieldsquare1_off.png",
+  "statusUI/top_evade_oxygen.png", "statusUI/top_evade_oxygen_both_red.png", "statusUI/top_missiles_on.png", "statusUI/top_missiles_on_red.png",
+  "combatUI/box_hostiles2.png", "combatUI/box_hostiles_mask.png", "combatUI/box_hostiles_hull2.png", "combatUI/box_hostiles_shield1.png",
+  "combatUI/box_hostiles_shield2.png", "combatUI/box_hostiles_weapon_charge.png", "combatUI/box_hostiles_weapon_chargebar.png",
+  "box_weapons_bottom2.png", "box_weapons_bottom3.png", "box_weapons_bottom4.png", "box_weapons_bottom_label.png", "box_weapons_autofire_base.png",
+  "bar_weapon_minibox_glow.png", "wireUI/wire_full.png", "wireUI/wire_456_cap.png", "wireUI/wire_36.png", "wireUI/wire_54_cap.png",
+  "systemUI/button_door_base.png", "systemUI/button_door_top_on.png", "systemUI/button_door_top_off.png", "systemUI/button_door_bottom_on.png",
+  "systemUI/button_door_bottom_off.png", "systemUI/button_door_top_select2.png", "systemUI/button_door_bottom_select2.png",
+  "people/green_destination.png", "people/health_box.png", "people/health_box_red.png", "effects/door_sheet.png", "effects/low_o2_stripes_2x2.png",
+];

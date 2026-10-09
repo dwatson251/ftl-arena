@@ -1,12 +1,11 @@
-import { Application, Container } from "pixi.js";
+import { Application } from "pixi.js";
 import type { GameDB } from "@ftl/data";
-import type { LobbyState, ServerMsg } from "@ftl/protocol";
+import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
 import type { MatchView } from "@ftl/sim";
 import { preload } from "./assets.ts";
 import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar } from "./hangar.ts";
 import { Net } from "./net.ts";
-import { ShipRenderer } from "./render/ship.ts";
 
 const ui = document.getElementById("ui")!;
 const params = new URLSearchParams(location.search);
@@ -28,17 +27,11 @@ let token = "";
 let lobby: LobbyState | null = null;
 let battle: Battle | null = null;
 let hangar: Hangar | null = null;
-let preview: { r: ShipRenderer; ship: string } | null = null;
 let lastView: MatchView | null = null;
+let debugInfo: DebugInfo | null = null;
+let debugOpen = true;
 let error = "";
 let hasArt = false;
-// The hangar preview is its own small canvas, re-attached into #preview after each hangar re-render.
-const previewApp = new Application();
-await previewApp.init({ width: 560, height: 350, backgroundAlpha: 0, antialias: true });
-previewApp.canvas.style.width = "100%";
-previewApp.canvas.style.height = "100%";
-const previewLayer = new Container();
-previewApp.stage.addChild(previewLayer);
 
 const net = new Net(wsUrl, name || "Captain");
 net.on(onMsg);
@@ -55,18 +48,26 @@ function onMsg(m: ServerMsg): void {
       break;
     case "lobby":
       lobby = m.lobby;
-      if (!lobby || lobby.phase === "lobby" || lobby.phase === "countdown") {
-        if (battle && (!lobby || lobby.phase === "lobby")) endBattle();
-      }
+      if (battle && (!lobby || lobby.phase === "lobby")) endBattle();
       break;
     case "start":
+      if (battle) endBattle(); // debug restart
       startBattle(m.you);
       break;
-    case "snap":
+    case "snap": {
+      const wasOver = lastView?.winner != null;
       lastView = m.view;
+      debugInfo = m.debug ?? null;
       if (!battle) startBattle(m.view.you);
       battle!.onSnapshot(m.view);
+      if (debugInfo) {
+        const had = !!document.getElementById("debug");
+        renderDebug();
+        if (!had) layoutBattle();
+      }
+      if (wasOver === (m.view.winner !== null)) return;
       break;
+    }
     case "error":
       error = m.msg;
       setTimeout(() => {
@@ -82,8 +83,8 @@ function startBattle(you: 0 | 1): void {
   if (battle || !db) return;
   hangar?.el.remove();
   hangar = null;
-  clearPreview();
   battle = new Battle(app, db, (cmd) => net.send({ t: "cmd", cmd }), you);
+  battle.onEndReady = () => render();
   app.stage.addChild(battle.stage);
   layoutBattle();
 }
@@ -94,72 +95,128 @@ function endBattle(): void {
   battle.destroy();
   battle = null;
   lastView = null;
+  debugInfo = null;
 }
 
+/** The debug drawer docks on the right; the battle scales into what's left. */
+const DEBUG_W = 330;
 function layoutBattle(): void {
   if (!battle) return;
-  const s = Math.min(app.screen.width / LOGICAL.W, app.screen.height / LOGICAL.H);
+  const side = debugInfo && debugOpen ? DEBUG_W : 0;
+  const w = app.screen.width - side;
+  const s = Math.min(w / LOGICAL.W, app.screen.height / LOGICAL.H);
   battle.stage.scale.set(s);
-  battle.stage.position.set((app.screen.width - LOGICAL.W * s) / 2, (app.screen.height - LOGICAL.H * s) / 2);
+  battle.stage.position.set((w - LOGICAL.W * s) / 2, (app.screen.height - LOGICAL.H * s) / 2);
 }
 window.addEventListener("resize", () => {
   layoutBattle();
   render();
 });
 
-function clearPreview(): void {
-  if (preview) {
-    previewLayer.removeChild(preview.r.root);
-    preview.r.root.destroy({ children: true });
-    preview = null;
+app.ticker.add((t) => battle?.frame(Math.min(0.1, t.deltaMS / 1000)));
+
+const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+const dbg = (d: DebugOp) => net.send({ t: "debug", d });
+
+/**
+ * The debug drawer (practice lobbies with debug tools on): speed, pause, step, reveal, god mode,
+ * autopilot, live bot difficulty, quick sabotage, and the bot's reasoning log. Built once; only the live
+ * parts are updated per snapshot, so clicks never land on a re-created button.
+ */
+let debugBuiltOpen: boolean | null = null;
+function renderDebug(): void {
+  let el = document.getElementById("debug");
+  const d = debugInfo;
+  if (!d || !battle) {
+    el?.remove();
+    debugBuiltOpen = null;
+    return;
+  }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "debug";
+    el.className = "debug";
+    ui.appendChild(el);
+    el.addEventListener("click", (e) => {
+      const b = (e.target as HTMLElement).closest("button");
+      if (!b) return;
+      const a = b.dataset;
+      if (a.toggle !== undefined) {
+        debugOpen = !debugOpen;
+        renderDebug();
+        layoutBattle();
+        return;
+      }
+      const you = lastView?.you ?? 0;
+      const them = (1 - you) as 0 | 1;
+      const who = a.who === "me" ? you : them;
+      if (a.speed !== undefined) dbg({ op: "speed", value: Number(a.speed) });
+      else if (a.stepTicks) dbg({ op: "step", ticks: Number(a.stepTicks) });
+      else if (a.op === "reveal") dbg({ op: "reveal", on: !debugInfo?.reveal });
+      else if (a.op === "god") dbg({ op: "god", on: !debugInfo?.god });
+      else if (a.op === "autopilot") dbg({ op: "autopilot", on: !debugInfo?.autopilot, level: 1 });
+      else if (a.op === "hull") dbg({ op: "hull", ship: who, value: Math.max(0, (lastView?.ships[who].hull ?? 0) - 5) });
+      else if (a.op === "fire") dbg({ op: "fire", ship: who });
+      else if (a.op === "damage") dbg({ op: "damage", ship: who });
+      else if (a.op === "restart") dbg({ op: "restart" });
+    });
+    el.addEventListener("input", (e) => {
+      const t = e.target as HTMLInputElement;
+      if (t.dataset.diff !== undefined) el!.querySelector("[data-diffval]")!.textContent = t.value;
+    });
+    el.addEventListener("change", (e) => {
+      const t = e.target as HTMLInputElement;
+      if (t.dataset.diff !== undefined) dbg({ op: "difficulty", value: Number(t.value) });
+    });
+  }
+  el.classList.toggle("closed", !debugOpen);
+  if (debugBuiltOpen !== debugOpen) {
+    debugBuiltOpen = debugOpen;
+    const sp = (v: number, label: string) => `<button class="small" data-speed="${v}">${label}</button>`;
+    el.innerHTML = debugOpen
+      ? `<div class="debug-head"><b>DEBUG</b> <span class="note" data-tick></span><button class="small" data-toggle title="Hide">⟩</button></div>
+        <div class="dlabel">Sim speed</div>
+        <div class="row">${sp(0, "❚❚")}${sp(0.25, "¼×")}${sp(0.5, "½×")}${sp(1, "1×")}${sp(2, "2×")}${sp(4, "4×")}${sp(8, "8×")}</div>
+        <div class="row"><button class="small" data-step-ticks="1">+1 tick</button><button class="small" data-step-ticks="30">+1 s</button><button class="small" data-step-ticks="300">+10 s</button><button class="small" data-op="restart">Restart match</button></div>
+        <div class="dlabel">Cheats</div>
+        <div class="row"><button class="small" data-op="reveal">Reveal enemy</button><button class="small" data-op="god">God mode</button><button class="small" data-op="autopilot">Autopilot me</button></div>
+        <div class="dlabel">Bot difficulty <b data-diffval></b></div>
+        <input type="range" min="0" max="100" step="5" data-diff style="width:100%">
+        <div class="note" data-skill></div>
+        <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them">−5 hull</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button></div>
+        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me">−5 hull</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button></div>
+        <div class="debug-log" data-log></div>`
+      : `<button class="small" data-toggle title="Debug">⟨ DEBUG</button>`;
+  }
+  if (!debugOpen) return;
+  const q = (sel: string) => el!.querySelector(sel) as HTMLElement | null;
+  q("[data-tick]")!.textContent = `tick ${d.tick} · ${(d.tick / 30).toFixed(1)} s${d.speed === 0 ? " · paused" : d.speed !== 1 ? ` · ${d.speed}×` : ""}`;
+  el.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach((b) => b.classList.toggle("on", Number(b.dataset.speed) === d.speed));
+  q('[data-op="reveal"]')!.classList.toggle("on", d.reveal);
+  q('[data-op="god"]')!.classList.toggle("on", d.god);
+  q('[data-op="autopilot"]')!.classList.toggle("on", d.autopilot);
+  const slider = q("[data-diff]") as HTMLInputElement;
+  if (document.activeElement !== slider) {
+    slider.value = String(d.difficulty);
+    q("[data-diffval]")!.textContent = String(d.difficulty);
+  }
+  q("[data-skill]")!.textContent = `play skill ${Math.round(d.botLevel * 100)}% (applies now) · scrap +${Math.round(d.scrapBonus * 100)}% (applies at the next hangar)`;
+  const log = `<b>Bot reasoning</b>${d.botLog.slice().reverse().map((l) => `<div>${esc(l)}</div>`).join("") || "<div class='note'>(nothing yet)</div>"}` +
+    (d.autopilot ? `<b>Autopilot (you)</b>${d.autopilotLog.slice().reverse().map((l) => `<div>${esc(l)}</div>`).join("")}` : "");
+  const logEl = q("[data-log]")!;
+  if (logEl.dataset.v !== log) {
+    logEl.dataset.v = log;
+    logEl.innerHTML = log;
   }
 }
-
-/** Draw the selected hull into the hangar's preview box (the canvas sits behind the DOM). */
-function drawPreview(): void {
-  if (!db || !hangar?.loadout || !hangar.previewRect) return clearPreview();
-  const ship = hangar.loadout.ship;
-  if (!preview || preview.ship !== ship) {
-    clearPreview();
-    preview = { r: new ShipRenderer(db, ship, false), ship };
-    previewLayer.addChild(preview.r.root);
-  }
-  const box = hangar.el.querySelector("#preview");
-  if (box && previewApp.canvas.parentElement !== box) box.appendChild(previewApp.canvas);
-  const W = previewApp.screen.width;
-  const H = previewApp.screen.height;
-  const b = preview.r.bounds();
-  const s = Math.min(W / b.w, H / b.h) * 0.95;
-  preview.r.root.scale.set(s);
-  preview.r.root.position.set(W / 2 - (b.x + b.w / 2) * s, H / 2 - (b.y + b.h / 2) * s);
-}
-
-app.ticker.add((t) => {
-  battle?.frame(t.deltaMS / 1000);
-  if (preview && db && hangar?.loadout) {
-    const lo = hangar.loadout;
-    const fake = {
-      ...({} as object), idx: 0, player: "", bp: lo.ship, layout: db.ships[lo.ship].layout, hull: 1, maxHull: 1, reactor: lo.reactor,
-      systems: {}, rooms: db.layouts[db.ships[lo.ship].layout].rooms.map((r) => ({ id: r.id, o2: 100, fires: {}, breaches: {} })),
-      doors: db.layouts[db.ships[lo.ship].layout].doors.map(() => false), crew: [], weapons: lo.weapons.map((bp, slot) => ({ slot, bp, powered: true, charge: 0, volleys: 0, target: null, autofire: false, boost: 0 })),
-      missiles: 0, shieldLayers: 0, shieldCharge: 0, evasion: 0, stats: { shotsFired: 0, hits: 0, misses: 0, blocked: 0, damageDealt: 0 },
-      visibleRooms: null, interior: true, weaponsKnown: true,
-    };
-    preview.r.update(fake as never, [], performance.now() / 1000, { room: -1, door: -1 });
-  }
-});
-
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 function render(): void {
-  // Battle overlays (countdown, end)
   if (battle) {
-    ui.innerHTML = "";
+    for (const n of [...ui.children]) if (n.id !== "debug") n.remove();
     const v = lastView;
-    if (v && v.winner !== null) {
-      const you = v.you;
-      const won = v.winner === you;
-      const s = v.ships[you].stats;
+    if (v && v.winner !== null && battle.endReady()) {
+      const won = v.winner === v.you;
+      const s = v.ships[v.you].stats;
       const o = document.createElement("div");
       o.className = "overlay";
       o.innerHTML = `<div class="menu"><h1>${v.winner === -1 ? "DRAW" : won ? "VICTORY" : "DEFEAT"}</h1>
@@ -171,31 +228,33 @@ function render(): void {
       o.querySelector("#leave")!.addEventListener("click", () => {
         net.send({ t: "leave" });
         endBattle();
+        render();
       });
     }
     if (error) ui.insertAdjacentHTML("beforeend", `<div class="toast">${esc(error)}</div>`);
+    renderDebug();
     return;
   }
+  document.getElementById("debug")?.remove();
   if (lobby && db) {
     if (!hangar) {
       ui.innerHTML = "";
       hangar = new Hangar(db, () => token, {
         setLoadout: (l) => net.send({ t: "loadout", loadout: l }),
         setConfig: (c) => net.send({ t: "config", config: c }),
+        setPractice: (p) => net.send({ t: "practice", practice: p }),
         ready: (r) => net.send({ t: "ready", ready: r }),
         leave: () => net.send({ t: "leave" }),
-      });
+      }, () => hasArt);
       ui.appendChild(hangar.el);
     }
     hangar.update(lobby);
     ui.querySelector(".toast")?.remove();
     if (error) ui.insertAdjacentHTML("beforeend", `<div class="toast">${esc(error)}</div>`);
-    drawPreview();
     return;
   }
   hangar?.el.remove();
   hangar = null;
-  clearPreview();
   ui.innerHTML = `<div class="screen"><div class="menu">
     <h1>FTL ARENA</h1>
     <div class="note">1v1 real-time FTL combat. ${db ? (db.source === "ftl" ? (hasArt ? "Using your own FTL data and art." : "Using FTL data from the server; no local art found, drawing placeholders.") : "No FTL data on the server: placeholder ships. Run <code>npm run extract</code>.") : "Connecting…"}</div>
@@ -228,6 +287,12 @@ function render(): void {
     net.send({ t: "join", code: ui.querySelector<HTMLInputElement>("#code")!.value.trim().toUpperCase() });
   });
 }
+
+/** Test hook: logical 1280×720 battle coordinates → page pixels (used by tools/bench browser scripts). */
+(window as unknown as { __arena: unknown }).__arena = {
+  state: () => (battle ? battle.debugState() : null),
+  toScreen: (x: number, y: number) => (battle ? { x: battle.stage.x + x * battle.stage.scale.x, y: battle.stage.y + y * battle.stage.scale.y } : null),
+};
 
 net.onStatus = () => render();
 net.connect();

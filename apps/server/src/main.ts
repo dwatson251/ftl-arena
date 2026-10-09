@@ -113,6 +113,10 @@ wss.on("connection", (ws: WebSocket) => {
         return err(c.lobby ? c.lobby.setReady(c, m.ready) : "not in a lobby");
       case "cmd":
         return c.lobby?.command(c, m.cmd);
+      case "practice":
+        return err(c.lobby ? c.lobby.setPractice(c, m.practice) : "not in a lobby");
+      case "debug":
+        return err(c.lobby ? c.lobby.debug(c, m.d) : "not in a lobby");
       case "rematch":
         return c.lobby?.rematch(c);
     }

@@ -1,9 +1,11 @@
 /** Lobbies: two seats, host-set rules, hangar validation, then an authoritative match at 30 Hz. */
 import type { GameDB } from "@ftl/data";
-import { PROTOCOL_VERSION, SNAP_EVERY, type LobbyPlayer, type LobbyState, type ServerMsg } from "@ftl/protocol";
 import {
-  baseLoadout, botCommands, DEFAULT_CONFIG, Match, priceLoadout, viewFor, type Command, type Loadout, type MatchConfig,
-  type MatchEvent,
+  PROTOCOL_VERSION, SNAP_EVERY, type DebugInfo, type DebugOp, type LobbyPlayer, type LobbyState, type PracticeConfig, type ServerMsg,
+} from "@ftl/protocol";
+import {
+  baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, difficultyToBot, Match, priceLoadout, viewFor, type Command, type Loadout,
+  type MatchConfig, type MatchEvent,
 } from "@ftl/sim";
 
 export interface Client {
@@ -25,13 +27,26 @@ export class Lobby {
   countdown = 0;
   private pending: [MatchEvent[], MatchEvent[]] = [[], []];
   private dropTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Practice only: bot settings, the bot itself, and debug state. */
+  practiceCfg: PracticeConfig | null = null;
+  private bot: Bot | null = null;
+  private autopilot: Bot | null = null;
+  private speed = 1;
+  private speedAcc = 0;
+  private wallTicks = 0;
+  private reveal = false;
+  private loadouts: [Loadout, Loadout] | null = null;
 
   constructor(public code: string, public host: string, public db: GameDB, cfg: Partial<MatchConfig>, public practice: boolean) {
     this.config = sanitizeConfig(db, { ...DEFAULT_CONFIG, seed: (Math.random() * 2 ** 31) | 0, ...cfg });
+    if (practice) this.practiceCfg = { difficulty: 40, botShip: "", debug: true };
   }
 
   state(): LobbyState {
-    return { code: this.code, host: this.host, phase: this.phase, config: this.config, players: this.players, countdown: this.countdown };
+    return {
+      code: this.code, host: this.host, phase: this.phase, config: this.config, players: this.players, countdown: this.countdown,
+      practice: this.practiceCfg,
+    };
   }
 
   broadcast(): void {
@@ -62,9 +77,86 @@ export class Lobby {
   }
 
   private addBot(): void {
-    const ship = this.config.shipPool[0] ?? this.db.hangar[0];
-    const loadout = baseLoadout(this.db, ship);
-    this.players.push({ id: "bot", name: "Practice bot", ready: true, loadout, priced: priceLoadout(this.db, loadout, this.config.scrap), connected: true, bot: true });
+    this.players.push({ id: "bot", name: "Practice bot", ready: true, loadout: null, priced: null, connected: true, bot: true });
+    this.rebuildBot();
+  }
+
+  /** The bot shops with its own (possibly boosted) budget whenever the rules or difficulty change. */
+  private rebuildBot(): void {
+    const p = this.players.find((q) => q.bot);
+    const pc = this.practiceCfg;
+    if (!p || !pc) return;
+    const { level, scrapBonus } = difficultyToBot(pc.difficulty);
+    const pool = this.config.shipPool.length ? this.config.shipPool : this.db.hangar;
+    const ship = pc.botShip && pool.includes(pc.botShip) ? pc.botShip : pool[Math.abs(this.config.seed) % pool.length];
+    const scrap = Math.round(this.config.scrap * (1 + scrapBonus));
+    p.loadout = botLoadout(this.db, ship, scrap, level, this.config.seed);
+    p.priced = priceLoadout(this.db, p.loadout, scrap);
+    p.name = `Bot (${pc.difficulty})`;
+  }
+
+  setPractice(c: Client, cfg: Partial<PracticeConfig>): string | null {
+    if (!this.practiceCfg) return "not a practice lobby";
+    if (c.id !== this.host) return "only the host can change the bot";
+    const next = { ...this.practiceCfg };
+    if (cfg.difficulty !== undefined) next.difficulty = Math.max(0, Math.min(100, Math.round(Number(cfg.difficulty) || 0)));
+    if (cfg.botShip !== undefined) next.botShip = this.db.hangar.includes(String(cfg.botShip)) ? String(cfg.botShip) : "";
+    if (cfg.debug !== undefined) next.debug = !!cfg.debug;
+    this.practiceCfg = next;
+    if (this.phase === "lobby") this.rebuildBot();
+    else if (this.bot) this.bot.setLevel(difficultyToBot(next.difficulty).level);
+    this.broadcast();
+    return null;
+  }
+
+  debug(c: Client, d: DebugOp): string | null {
+    if (!this.practiceCfg?.debug) return "debug tools are off";
+    if (!this.players.some((p) => p.id === c.id)) return "not in this lobby";
+    const m = this.match;
+    const me = this.players.findIndex((p) => p.id === c.id) as 0 | 1;
+    switch (d.op) {
+      case "speed":
+        this.speed = Math.max(0, Math.min(16, Number(d.value) || 0));
+        break;
+      case "step":
+        if (m && this.phase === "battle") for (let i = 0; i < Math.max(1, Math.min(300, d.ticks | 0)); i++) this.stepOnce();
+        break;
+      case "reveal":
+        this.reveal = !!d.on;
+        break;
+      case "god":
+        if (m) d.on ? m.god.add(me) : m.god.delete(me);
+        break;
+      case "autopilot":
+        this.autopilot = d.on ? new Bot(d.level ?? 1, 99) : null;
+        break;
+      case "difficulty":
+        return this.setPractice(c, { difficulty: d.value });
+      case "hull":
+        if (m) m.state.ships[d.ship].hull = Math.max(0, Math.min(m.state.ships[d.ship].maxHull, d.value | 0));
+        break;
+      case "fire":
+        if (m) {
+          const s = m.state.ships[d.ship];
+          const r = s.rooms[(Math.random() * s.rooms.length) | 0];
+          const g = m.geo(s).roomTiles.get(r.id)!;
+          r.fires[g[0]] = 100;
+        }
+        break;
+      case "damage":
+        if (m) {
+          const s = m.state.ships[d.ship];
+          const sys = Object.values(s.systems).filter(Boolean);
+          const pick = sys[(Math.random() * sys.length) | 0]!;
+          pick.damage = Math.min(pick.level, pick.damage + 1);
+        }
+        break;
+      case "restart":
+        if (this.loadouts) this.start();
+        break;
+    }
+    this.sendSnaps();
+    return null;
   }
 
   leave(c: Client, hard: boolean): void {
@@ -111,6 +203,7 @@ export class Lobby {
       p.priced = p.loadout ? priceLoadout(this.db, p.loadout, this.config.scrap, this.config.shipPool) : null;
       p.ready = false;
     }
+    this.rebuildBot();
     this.broadcast();
     return null;
   }
@@ -153,6 +246,8 @@ export class Lobby {
     this.match = null;
     this.config = { ...this.config, seed: (Math.random() * 2 ** 31) | 0 };
     for (const p of this.players) p.ready = p.bot ?? false;
+    this.speed = 1;
+    this.rebuildBot();
     this.broadcast();
   }
 
@@ -166,19 +261,40 @@ export class Lobby {
 
   private start(): void {
     const [a, b] = this.players;
-    this.match = new Match(this.db, this.config, [a.loadout!, b.loadout!], [a.name, b.name]);
+    if (this.phase !== "battle" || !this.loadouts) this.loadouts = [a.loadout!, b.loadout!];
+    this.match = new Match(this.db, this.config, this.loadouts, [a.name, b.name]);
+    const pc = this.practiceCfg;
+    this.bot = pc ? new Bot(difficultyToBot(pc.difficulty).level, this.config.seed) : null;
+    if (this.autopilot) this.autopilot = new Bot(this.autopilot.level, 99);
+    this.speedAcc = 0;
     this.phase = "battle";
     this.pending = [[], []];
     this.players.forEach((p, i) => this.clients.get(p.id)?.send({ t: "start", you: i as 0 | 1 }));
     this.sendSnaps();
   }
 
-  /** One simulation tick. */
+  /** Called at 30 Hz; runs 0..n sim steps depending on the debug speed. */
   tick(): void {
     const m = this.match;
     if (!m || this.phase !== "battle") return;
+    this.speedAcc += this.speed;
+    let ran = 0;
+    while (this.speedAcc >= 1 && this.phase === "battle") {
+      this.speedAcc -= 1;
+      this.stepOnce();
+      ran++;
+    }
+    // Snapshots follow wall time (15 Hz), whatever the sim speed.
+    if (ran > 0 && this.phase === "battle" && ++this.wallTicks % SNAP_EVERY === 0) this.sendSnaps();
+  }
+
+  private stepOnce(): void {
+    const m = this.match;
+    if (!m || this.phase !== "battle") return;
     this.players.forEach((p, i) => {
-      if (p.bot) for (const c of botCommands(m, i as 0 | 1)) m.push(i as 0 | 1, c);
+      const idx = i as 0 | 1;
+      if (p.bot && this.bot) for (const c of this.bot.think(m, idx)) m.push(idx, c);
+      else if (!p.bot && this.autopilot) for (const c of this.autopilot.think(m, idx)) m.push(idx, c);
     });
     m.step();
     if (m.state.events.length) {
@@ -189,7 +305,18 @@ export class Lobby {
       this.phase = "over";
       this.sendSnaps();
       this.broadcast();
-    } else if (m.state.tick % SNAP_EVERY === 0) this.sendSnaps();
+    }
+  }
+
+  private debugInfo(idx: 0 | 1): DebugInfo | undefined {
+    const pc = this.practiceCfg;
+    if (!pc?.debug || !this.match) return undefined;
+    const b = difficultyToBot(pc.difficulty);
+    return {
+      speed: this.speed, reveal: this.reveal, god: this.match.god.has(idx), autopilot: !!this.autopilot,
+      difficulty: pc.difficulty, botLevel: b.level, scrapBonus: b.scrapBonus, botLog: this.bot?.log.slice(-14) ?? [],
+      autopilotLog: this.autopilot?.log.slice(-8) ?? [], tick: this.match.state.tick,
+    };
   }
 
   private sendSnaps(): void {
@@ -198,12 +325,12 @@ export class Lobby {
     this.players.forEach((p, i) => {
       const c = this.clients.get(p.id);
       const idx = i as 0 | 1;
-      const view = viewFor(m, idx, this.pending[idx]);
+      const view = viewFor(m, idx, this.pending[idx], this.reveal && !!this.practiceCfg?.debug);
       // Strip events the viewer must not learn about (enemy interior hazards without sensors).
       if (!view.ships[1 - idx].interior) {
         view.events = view.events.filter((e) => !(("ship" in e) && e.ship === 1 - idx && (e.e === "fireStart" || e.e === "breach" || e.e === "death")));
       }
-      c?.send({ t: "snap", view });
+      c?.send({ t: "snap", view, debug: this.debugInfo(idx) });
       this.pending[idx] = [];
     });
   }

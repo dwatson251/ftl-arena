@@ -7,7 +7,7 @@ import type { Command } from "./commands.ts";
 import { findPath, geometry, key, roomAt, unkey, type Geometry } from "./geometry.ts";
 import { autoPower, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
 import { Rng } from "./rng.ts";
-import { DT, RULES, TICK_HZ, TILE, type SkillId } from "./rules.ts";
+import { DT, raceOf, RULES, TICK_HZ, TILE, type SkillId } from "./rules.ts";
 import type {
   CrewState, MatchConfig, MatchEvent, MatchState, Projectile, ShipState, SystemState, WeaponTarget,
 } from "./state.ts";
@@ -18,6 +18,8 @@ export class Match {
   state: MatchState;
   private rng: Rng;
   private queue: { player: 0 | 1; cmd: Command }[] = [];
+  /** Debug: ships whose hull and crew can't drop below 1. */
+  god = new Set<0 | 1>();
 
   constructor(public db: GameDB, config: MatchConfig, loadouts: [Loadout, Loadout], players: [string, string]) {
     this.rng = new Rng(config.seed);
@@ -43,6 +45,7 @@ export class Match {
     m.state = structuredClone(state);
     m.rng = new Rng(state.rng);
     m.queue = [];
+    m.god = new Set();
     return m;
   }
 
@@ -106,7 +109,7 @@ export class Match {
         if (w.powered) return false;
         const need = this.weaponLoad(ship) + this.wbp(w.bp).power;
         if (need > usable(ws)) return false;
-        const extra = need - ws.power;
+        const extra = need - ws.power - (ws.bonus ?? 0);
         if (extra > 0) {
           if (reactorUsed(ship) + extra > ship.reactor) return false;
           ws.power += extra;
@@ -184,7 +187,7 @@ export class Match {
 
   eff(s: SystemState | undefined): number {
     if (!s) return 0;
-    return isSubsystem(s.id) ? usable(s) : Math.min(s.power, usable(s));
+    return isSubsystem(s.id) ? usable(s) : Math.min(s.power + (s.bonus ?? 0), usable(s));
   }
 
   private weaponLoad(ship: ShipState): number {
@@ -217,8 +220,14 @@ export class Match {
   }
 
   private systemsTick(ship: ShipState): void {
+    const g = this.geo(ship);
     for (const s of Object.values(ship.systems)) {
       if (!s) continue;
+      s.bonus = 0;
+      for (const c of ship.crew) {
+        const p = raceOf(c.race).power;
+        if (p && !c.dead && c.path.length === 0 && g.tiles.get(c.tile)?.room === s.room) s.bonus += p;
+      }
       if (s.ion > 0) {
         s.ionTimer -= DT;
         if (s.ionTimer <= 0) {
@@ -434,7 +443,7 @@ export class Match {
     let hullDmg = bp.type === "BOMB" ? 0 : dmg;
     if (bp.hullBust && !sys) hullDmg *= 2;
     if (hullDmg > 0) {
-      const floor = st.config.winCondition === "crew" ? 1 : 0;
+      const floor = st.config.winCondition === "crew" || this.god.has(T.idx) ? 1 : 0;
       const before = T.hull;
       T.hull = Math.max(floor, T.hull - hullDmg);
       src.stats.damageDealt += before - T.hull;
@@ -484,8 +493,11 @@ export class Match {
       const room = g.tiles.get(c.tile)!.room;
       const rs = ship.rooms.find((r) => r.id === room)!;
       // Hazards
-      if (c.tile in rs.fires) c.hp -= RULES.fireCrewDps * DT;
-      if (rs.o2 < RULES.suffocateAt) c.hp -= RULES.suffocateDps * DT;
+      const tr = raceOf(c.race);
+      if (c.tile in rs.fires && !tr.fireImmune) c.hp -= RULES.fireCrewDps * DT;
+      if (rs.o2 < RULES.suffocateAt) c.hp -= RULES.suffocateDps * tr.suffocation * DT;
+      if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - tr.drainO2 * DT);
+      if (this.god.has(ship.idx)) c.hp = Math.max(1, c.hp);
       if (medbay && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
       if (c.hp <= 0) {
         c.dead = true;
@@ -504,7 +516,7 @@ export class Match {
         const ddx = nx - c.x;
         const ddy = ny - c.y;
         const d = Math.hypot(ddx, ddy);
-        const stepLen = RULES.crewSpeed * DT;
+        const stepLen = RULES.crewSpeed * tr.speed * DT;
         if (d <= stepLen) {
           c.x = nx;
           c.y = ny;
@@ -522,16 +534,16 @@ export class Match {
       const sys = Object.values(ship.systems).find((s) => s && s.room === room);
       if (fires.length) {
         const t = fires.includes(c.tile) ? c.tile : fires[0];
-        rs.fires[t] -= RULES.firefight * DT;
+        rs.fires[t] -= RULES.firefight * tr.repair * DT;
         if (rs.fires[t] <= 0) delete rs.fires[t];
         c.task = "fire";
       } else if (breaches.length) {
         const t = breaches[0];
-        rs.breaches[t] -= RULES.breachRepair * DT;
+        rs.breaches[t] -= RULES.breachRepair * tr.repair * DT;
         if (rs.breaches[t] <= 0) delete rs.breaches[t];
         c.task = "breach";
       } else if (sys && sys.damage > 0) {
-        sys.repair += RULES.repairRate * (1 + RULES.repairSkillBonus[this.skill(c, "repair")]) * DT;
+        sys.repair += RULES.repairRate * tr.repair * (1 + RULES.repairSkillBonus[this.skill(c, "repair")]) * DT;
         if (sys.repair >= 1) {
           sys.repair = 0;
           sys.damage--;

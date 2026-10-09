@@ -86,7 +86,9 @@ export function parseSystem(n: XNode): SystemBP | undefined {
 }
 
 export function parseCrew(n: XNode, text: Record<string, string>): CrewBP {
-  return { id: n.attrs.name, title: title(n, "title", text) || n.attrs.name, cost: num(n, "cost", 50) };
+  const c = kid(kids(kid(n, "colorList"), "layer")[0], "color");
+  const shirt = c ? ((+c.attrs.r & 255) << 16) | ((+c.attrs.g & 255) << 8) | (+c.attrs.b & 255) : undefined;
+  return { id: n.attrs.name, title: title(n, "title", text) || n.attrs.name, cost: num(n, "cost", 50), shirt };
 }
 
 const MANNED = new Set(["pilot", "shields", "weapons", "engines", "sensors", "doors"]);
@@ -122,6 +124,9 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     maxPower: Number(kid(n, "maxPower")?.attrs.amount ?? 8),
     crewCount: crews.length ? crews.reduce((a, c) => a + (Number(c.attrs.amount) || 0), 0) : 3,
     crewRace: crews[0]?.attrs.class ?? "human",
+    crewRaces: crews.length
+      ? crews.flatMap((c) => Array.from({ length: Number(c.attrs.amount) || 0 }, () => c.attrs.class || "human"))
+      : ["human", "human", "human"],
   };
 }
 
@@ -130,7 +135,7 @@ export function parseLayout(id: string, txtSrc: string, xmlSrc: string | undefin
   const tok = txtSrc.split(/\s+/).filter(Boolean);
   const L: ShipLayout = {
     id, xOffset: 0, yOffset: 0, rooms: [], doors: [], img: { x: 0, y: 0, w: 0, h: 0 }, floor: { x: 0, y: 0 },
-    mounts: [], ellipse: { a: 0, b: 0, x: 0, y: 0 },
+    mounts: [], ellipse: { a: 0, b: 0, x: 0, y: 0 }, gibs: [],
   };
   for (let i = 0; i < tok.length; ) {
     const k = tok[i++];
@@ -153,6 +158,19 @@ export function parseLayout(id: string, txtSrc: string, xmlSrc: string | undefin
     L.mounts = walk(x, "mount").map((m) => ({
       x: +m.attrs.x || 0, y: +m.attrs.y || 0, rotate: m.attrs.rotate === "true", mirror: m.attrs.mirror === "true",
     }));
+    const ex = walk(x, "explosion")[0];
+    const range = (g: XNode, t: string): [number, number] => {
+      const k = kid(g, t);
+      return [Number(k?.attrs.min ?? 0) || 0, Number(k?.attrs.max ?? 0) || 0];
+    };
+    for (const g of ex?.children ?? []) {
+      const m = /^gib(\d+)$/.exec(g.tag);
+      if (!m) continue;
+      L.gibs.push({
+        n: Number(m[1]), x: num(g, "x"), y: num(g, "y"), velocity: range(g, "velocity"), direction: range(g, "direction"),
+        angular: range(g, "angular"),
+      });
+    }
   }
   return L;
 }
@@ -199,7 +217,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   const text = { ...parseText(read("data/text_blueprints.xml") ?? ""), ...parseText(read("data/text_misc.xml") ?? "") };
   const db: GameDB = {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
-    anims: {}, sounds: {}, hangar: [],
+    anims: {}, sounds: {}, names: [], hangar: [],
   };
   for (const f of ["data/blueprints.xml", "data/dlcBlueprints.xml", "data/dlcBlueprintsOverwrite.xml"]) {
     const src = read(f);
@@ -241,5 +259,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
       db.sounds[n.tag] = { file: n.text.trim(), volume: Number(n.attrs.volume ?? 5) || 5 };
     }
   }
+  const names = read("data/names.xml");
+  if (names) db.names = [...new Set(walk(parseXml(names), "name").map((n) => n.text.trim()).filter((n) => /^[A-Za-z][A-Za-z .'-]{1,13}$/.test(n)))];
   return db;
 }

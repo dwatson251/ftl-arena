@@ -80,3 +80,36 @@ export const RULES = {
 
 export type SkillId = keyof typeof RULES.skillXp;
 export const SKILLS = Object.keys(RULES.skillXp) as SkillId[];
+
+/**
+ * Race traits that matter without boarding (wiki values; combat multipliers kept for v2 boarding).
+ * repair also scales firefighting and breach repair, as in FTL.
+ */
+export interface RaceTraits {
+  hp: number;
+  speed: number;
+  repair: number;
+  combat: number;
+  fireImmune?: boolean;
+  /** Multiplier on suffocation damage (0 = doesn't breathe). */
+  suffocation: number;
+  /** Adds this many bars of free power to the system in its room. */
+  power?: number;
+  /** O2 %/s removed from the room it stands in. */
+  drainO2?: number;
+  /** Sees enemy crew without sensors. */
+  telepathic?: boolean;
+  blurb: string;
+}
+
+export const RACES: Record<string, RaceTraits> = {
+  human: { hp: 100, speed: 1, repair: 1, combat: 1, suffocation: 1, blurb: "Balanced." },
+  engi: { hp: 100, speed: 1, repair: 2, combat: 0.5, suffocation: 1, blurb: "Repairs and fights fires twice as fast." },
+  mantis: { hp: 100, speed: 1.2, repair: 0.5, combat: 1.5, suffocation: 1, blurb: "Fast; repairs at half speed." },
+  rock: { hp: 150, speed: 0.5, repair: 1, combat: 1, fireImmune: true, suffocation: 1, blurb: "150 HP, immune to fire, slow." },
+  slug: { hp: 100, speed: 1, repair: 1, combat: 1, suffocation: 1, telepathic: true, blurb: "Telepathic: sees enemy crew without sensors." },
+  energy: { hp: 70, speed: 1, repair: 1, combat: 1, suffocation: 1, power: 1, blurb: "Powers the system it stands in by 1. 70 HP." },
+  crystal: { hp: 125, speed: 0.8, repair: 1, combat: 1, suffocation: 0.5, blurb: "125 HP, half suffocation damage, slow." },
+  anaerobic: { hp: 100, speed: 1, repair: 1, combat: 1, suffocation: 0, drainO2: 1.5, blurb: "Doesn't breathe; drains O2 from its room." },
+};
+export const raceOf = (r: string): RaceTraits => RACES[r] ?? RACES.human;

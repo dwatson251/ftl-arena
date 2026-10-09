@@ -1,40 +1,68 @@
 /**
- * The combat screen. Everything the player does becomes a Command sent to the server; everything drawn
- * comes from the latest server snapshot (interpolated between snapshots for smooth motion).
+ * The combat screen, laid out like FTL's 1280×720 combat view and drawn with FTL's own UI art when it has
+ * been extracted. Everything the player does becomes a Command; everything drawn comes from the latest
+ * server snapshot, interpolated between snapshots.
+ *
+ * Shots: FTL shows two views of space, so a shot leaves its own ship's view, vanishes, and a moment later
+ * enters the other view and flies to the target. The sim's flight time is split into those phases.
  */
-import { Application, Container, FederatedPointerEvent, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { Application, Container, FederatedPointerEvent, Graphics, Sprite } from "pixi.js";
 import type { GameDB, SystemId } from "@ftl/data";
 import { SUBSYSTEMS } from "@ftl/data";
 import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
 import { animFrame, texNow } from "./assets.ts";
 import { play, setSound, soundOn } from "./audio.ts";
+import { Imm, style } from "./imm.ts";
 import { ShipRenderer, type CrewDraw } from "./render/ship.ts";
 
 const W = 1280;
 const H = 720;
-const OWN_BOX = { x: 175, y: 95, w: 640, h: 470 };
-const ENEMY_BOX = { x: 850, y: 120, w: 415, h: 430 };
+/** Own-ship view (everything left of the hostiles window). */
+const OWN = { x: 150, y: 150, w: 690, h: 440, clipX: 858 };
+/** FTL's hostiles window and the area inside it where the enemy ship is drawn. */
+const WIN = { x: 862, y: 60, w: 410, h: 555 };
+const WIN_SHIP = { x: WIN.x + 22, y: WIN.y + 100, w: 360, h: 425 };
 const SYS_ORDER: SystemId[] = ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"];
-
-const txt = (s: string, size = 13, fill = 0xe9ecf1, weight: "400" | "700" = "400") =>
-  new Text({ text: s, style: new TextStyle({ fontFamily: "system-ui, Segoe UI, sans-serif", fontSize: size, fill, fontWeight: weight }) });
+const BAR_W = 18;
+const BAR_H = 7;
+const SYS_X0 = 62;
+const SYS_DX = 38;
+const SYS_ICON_Y = 682;
+const WEAP_Y = 626;
 
 interface Fx {
   node: Container;
+  born: number;
   until: number;
   update?: (k: number) => void;
 }
 
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const inBox = (p: { x: number; y: number }, b: Box) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+/** Stable pseudo-random in [0,1) from an integer. */
+const hash01 = (n: number) => Math.abs(Math.sin(n * 91.345 + 3.1) * 43758.5453) % 1;
+
 export class Battle {
   stage = new Container();
+  private bgLayer = new Container();
   private world = new Container();
-  private hud = new Container();
-  private projLayer = new Container();
-  private fxLayer = new Container();
+  private ownBox = new Container();
+  private winLayer = new Container();
+  private enemyBox = new Container();
+  private projOwn = new Container();
+  private projWin = new Container();
+  private fxOwn = new Container();
+  private fxWin = new Container();
+  private hudRoot = new Container();
+  private hud: Imm;
   own!: ShipRenderer;
   enemy!: ShipRenderer;
-  private ownBox = new Container();
-  private enemyBox = new Container();
   private view: MatchView | null = null;
   private prev: MatchView | null = null;
   private snapAt = 0;
@@ -46,16 +74,32 @@ export class Battle {
   private drag: { x: number; y: number; x2: number; y2: number } | null = null;
   private fx: Fx[] = [];
   private time = 0;
-  private bg = new Graphics();
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
-  private sysHit: { id: SystemId; x: number; y: number; w: number; h: number }[] = [];
-  private weapHit: { slot: number; x: number; y: number; w: number; h: number; auto: { x: number; y: number; w: number; h: number } }[] = [];
-  private crewHit: { id: number; x: number; y: number; w: number; h: number }[] = [];
-  private doorBtns: { open: boolean; x: number; y: number; w: number; h: number }[] = [];
+  private sysHit: { id: SystemId; box: Box }[] = [];
+  private weapHit: { slot: number; box: Box }[] = [];
+  private autoBox: Box | null = null;
+  private crewHit: { id: number; box: Box }[] = [];
+  private doorBtns: { open: boolean; box: Box }[] = [];
+  /** Weapon fire times for the hull firing animation: `${ship}:${slot}` -> time. */
+  private firedAt = new Map<string, number>();
+  private shieldHitAt: [number, number] = [-9, -9];
+  private walking = new Map<number, string>();
+  private flashTiles = new Map<string, number>();
+  /** Hull break-up: ship index -> time it blew. */
+  private explodedAt = new Map<number, number>();
+  private endReadyAt: number | null = null;
+  onEndReady: () => void = () => {};
 
   constructor(private app: Application, private db: GameDB, private send: (c: Command) => void, public you: 0 | 1) {
-    this.stage.addChild(this.bg, this.world, this.projLayer, this.fxLayer, this.hud);
-    this.world.addChild(this.ownBox, this.enemyBox);
+    this.hud = new Imm(this.hudRoot);
+    // Own-side layers are clipped at the hostiles window; window layers are clipped by FTL's window mask.
+    const ownClip = new Graphics().rect(0, 0, OWN.clipX, H).fill({ color: 0xffffff });
+    const ownProjMaskHolder = new Container();
+    ownProjMaskHolder.addChild(this.projOwn, this.fxOwn);
+    ownProjMaskHolder.mask = ownClip;
+    this.winLayer.addChild(this.enemyBox, this.projWin, this.fxWin);
+    this.world.addChild(this.ownBox, ownClip, ownProjMaskHolder, this.winLayer);
+    this.stage.addChild(this.bgLayer, this.world, this.hudRoot);
     this.stage.eventMode = "static";
     this.stage.hitArea = { contains: () => true };
     this.stage.on("pointerdown", (e) => this.onDown(e));
@@ -72,33 +116,55 @@ export class Battle {
   private setupShips(v: MatchView): void {
     const own = v.ships[v.you];
     const en = v.ships[1 - v.you];
-    this.own = new ShipRenderer(this.db, own.bp, false);
-    this.enemy = new ShipRenderer(this.db, en.bp, true);
+    this.own = new ShipRenderer(this.db, own.bp, false, 0);
+    // The enemy stands vertically, nose up, inside the hostiles window.
+    this.enemy = new ShipRenderer(this.db, en.bp, true, Math.PI / 2);
     this.ownBox.addChild(this.own.root);
     this.enemyBox.addChild(this.enemy.root);
-    this.fit();
-    const bgT = texNow("stars/bg_darknebula.png");
-    if (bgT) {
-      const s = new Sprite(bgT);
+    const bg = texNow("stars/bg_darknebula.png");
+    if (bg) {
+      const s = new Sprite(bg);
       s.width = W;
       s.height = H;
-      s.alpha = 0.8;
-      this.stage.addChildAt(s, 0);
+      this.bgLayer.addChild(s);
     }
+    const frameTex = texNow("combatUI/box_hostiles2.png");
+    const maskTex = texNow("combatUI/box_hostiles_mask.png");
+    if (frameTex) {
+      const f = new Sprite(frameTex);
+      f.position.set(WIN.x, WIN.y);
+      f.alpha = 0.92;
+      this.world.addChildAt(f, this.world.getChildIndex(this.winLayer));
+    } else {
+      this.world.addChildAt(new Graphics().roundRect(WIN.x + 10, WIN.y + 25, WIN.w - 20, WIN.h - 30, 8).fill({ color: 0x2a1c26, alpha: 0.85 }).stroke({ color: 0xe8efe8, width: 3 }), this.world.getChildIndex(this.winLayer));
+    }
+    // The inside of FTL's box_hostiles_mask, as a polygon (Pixi sprite masks read red×alpha and the
+    // mask art is black, so it can't be used directly).
+    const X = WIN.x;
+    const Y = WIN.y;
+    const mask = new Graphics()
+      .poly([X + 14, Y + 29, X + 380, Y + 29, X + 389, Y + 38, X + 389, Y + 520, X + 375, Y + 520, X + 375, Y + 532, X + 58, Y + 532, X + 14, Y + 488])
+      .fill({ color: 0xffffff });
+    void maskTex;
+    this.world.addChild(mask);
+    this.winLayer.mask = mask;
+    this.fit();
   }
 
-  /** Fit both ships into their boxes; the enemy is mirrored to face us. */
   private fit(): void {
-    const place = (r: ShipRenderer, box: typeof OWN_BOX, mirror: boolean) => {
-      const b = r.bounds();
-      const s = Math.min(1, box.w / b.w, box.h / b.h);
-      r.root.scale.set(mirror ? -s : s, s);
-      const cx = box.x + box.w / 2;
-      const cy = box.y + box.h / 2;
-      r.root.position.set(mirror ? cx + (b.x + b.w / 2) * s : cx - (b.x + b.w / 2) * s, cy - (b.y + b.h / 2) * s);
-    };
-    place(this.own, OWN_BOX, false);
-    place(this.enemy, ENEMY_BOX, true);
+    const o = this.own.bounds();
+    const s = Math.min(1, OWN.w / o.w, OWN.h / o.h);
+    this.own.root.scale.set(s);
+    this.own.root.position.set(OWN.x + OWN.w / 2 - (o.x + o.w / 2) * s, OWN.y + OWN.h / 2 - (o.y + o.h / 2) * s);
+    // Rotated -90°: the hull's width becomes the window's height.
+    const e = this.enemy.bounds();
+    const se = Math.min(0.85, WIN_SHIP.w / e.h, WIN_SHIP.h / e.w);
+    this.enemy.root.scale.set(se);
+    this.enemy.root.rotation = -Math.PI / 2;
+    const cx = e.x + e.w / 2;
+    const cy = e.y + e.h / 2;
+    // After rotating by -90°, a local point (x, y) maps to (y, -x) * scale.
+    this.enemy.root.position.set(WIN_SHIP.x + WIN_SHIP.w / 2 - cy * se, WIN_SHIP.y + WIN_SHIP.h / 2 + cx * se);
   }
 
   onSnapshot(v: MatchView): void {
@@ -107,38 +173,64 @@ export class Battle {
     this.view = v;
     this.snapAt = performance.now();
     for (const e of v.events) this.onEvent(e);
-    // Selection only keeps living crew.
     const own = v.ships[v.you];
     for (const id of [...this.selected]) if (!own.crew.find((c) => c.id === id && !c.dead)) this.selected.delete(id);
+    // Destination flash: keep the tile lit briefly after a crew member arrives.
+    for (const c of own.crew) {
+      const was = this.walking.get(c.id);
+      if (c.path.length) this.walking.set(c.id, c.home);
+      else if (was) {
+        this.flashTiles.set(was, 0.45);
+        this.walking.delete(c.id);
+      }
+    }
+  }
+
+  debugState() {
+    return { time: this.time, endReadyAt: this.endReadyAt, exploded: [...this.explodedAt] };
+  }
+
+  /** True once the end-of-match explosion has played out. */
+  endReady(): boolean {
+    return this.endReadyAt !== null && this.time >= this.endReadyAt;
   }
 
   private onEvent(e: MatchView["events"][number]): void {
     const v = this.view!;
-    const r = e.e === "end" ? null : "ship" in e ? (e.ship === v.you ? this.own : this.enemy) : null;
     const bpOf = (ship: 0 | 1, slot: number) => this.db.weapons[v.ships[ship].weapons[slot]?.bp];
     switch (e.e) {
       case "fire":
+        this.firedAt.set(`${e.ship}:${e.slot}`, this.time);
         play(this.db, bpOf(e.ship, e.slot)?.sounds?.launch, e.ship === v.you ? 1 : 0.6);
         break;
-      case "hit": {
-        this.boom(r!, e.px, e.py, e.damage > 0 ? 1.2 : 0.8);
+      case "hit":
+        this.boom(e.ship, e.px, e.py, e.damage > 0 ? 1 : 0.7);
         play(this.db, ["hitHull2", "hitHull3", "smallExplosion"]);
         break;
-      }
       case "shield":
-        this.ripple(r!, e.px, e.py);
+        this.shieldHitAt[e.ship] = this.time;
+        this.ripple(e.ship, e.px, e.py);
         play(this.db, ["hitShield1", "hitShield2", "hitShield3"]);
         break;
       case "miss":
-        this.floatText(r!, e.px, e.py, "MISS", 0xdddddd);
+        this.missFly(e.ship, e.px, e.py);
+        this.floatText(e.ship, e.px, e.py, "MISS", 0xdddddd);
         play(this.db, ["miss"]);
         break;
       case "beam":
-        this.beam(r!, e.x1, e.y1, e.x2, e.y2, e.blocked);
+        this.beam(e.ship, e.x1, e.y1, e.x2, e.y2, e.blocked);
         break;
       case "death":
-        if (e.ship === v.you) this.toast("Crew member lost");
+        play(this.db, ["death1", "death2"], e.ship === v.you ? 1 : 0.5);
         break;
+      case "end": {
+        const loser = e.winner === -1 ? -1 : 1 - e.winner;
+        const destroyed = v.ships.map((s, i) => (s.hull <= 0 || (loser === i && /destroyed/.test(e.reason)) ? i : -1)).filter((i) => i >= 0);
+        for (const i of destroyed) this.explode(i);
+        this.endReadyAt = this.time + (destroyed.length ? 4.2 : 1.2);
+        setTimeout(() => this.onEndReady(), (this.endReadyAt - this.time) * 1000 + 50);
+        break;
+      }
       default:
         break;
     }
@@ -146,28 +238,34 @@ export class Battle {
 
   // ---------------------------------------------------------------- effects
 
-  private addFx(node: Container, secs: number, update?: (k: number) => void): void {
-    this.fxLayer.addChild(node);
-    this.fx.push({ node, until: this.time + secs, update: update && ((k) => update(k)) });
-    (node as Container & { born?: number }).born = this.time;
+  private rOf(ship: number) {
+    return ship === this.view!.you ? this.own : this.enemy;
   }
 
-  private toGlobal(r: ShipRenderer, x: number, y: number) {
-    return r.root.toGlobal({ x, y });
+  private fxLayerOf(ship: number) {
+    return ship === this.view!.you ? this.fxOwn : this.fxWin;
   }
 
-  private boom(r: ShipRenderer, x: number, y: number, size: number): void {
-    const p = this.stage.toLocal(this.toGlobal(r, x, y));
+  private addFx(layer: Container, node: Container, secs: number, update?: (k: number) => void): void {
+    layer.addChild(node);
+    this.fx.push({ node, born: this.time, until: this.time + secs, update });
+  }
+
+  private at(ship: number, x: number, y: number) {
+    return this.stage.toLocal(this.rOf(ship).root.toGlobal({ x, y }));
+  }
+
+  private boom(ship: number, x: number, y: number, size: number, anim = "explosion1"): void {
+    const p = this.at(ship, x, y);
     const c = new Container();
     c.position.copyFrom(p);
     const sp = new Sprite();
     sp.anchor.set(0.5);
     sp.scale.set(size * 1.6);
-    c.addChild(sp);
     const fallback = new Graphics().circle(0, 0, 14 * size).fill({ color: 0xffb040 });
-    c.addChild(fallback);
-    this.addFx(c, 0.75, (k) => {
-      const f = animFrame(this.db, "explosion1", Math.floor(k * 10));
+    c.addChild(sp, fallback);
+    this.addFx(this.fxLayerOf(ship), c, 0.75, (k) => {
+      const f = animFrame(this.db, anim, Math.floor(k * 10));
       if (f) {
         sp.texture = f;
         fallback.visible = false;
@@ -178,38 +276,69 @@ export class Battle {
     });
   }
 
-  private ripple(r: ShipRenderer, x: number, y: number): void {
-    const p = this.stage.toLocal(this.toGlobal(r, x, y));
+  private ripple(ship: number, x: number, y: number): void {
+    const p = this.at(ship, x, y);
     const g = new Graphics();
     g.position.copyFrom(p);
-    this.addFx(g, 0.5, (k) => g.clear().circle(0, 0, 10 + 40 * k).stroke({ color: 0x8fd0ff, width: 3, alpha: 1 - k }));
+    this.addFx(this.fxLayerOf(ship), g, 0.5, (k) => g.clear().circle(0, 0, 10 + 40 * k).stroke({ color: 0x8fd0ff, width: 3, alpha: 1 - k }));
   }
 
-  private floatText(r: ShipRenderer, x: number, y: number, s: string, color: number): void {
-    const p = this.stage.toLocal(this.toGlobal(r, x, y));
-    const t = txt(s, 16, color, "700");
-    t.anchor.set(0.5);
-    t.position.copyFrom(p);
-    this.addFx(t, 0.9, (k) => {
-      t.y = p.y - 30 * k;
-      t.alpha = 1 - k;
+  private floatText(ship: number, x: number, y: number, s: string, color: number): void {
+    const p = this.at(ship, x, y);
+    const c = new Container();
+    const im = new Imm(c);
+    im.begin();
+    im.text("t", s, 0, 0, style(16, color, "700"), [0.5, 0.5]);
+    im.end();
+    c.position.copyFrom(p);
+    this.addFx(this.fxLayerOf(ship), c, 0.9, (k) => {
+      c.y = p.y - 30 * k;
+      c.alpha = 1 - k;
     });
   }
 
-  private beam(r: ShipRenderer, x1: number, y1: number, x2: number, y2: number, blocked: boolean): void {
-    const a = this.stage.toLocal(this.toGlobal(r, x1, y1));
-    const b = this.stage.toLocal(this.toGlobal(r, x2, y2));
+  /** A missed shot keeps flying past the ship. */
+  private missFly(ship: number, x: number, y: number): void {
+    const p = this.at(ship, x, y);
+    const dir = ship === this.view!.you ? -1 : 1;
+    const g = new Graphics().roundRect(-10, -2.5, 20, 5, 2).fill({ color: 0xff7050 });
+    g.position.copyFrom(p);
+    this.addFx(this.fxLayerOf(ship), g, 0.6, (k) => {
+      g.x = p.x + dir * 300 * k;
+      g.alpha = 1 - k;
+    });
+  }
+
+  private beam(ship: number, x1: number, y1: number, x2: number, y2: number, blocked: boolean): void {
+    const a = this.at(ship, x1, y1);
+    const b = this.at(ship, x2, y2);
     const g = new Graphics();
-    this.addFx(g, RULES.beamSweep + 0.3, (k) => {
+    this.addFx(this.fxLayerOf(ship), g, RULES.beamSweep + 0.3, (k) => {
       const kk = Math.min(1, k * 1.4);
       g.clear()
         .moveTo(a.x, a.y)
         .lineTo(a.x + (b.x - a.x) * kk, a.y + (b.y - a.y) * kk)
-        .stroke({ color: blocked ? 0x7fc4ff : 0xff4a3a, width: 5, alpha: 1 - k * 0.6 })
+        .stroke({ color: blocked ? 0x7fc4ff : 0xff4a3a, width: 6, alpha: 1 - k * 0.6 })
         .moveTo(a.x, a.y)
         .lineTo(a.x + (b.x - a.x) * kk, a.y + (b.y - a.y) * kk)
-        .stroke({ color: 0xffffff, width: 1.5, alpha: 1 - k * 0.6 });
+        .stroke({ color: 0xffffff, width: 2, alpha: 1 - k * 0.6 });
     });
+  }
+
+  /** The hull breaks into its gibs, with explosions across it. */
+  private explode(ship: number): void {
+    this.explodedAt.set(ship, this.time);
+    const r = this.rOf(ship);
+    const b = r.bounds();
+    for (let i = 0; i < 9; i++) {
+      setTimeout(() => {
+        if (!this.view) return;
+        const x = b.x + b.w * (0.15 + 0.7 * hash01(i * 3 + ship));
+        const y = b.y + b.h * (0.2 + 0.6 * hash01(i * 7 + ship));
+        this.boom(ship, x, y, 1.6 + hash01(i) * 1.2, i % 2 ? "explosion1" : "explosion1");
+        if (i % 3 === 0) play(this.db, ["explosion1", "explosion2", "explosion3", "explosion4"]);
+      }, i * 160);
+    }
   }
 
   private toastEl: HTMLDivElement | null = null;
@@ -221,8 +350,8 @@ export class Battle {
     }
     this.toastEl.textContent = msg;
     this.toastEl.style.display = "block";
-    clearTimeout((this.toastEl as unknown as { t: number }).t);
-    (this.toastEl as unknown as { t: number }).t = window.setTimeout(() => this.toastEl && (this.toastEl.style.display = "none"), 2200);
+    window.clearTimeout(Number(this.toastEl.dataset.t));
+    this.toastEl.dataset.t = String(window.setTimeout(() => this.toastEl && (this.toastEl.style.display = "none"), 2000));
   }
 
   // ---------------------------------------------------------------- frame
@@ -231,17 +360,23 @@ export class Battle {
     this.time += dt;
     const v = this.view;
     if (!v) return;
+    for (const [k, left] of this.flashTiles) left - dt <= 0 ? this.flashTiles.delete(k) : this.flashTiles.set(k, left - dt);
     const k = Math.min(1, (performance.now() - this.snapAt) / (1000 / SNAP_HZ));
     const ownV = v.ships[v.you];
     const enV = v.ships[1 - v.you];
-    this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.time, this.hoverOwn);
-    this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.time, this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 });
+    const ex = (i: number) => (this.explodedAt.has(i) ? this.time - this.explodedAt.get(i)! : null);
+    this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.time, {
+      hover: this.hoverOwn, weaponFrame: (s) => this.weaponFrameFor(ownV, v.you, s), shieldFlash: this.time - this.shieldHitAt[v.you],
+      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles,
+    });
+    this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.time, {
+      hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
+      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you),
+    });
     this.drawTargets(ownV);
     this.drawProjectiles(v, k);
     for (const f of [...this.fx]) {
-      const born = (f.node as Container & { born: number }).born;
-      const kk = Math.min(1, (this.time - born) / (f.until - born));
-      f.update?.(kk);
+      f.update?.(Math.min(1, (this.time - f.born) / (f.until - f.born)));
       if (this.time >= f.until) {
         f.node.destroy();
         this.fx.splice(this.fx.indexOf(f), 1);
@@ -250,304 +385,406 @@ export class Battle {
     this.drawHud(v);
   }
 
+  /** Hull weapon art: lights come on frame by frame as it charges, then the fire frames play. */
+  private weaponFrameFor(s: ShipView, ship: 0 | 1, slot: number): number {
+    const w = s.weapons[slot];
+    const bp = this.db.weapons[w.bp];
+    const anim = bp && this.db.weaponAnims[bp.weaponArt];
+    if (!anim) return 0;
+    const fired = this.firedAt.get(`${ship}:${slot}`);
+    if (fired !== undefined && this.time - fired < 0.35) {
+      const n = anim.frames - anim.fireFrame;
+      return Math.min(anim.frames - 1, anim.fireFrame + Math.floor(((this.time - fired) / 0.35) * n));
+    }
+    if (w.charge < 0) return 0; // unknown (sensors)
+    if (w.volleys > 0) return anim.chargedFrame;
+    if (!w.powered) return 0;
+    return Math.floor(Math.min(0.999, w.charge / (bp.cooldown || 1)) * anim.chargedFrame);
+  }
+
   private crewDraw(s: ShipView, prev: ShipView | undefined, k: number, mine: boolean): CrewDraw[] {
     return s.crew.map((c) => {
       const p = prev?.crew.find((q) => q.id === c.id);
-      const x = p ? p.x + (c.x - p.x) * k : c.x;
-      const y = p ? p.y + (c.y - p.y) * k : c.y;
-      return { c, x, y, selected: mine && this.selected.has(c.id) };
+      return { c, x: p ? p.x + (c.x - p.x) * k : c.x, y: p ? p.y + (c.y - p.y) * k : c.y, selected: mine && this.selected.has(c.id) };
     });
   }
 
   private drawTargets(own: ShipView): void {
     const g = this.enemy.overlay.clear();
+    const crosshair = (cx: number, cy: number, n: number, auto: boolean) => {
+      g.circle(cx, cy, 11).stroke({ color: auto ? 0xffd040 : 0xff4040, width: 2.5 });
+      g.moveTo(cx - 15, cy).lineTo(cx - 6, cy).moveTo(cx + 6, cy).lineTo(cx + 15, cy).moveTo(cx, cy - 15).lineTo(cx, cy - 6).moveTo(cx, cy + 6).lineTo(cx, cy + 15).stroke({ color: 0xff4040, width: 2 });
+      void n;
+    };
     own.weapons.forEach((w, i) => {
       if (!w.target) return;
       if (w.target.kind === "room") {
         const r = this.enemy.layout.rooms.find((q) => q.id === (w.target as { room: number }).room);
         if (!r) return;
-        const cx = (r.x + r.w / 2) * 35;
-        const cy = (r.y + r.h / 2) * 35;
-        const off = (i - 1.5) * 9;
-        g.circle(cx + off, cy + off, 9).stroke({ color: w.autofire ? 0xffd040 : 0xff4040, width: 2 }).moveTo(cx + off - 12, cy + off).lineTo(cx + off + 12, cy + off).moveTo(cx + off, cy + off - 12).lineTo(cx + off, cy + off + 12).stroke({ color: 0xff4040, width: 1.5 });
+        const off = (i - 1.5) * 8;
+        crosshair((r.x + r.w / 2) * 35 + off, (r.y + r.h / 2) * 35 + off, i + 1, w.autofire);
       } else {
         const t = w.target;
-        const bp = this.db.weapons[w.bp];
+        const L = this.db.weapons[w.bp]?.length || 60;
         const len = Math.hypot(t.x2 - t.x1, t.y2 - t.y1) || 1;
-        const L = bp?.length || 60;
-        g.moveTo(t.x1, t.y1).lineTo(t.x1 + ((t.x2 - t.x1) / len) * L, t.y1 + ((t.y2 - t.y1) / len) * L).stroke({ color: 0xff5050, width: 2, alpha: 0.8 });
+        g.moveTo(t.x1, t.y1).lineTo(t.x1 + ((t.x2 - t.x1) / len) * L, t.y1 + ((t.y2 - t.y1) / len) * L).stroke({ color: 0xff5050, width: 3, alpha: 0.85 });
       }
     });
-    if (this.beamStart && this.armed !== null) g.circle(this.beamStart.x, this.beamStart.y, 5).fill({ color: 0xff5050 });
-    // Own-ship overlay: drag box
+    if (this.beamStart && this.armed !== null) g.circle(this.beamStart.x, this.beamStart.y, 6).fill({ color: 0xff5050 });
     const o = this.own.overlay.clear();
     if (this.drag) {
       const a = this.own.root.toLocal({ x: this.drag.x, y: this.drag.y }, this.stage);
       const b = this.own.root.toLocal({ x: this.drag.x2, y: this.drag.y2 }, this.stage);
-      o.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y)).stroke({ color: 0x7bff7b, width: 1.5 });
+      o.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y)).fill({ color: 0x30ff30, alpha: 0.08 }).stroke({ color: 0x30ff30, width: 1.5 });
     }
   }
 
+  // ---------------------------------------------------------------- projectiles
+
   private drawProjectiles(v: MatchView, k: number): void {
-    this.projLayer.removeChildren();
+    this.projOwn.removeChildren();
+    this.projWin.removeChildren();
     const dtSnap = k / SNAP_HZ;
     for (const p of v.projectiles) {
-      if (p.kind === "BEAM" || p.kind === "BOMB") continue;
+      if (p.kind === "BEAM") continue;
       if (p.delay - dtSnap > 0) continue;
-      const src = p.from === v.you ? this.own : this.enemy;
-      const dst = p.from === v.you ? this.enemy : this.own;
-      const a = this.stage.toLocal(src.root.toGlobal(src.mountPoint(p.slot)));
+      const mine = p.from === v.you;
+      const src = mine ? this.own : this.enemy;
+      const dst = mine ? this.enemy : this.own;
+      const t = p.t + Math.max(0, dtSnap - Math.max(0, p.delay));
+      const F = p.flight;
+      const bp = this.db.weapons[p.weapon];
+      // Phases: leave own view (35 %), gap (15 %), cross the target view (50 %). Bombs teleport.
+      const k1 = t / (F * 0.35);
+      const k2 = (t - F * 0.5) / (F * 0.5);
       let tx = p.px;
       let ty = p.py;
-      if (p.target.kind === "room" && p.kind !== "BURST" && !(tx || ty)) {
+      if (p.target.kind === "room" && !(tx || ty)) {
         const r = dst.layout.rooms.find((q) => q.id === (p.target as { room: number }).room)!;
         tx = (r.x + r.w / 2) * 35;
         ty = (r.y + r.h / 2) * 35;
       }
-      const b = this.stage.toLocal(dst.root.toGlobal({ x: tx, y: ty }));
-      const prog = Math.min(1, Math.max(0, (p.t + Math.max(0, dtSnap - Math.max(0, p.delay))) / p.flight));
-      const x = a.x + (b.x - a.x) * prog;
-      const y = a.y + (b.y - a.y) * prog;
-      const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      const bp = this.db.weapons[p.weapon];
-      const f = bp?.image ? animFrame(this.db, bp.image, Math.floor(this.time * 10)) : null;
-      if (f) {
-        const s = new Sprite(f);
-        s.anchor.set(0.5);
-        s.position.set(x, y);
-        // Missile art points up, laser art points right.
-        s.rotation = p.kind === "MISSILES" ? ang + Math.PI / 2 : ang;
-        if (p.kind === "MISSILES") s.scale.set(0.6);
-        this.projLayer.addChild(s);
-      } else {
-        const color = p.kind === "MISSILES" ? 0xffd27a : p.kind === "BURST" ? 0xc0a080 : bp?.ion ? 0x60b0ff : 0xff5040;
-        const g = new Graphics();
-        g.position.set(x, y);
-        g.rotation = ang;
-        if (p.kind === "MISSILES") g.rect(-9, -3, 18, 6).fill({ color });
-        else if (p.kind === "BURST") g.circle(0, 0, 4).fill({ color });
-        else g.roundRect(-10, -2.5, 20, 5, 2).fill({ color });
-        this.projLayer.addChild(g);
+      const target = this.stage.toLocal(dst.root.toGlobal({ x: tx, y: ty }));
+      if (p.kind === "BOMB") {
+        if (k2 >= 0) this.drawShot(mine ? this.projWin : this.projOwn, bp?.image, target.x, target.y, 0, "BOMB", Math.min(1, k2 * 2));
+        continue;
+      }
+      const slotBp = v.ships[p.from].weapons[p.slot]?.bp ?? p.weapon;
+      const muzzle = this.stage.toLocal(src.root.toGlobal(src.muzzlePoint(p.slot, slotBp)));
+      if (k1 <= 1) {
+        // Out of the source view: own shots fly right, off our screen; enemy shots fly up, out of its window.
+        const exit = mine ? { x: OWN.clipX + 60, y: muzzle.y - 20 } : { x: muzzle.x, y: WIN.y - 40 };
+        const x = muzzle.x + (exit.x - muzzle.x) * k1;
+        const y = muzzle.y + (exit.y - muzzle.y) * k1;
+        this.drawShot(mine ? this.projOwn : this.projWin, bp?.image, x, y, Math.atan2(exit.y - muzzle.y, exit.x - muzzle.x), p.kind, 1);
+      } else if (k2 >= 0) {
+        // Into the target view from its edge facing the attacker.
+        const entry = mine
+          ? { x: WIN.x + 10, y: target.y + (hash01(p.id) - 0.5) * 160 }
+          : { x: OWN.clipX + 10, y: target.y + (hash01(p.id) - 0.5) * 220 };
+        const kk = Math.min(1, k2);
+        const x = entry.x + (target.x - entry.x) * kk;
+        const y = entry.y + (target.y - entry.y) * kk;
+        this.drawShot(mine ? this.projWin : this.projOwn, bp?.image, x, y, Math.atan2(target.y - entry.y, target.x - entry.x), p.kind, 1);
       }
     }
+  }
+
+  private drawShot(layer: Container, image: string | undefined, x: number, y: number, ang: number, kind: string, alpha: number): void {
+    const f = image ? animFrame(this.db, image, Math.floor(this.time * 10)) : null;
+    if (f) {
+      const s = new Sprite(f);
+      s.anchor.set(0.5);
+      s.position.set(x, y);
+      // Missile and bomb art point up; laser art points right.
+      s.rotation = kind === "MISSILES" ? ang + Math.PI / 2 : kind === "BOMB" ? 0 : ang;
+      if (kind === "MISSILES") s.scale.set(0.7);
+      s.alpha = alpha;
+      layer.addChild(s);
+      return;
+    }
+    const color = kind === "MISSILES" ? 0xffd27a : kind === "BURST" ? 0xc0a080 : kind === "BOMB" ? 0x9fe07f : 0xff5040;
+    const g = new Graphics();
+    g.position.set(x, y);
+    g.rotation = ang;
+    g.alpha = alpha;
+    if (kind === "MISSILES") g.rect(-9, -3, 18, 6).fill({ color });
+    else if (kind === "BURST" || kind === "BOMB") g.circle(0, 0, 5).fill({ color });
+    else g.roundRect(-10, -2.5, 20, 5, 2).fill({ color });
+    layer.addChild(g);
   }
 
   // ---------------------------------------------------------------- HUD
 
   private drawHud(v: MatchView): void {
-    this.hud.removeChildren();
+    const h = this.hud;
+    h.begin();
     const own = v.ships[v.you];
     const en = v.ships[1 - v.you];
-    const g = new Graphics();
-    this.hud.addChild(g);
-    // Own hull and shields, top left
-    this.hull(g, 12, 12, own, "HULL");
-    this.shieldPips(g, 12, 40, own);
-    const ev = txt(`EVASION ${own.evasion}%   O2 ${Math.round(own.rooms.reduce((a, r) => a + r.o2, 0) / own.rooms.length)}%   MISSILES ${own.missiles}`, 12, 0xcfd6e2);
-    ev.position.set(12, 64);
-    this.hud.addChild(ev);
-    // Enemy panel
-    g.rect(ENEMY_BOX.x - 10, 12, ENEMY_BOX.w + 15, 96).fill({ color: 0x1a1d24, alpha: 0.85 }).stroke({ color: 0xc84444, width: 2 });
-    const name = txt(`${en.player.toUpperCase()}  —  ${this.db.ships[en.bp]?.title ?? en.bp}`, 13, 0xffb0b0, "700");
-    name.position.set(ENEMY_BOX.x, 18);
-    this.hud.addChild(name);
-    this.hull(g, ENEMY_BOX.x, 40, en, "");
-    this.shieldPips(g, ENEMY_BOX.x, 66, en);
-    const eev = txt(`EVASION ${en.evasion}%` + (en.interior ? (en.weaponsKnown ? "" : "   · sensors 3 shows weapon charge") : "   · sensors 2 shows interior"), 11, 0xcfd6e2);
-    eev.position.set(ENEMY_BOX.x + 110, 66);
-    this.hud.addChild(eev);
-    // Enemy weapon charge bars (sensor level 3)
-    if (en.weaponsKnown) {
-      en.weapons.forEach((w, i) => {
-        const bp = this.db.weapons[w.bp];
-        const x = ENEMY_BOX.x + i * 100;
-        const t = txt(bp?.title ?? w.bp, 10, 0xffc0c0);
-        t.position.set(x, 86);
-        this.hud.addChild(t);
-        g.rect(x, 100, 90, 4).fill({ color: 0x333333 }).rect(x, 100, 90 * Math.min(1, w.charge / (bp?.cooldown || 1)), 4).fill({ color: w.powered ? 0xffa040 : 0x666666 });
-      });
-    }
-    this.crewList(g, own);
-    this.systems(g, own);
-    this.weaponsTray(g, own);
+    this.topLeft(own);
+    this.hostilesHeader(en, v);
+    this.crewList(own);
+    this.systemsBar(own);
+    this.weaponsTray(own);
     if (this.armed !== null) {
       const bp = this.db.weapons[own.weapons[this.armed]?.bp];
-      const hint = txt(bp?.type === "BEAM" ? (this.beamStart ? "Click to set the beam's direction" : "Click the enemy ship to start the beam") : "Click an enemy room to target — right-click to cancel", 13, 0xffd27a, "700");
-      hint.anchor.set(0.5, 0);
-      hint.position.set(W / 2, 572);
-      this.hud.addChild(hint);
+      const msg = bp?.type === "BEAM" ? (this.beamStart ? "Click to set the beam's direction" : "Click the enemy ship to start the beam") : "Click an enemy room to target · right-click to cancel";
+      h.text("hint", msg, OWN.x + OWN.w / 2, 594, style(14, 0xffd27a, "700"), [0.5, 0]);
     }
+    const mode = v.config.winCondition === "crew" ? "VICTORY: KILL THE ENEMY CREW" : "VICTORY: DESTROY THE ENEMY SHIP";
+    h.text("mode", mode, 650, 10, style(12, 0x9fb5d0, "700"), [0.5, 0]);
     if (v.config.timeLimit > 0) {
       const left = Math.max(0, v.config.timeLimit - v.tick / 30);
-      const t = txt(`${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, 16, 0xffffff, "700");
-      t.anchor.set(0.5, 0);
-      t.position.set(W / 2 + 120, 12);
-      this.hud.addChild(t);
+      h.text("clock", `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, 650, 28, style(18, 0xffffff, "700"), [0.5, 0]);
     }
-    const help = txt(
-      "1-4 or click weapon → click enemy room\nright-click weapon: off · A: autofire\ndrag/click crew → right-click a room\nTab: all crew · bars: click +1, right −1\ndoors: click · Z/X all · M: sound",
-      10, 0x8f99a8,
+    h.text(
+      "help",
+      "1-4: arm weapon → click room · right-click weapon: off\ndrag crew → right-click room · Tab: all · bars: ±power\nZ/X: doors · M: sound " + (soundOn() ? "on" : "off"),
+      W - 8, H - 6, style(10, 0x8f99a8, "400", "right"), [1, 1],
     );
-    help.position.set(1045, 612);
-    this.hud.addChild(help);
-    const mode = txt(v.config.winCondition === "crew" ? "WIN: KILL THE ENEMY CREW" : "WIN: DESTROY THE ENEMY SHIP", 12, 0x9fb5d0, "700");
-    mode.anchor.set(0.5, 0);
-    mode.position.set(W / 2 - 60, 14);
-    this.hud.addChild(mode);
+    h.end();
   }
 
-  private hull(g: Graphics, x: number, y: number, s: ShipView, label: string): void {
-    if (label) {
-      const t = txt(label, 11, 0xb8c0cc, "700");
-      t.position.set(x, y + 4);
-      this.hud.addChild(t);
-      x += 38;
+  /** FTL's top-left status: hull frame + segment mask, shields panel, evade/O2 panel, missiles. */
+  private topLeft(s: ShipView): void {
+    const h = this.hud;
+    const low = s.hull / s.maxHull <= 0.33;
+    const frameT = texNow(low ? "statusUI/top_hull_red.png" : "statusUI/top_hull.png");
+    const mask = texNow("statusUI/top_hull_bar_mask.png");
+    const col = s.hull / s.maxHull > 0.66 ? 0x78ff78 : s.hull / s.maxHull > 0.33 ? 0xffe050 : 0xff5040;
+    if (frameT && mask) {
+      h.sprite("hullF", frameT, 0, 0);
+      // The mask art has 30 segments (11 px + 1 px gap): dark for lost hull, coloured for what's left.
+      h.sprite("hullMaskShape", mask, 8, 0, { tint: 0x202020, alpha: 0.85 });
+      const g = h.gfx("hullSeg");
+      const lit = Math.round((s.hull / s.maxHull) * 30);
+      for (let i = 0; i < lit; i++) g.rect(8 + i * 12, 0, 11, 65).fill({ color: col });
+      g.mask = this.hullMask(mask);
+      h.sprite("hullLabel", texNow(low ? "statusUI/top_hull_red_label.png" : "statusUI/top_hull_label.png"), 0, 0);
+      h.text("hullT", "HULL", 6, 5, style(10, 0x1a1a1a, "700"));
+    } else {
+      h.text("hullT", "HULL", 10, 14, style(11, 0xb8c0cc, "700"));
+      const g = h.gfx("hullSeg");
+      for (let i = 0; i < s.maxHull; i++) g.rect(50 + i * 11, 12, 9, 18).fill({ color: i < s.hull ? col : 0x2a2a2a });
     }
-    const n = s.maxHull;
-    const segW = Math.max(3, Math.min(12, Math.floor((label ? 360 : ENEMY_BOX.w - 10) / n)));
-    for (let i = 0; i < n; i++) {
-      const on = i < s.hull;
-      const col = s.hull / n > 0.66 ? 0x6fdc6f : s.hull / n > 0.33 ? 0xf0c030 : 0xff4a3a;
-      g.rect(x + i * segW, y, segW - 2, 18).fill({ color: on ? col : 0x2a2a2a });
-    }
-    const t = txt(`${s.hull}/${n}`, 11, 0xffffff, "700");
-    t.position.set(x + n * segW + 6, y + 2);
-    this.hud.addChild(t);
-  }
-
-  private shieldPips(g: Graphics, x: number, y: number, s: ShipView): void {
+    // Shields panel: one square per possible layer, lit when up, with the recharge bar under it.
     const sh = s.systems.shields;
-    const max = sh ? Math.floor((sh.power >= 0 ? Math.min(sh.power, usable(sh)) : usable(sh)) / 2) : 0;
-    const known = Math.max(max, s.shieldLayers);
-    for (let i = 0; i < Math.max(known, 1); i++) {
-      g.circle(x + 10 + i * 24, y + 10, 9).fill({ color: i < s.shieldLayers ? 0x4aa8ff : 0x1c2a3a }).stroke({ color: 0x6fc0ff, width: 2 });
+    const max = sh ? Math.floor(Math.min(sh.power + (sh.bonus ?? 0), usable(sh)) / 2) : 0;
+    const panel = texNow("statusUI/top_shields4_on.png");
+    const on = texNow("statusUI/top_shieldsquare1_on.png");
+    const off = texNow("statusUI/top_shieldsquare1_off.png");
+    const py = 52;
+    if (panel) h.sprite("shP", panel, 2, py);
+    const g = h.gfx("shBar");
+    for (let i = 0; i < Math.max(4, max); i++) {
+      const x = 34 + i * 24;
+      if (i < max || i < s.shieldLayers) {
+        if (on && off) h.sprite(`shS${i}`, i < s.shieldLayers ? on : off, x - 5, py + 1);
+        else g.circle(x + 10, py + 16, 9).fill({ color: i < s.shieldLayers ? 0x4aa8ff : 0x1c2a3a }).stroke({ color: 0x6fc0ff, width: 2 });
+      }
     }
-    if (s.shieldLayers < max && s.shieldCharge > 0) {
-      g.rect(x, y + 22, known * 24, 3).fill({ color: 0x1c2a3a }).rect(x, y + 22, known * 24 * s.shieldCharge, 3).fill({ color: 0x4aa8ff });
+    if (s.shieldLayers < max) g.rect(30, py + 37, 98 * s.shieldCharge, 5).fill({ color: 0x4aa8ff });
+    // Evasion and oxygen
+    const eo = texNow("statusUI/top_evade_oxygen.png");
+    const ey = 104;
+    if (eo) h.sprite("eo", eo, 2, ey);
+    const o2 = Math.round(s.rooms.reduce((a, r) => a + r.o2, 0) / s.rooms.length);
+    h.text("evT", `${s.evasion}%`, 48, ey + 9, style(13, 0xffffff, "700"));
+    h.text("o2T", `${o2}%`, 48, ey + 31, style(13, o2 < 30 ? 0xff6050 : 0xffffff, "700"));
+    // Missiles
+    const mt = texNow(s.missiles > 0 ? "statusUI/top_missiles_on.png" : "statusUI/top_missiles_on_red.png");
+    if (mt) h.sprite("msl", mt, 388, 8);
+    h.text("mslT", String(s.missiles), 437, 18, style(15, 0xffffff, "700"), [0.5, 0]);
+  }
+
+  private hullMaskSprite: Sprite | null = null;
+  private hullMask(mask: import("pixi.js").Texture): Sprite {
+    if (!this.hullMaskSprite) {
+      this.hullMaskSprite = new Sprite(mask);
+      this.hullMaskSprite.position.set(8, 0);
+      this.hudRoot.addChild(this.hullMaskSprite);
+    }
+    return this.hullMaskSprite;
+  }
+
+  /** Inside the hostiles window: enemy name, hull, shields, evasion, and weapon charge (sensors 3). */
+  private hostilesHeader(en: ShipView, v: MatchView): void {
+    const h = this.hud;
+    const x = WIN.x + 26;
+    const y = WIN.y + 38;
+    h.text("enName", `${en.player.toUpperCase()} · ${this.db.ships[en.bp]?.title ?? en.bp}`, x, y - 2, style(12, 0xffd0c8, "700"));
+    const g = h.gfx("enHull");
+    const segW = 240 / en.maxHull;
+    for (let i = 0; i < en.maxHull; i++) {
+      const lit = i < en.hull;
+      const col = en.hull / en.maxHull > 0.66 ? 0x78ff78 : en.hull / en.maxHull > 0.33 ? 0xffe050 : 0xff5040;
+      g.rect(x + i * segW, y + 18, Math.max(1, segW - 1), 12).fill({ color: lit ? col : 0x1e1e1e }).stroke({ color: 0x0, width: 0.5 });
+    }
+    h.text("enHullT", `${Math.max(0, en.hull)}`, x + 248, y + 16, style(12, 0xffffff, "700"));
+    const s1 = texNow("combatUI/box_hostiles_shield1.png");
+    const s2 = texNow("combatUI/box_hostiles_shield2.png");
+    const sh = en.systems.shields;
+    const max = sh ? Math.floor(usable(sh) / 2) : 0;
+    for (let i = 0; i < Math.max(max, en.shieldLayers); i++) {
+      if (s1 && s2) h.sprite(`enS${i}`, i < en.shieldLayers ? s2 : s1, x + i * 24, y + 36);
+      else g.circle(x + 10 + i * 24, y + 46, 9).fill({ color: i < en.shieldLayers ? 0x4aa8ff : 0x1c2a3a }).stroke({ color: 0x6fc0ff, width: 2 });
+    }
+    h.text("enEv", `EVASION ${en.evasion}%`, x + 248, y + 40, style(11, 0xcfd6e2, "700"), [1, 0]);
+    const note = en.interior ? (en.weaponsKnown ? "" : "Sensors 3: weapon charge") : "Sensors 2: interior";
+    if (note && v.winner === null) h.text("enNote", note, WIN.x + WIN.w - 26, WIN.y + WIN.h - 34, style(10, 0xa0a8b8), [1, 0]);
+    if (en.weaponsKnown) {
+      const bar = texNow("combatUI/box_hostiles_weapon_charge.png");
+      en.weapons.forEach((w, i) => {
+        const bx = WIN.x + WIN.w - 46 - i * 14;
+        const by = y + 2;
+        const bpw = this.db.weapons[w.bp];
+        const k = w.volleys > 0 ? 1 : Math.min(1, Math.max(0, w.charge) / (bpw?.cooldown || 1));
+        if (bar) h.sprite(`ewc${i}`, bar, bx, by);
+        g.rect(bx + 2, by + 33 - 31 * k, 4, 31 * k).fill({ color: w.volleys > 0 ? 0xffd040 : w.powered ? 0x78ff78 : 0x777777 });
+      });
     }
   }
 
-  private crewList(g: Graphics, s: ShipView): void {
+  private crewList(s: ShipView): void {
+    const h = this.hud;
     this.crewHit = [];
-    let y = 100;
+    let y = 168;
+    const g = h.gfx("crewBoxes");
     for (const c of s.crew) {
       if (c.dead) continue;
       const sel = this.selected.has(c.id);
-      g.rect(10, y, 150, 36).fill({ color: sel ? 0x2c4a2c : 0x1a1d24, alpha: 0.9 }).stroke({ color: sel ? 0x7bff7b : 0x5a6272, width: 1.5 });
-      const t = txt(c.name, 12, 0xffffff, "700");
-      t.position.set(16, y + 3);
-      this.hud.addChild(t);
-      const task = txt(c.task === "man" ? "manning" : c.task, 10, 0xaab3c0);
-      task.position.set(100, y + 5);
-      this.hud.addChild(task);
+      g.roundRect(6, y, 132, 38, 3).fill({ color: sel ? 0x1f3b22 : 0x141820, alpha: 0.88 }).stroke({ color: sel ? 0x6fff6f : 0xdfe8e0, width: 2 });
+      const race = this.db.animSheets[c.race] ? c.race : "human";
+      const por = animFrame(this.db, `${race}_portrait`, 0) ?? animFrame(this.db, `${race}_walk_down`, 0);
+      if (por) h.sprite(`cp${c.id}`, por, 8, y + 2);
+      h.text(`cn${c.id}`, c.name, 44, y + 4, style(12, 0xffffff, "700"));
       const hp = c.hp / c.maxHp;
-      g.rect(16, y + 22, 136, 7).fill({ color: 0x331111 }).rect(16, y + 22, 136 * hp, 7).fill({ color: hp > 0.5 ? 0x5fdc5f : hp > 0.25 ? 0xf0c030 : 0xff4040 });
-      this.crewHit.push({ id: c.id, x: 10, y, w: 150, h: 36 });
-      y += 40;
+      g.rect(44, y + 24, 88, 7).fill({ color: 0x2a1010 }).rect(44, y + 24, 88 * hp, 7).fill({ color: hp > 0.5 ? 0x78ff78 : hp > 0.25 ? 0xffe050 : 0xff5040 });
+      if (c.task !== "idle" && c.task !== "man") h.text(`ct${c.id}`, c.task === "fire" ? "🔥" : c.task === "walk" ? "→" : "🔧", 128, y + 3, style(10, 0xffffff), [1, 0]);
+      this.crewHit.push({ id: c.id, box: { x: 6, y, w: 132, h: 38 } });
+      y += 42;
     }
   }
 
-  private systems(g: Graphics, s: ShipView): void {
+  /**
+   * Bottom-left power UI: reactor column on FTL's wire, then each system's bars above its icon.
+   * Bars: green = powered, outline = free capacity, blue = ionised, red = damaged (fills yellow as it's
+   * repaired), yellow-green = free power from a Zoltan.
+   */
+  private systemsBar(s: ShipView): void {
+    const h = this.hud;
     this.sysHit = [];
-    const baseY = 708;
-    // Reactor
+    const wire = texNow("wireUI/wire_full.png");
+    if (wire) h.sprite("wire", wire, 0, H - 340);
     const used = Object.values(s.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
     const free = s.reactor - used;
+    const g = h.gfx("bars");
+    const reactorBottom = H - 50;
     for (let i = 0; i < s.reactor; i++) {
-      const col = i < free ? 0x6fdc6f : 0x2a3a2a;
-      g.rect(12 + Math.floor(i / 10) * 18, baseY - 10 - (i % 10) * 9, 14, 7).fill({ color: col });
+      const yy = reactorBottom - i * (BAR_H + 2);
+      g.rect(14, yy, BAR_W + 6, BAR_H).fill({ color: i < free ? 0x78ff78 : 0x0d1a0d }).stroke({ color: 0x78ff78, width: 1, alpha: i < free ? 1 : 0.35 });
     }
-    const rt = txt("PWR", 10, 0xb8c0cc, "700");
-    rt.position.set(10, baseY);
-    this.hud.addChild(rt);
-    let x = 12 + Math.ceil(s.reactor / 10) * 18 + 14;
-    for (const id of SYS_ORDER) {
-      const sys = s.systems[id];
-      if (!sys) continue;
-      const isSub = SUBSYSTEMS.includes(id);
+    const systems = SYS_ORDER.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
+    const wireCap = texNow("wireUI/wire_456_cap.png");
+    if (wireCap) h.sprite("wireCap", wireCap, 46, H - 36, { w: Math.max(60, systems.length * SYS_DX + 30), h: 36 });
+    systems.forEach((sys, i) => {
+      const x = SYS_X0 + i * SYS_DX;
+      const isSub = SUBSYSTEMS.includes(sys.id);
       const cap = usable(sys);
-      for (let i = 0; i < sys.level; i++) {
-        const yy = baseY - 46 - i * 9;
-        let col = 0x000000;
-        let stroke = 0x6fdc6f;
-        if (i >= sys.level - sys.damage) {
-          col = 0xd03a2a;
-          stroke = 0xd03a2a;
-        } else if (i >= cap) {
-          col = 0x3a7fd0;
-          stroke = 0x3a7fd0;
-        } else if (i < (isSub ? cap : sys.power)) col = isSub ? 0xd0d0d0 : 0x6fdc6f;
-        g.rect(x, yy, 24, 7).fill({ color: col }).stroke({ color: stroke, width: 1 });
+      const bonus = sys.bonus ?? 0;
+      for (let b = 0; b < sys.level; b++) {
+        const yy = SYS_ICON_Y - 26 - b * (BAR_H + 2);
+        const damaged = b >= sys.level - sys.damage;
+        const ion = !damaged && b >= cap;
+        const powered = !damaged && !ion && b < (isSub ? cap : Math.min(cap, sys.power + bonus));
+        const zoltan = powered && !isSub && b >= sys.power;
+        if (damaged) {
+          g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0xd03a2a });
+          // The lowest damaged bar shows repair progress.
+          if (b === sys.level - sys.damage && sys.repair > 0) g.rect(x, yy, BAR_W * sys.repair, BAR_H).fill({ color: 0xffe050 });
+        } else if (ion) g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0x3a7fd0 });
+        else if (powered) g.rect(x, yy, BAR_W, BAR_H).fill({ color: zoltan ? 0xd8ff50 : isSub ? 0xe8e8e8 : 0x78ff78 });
+        else g.rect(x + 0.5, yy + 0.5, BAR_W - 1, BAR_H - 1).stroke({ color: 0xdfe8e0, width: 1 });
       }
-      const icon = texNow(`icons/s_${id}_${sys.damage >= sys.level ? "red" : sys.damage > 0 ? "orange" : sys.power === 0 && !isSub ? "grey" : "green"}1.png`);
-      if (icon) {
-        const sp = new Sprite(icon);
-        sp.scale.set(0.5);
-        sp.position.set(x - 4, baseY - 36);
-        this.hud.addChild(sp);
-      } else {
-        const t = txt(id.slice(0, 3).toUpperCase(), 10, 0xffffff, "700");
-        t.position.set(x, baseY - 30);
-        this.hud.addChild(t);
-      }
-      this.sysHit.push({ id, x: x - 4, y: baseY - 46 - sys.level * 9, w: 32, h: sys.level * 9 + 50 });
-      x += 40;
-    }
-    // Door buttons
+      const state = sys.damage >= sys.level ? "red" : sys.damage > 0 ? "orange" : sys.ion > 0 ? "blue" : sys.power + bonus === 0 && !isSub ? "grey" : "green";
+      const icon = texNow(`icons/s_${sys.id}_${state}1.png`) ?? texNow(`icons/s_${sys.id}_green1.png`);
+      if (icon) h.sprite(`si${sys.id}`, icon, x + BAR_W / 2, SYS_ICON_Y, { anchor: 0.5, scale: 0.62 });
+      else h.text(`si${sys.id}`, sys.id.slice(0, 3).toUpperCase(), x + BAR_W / 2, SYS_ICON_Y, style(10, 0xffffff, "700"), [0.5, 0.5]);
+      this.sysHit.push({ id: sys.id, box: { x: x - 10, y: SYS_ICON_Y - 30 - sys.level * (BAR_H + 2), w: BAR_W + 20, h: sys.level * (BAR_H + 2) + 50 } });
+    });
+    // Door control button (open all / close all).
+    this.doorBtns = [];
     if (s.systems.doors) {
-      this.doorBtns = [
-        { open: true, x, y: baseY - 60, w: 74, h: 24 },
-        { open: false, x, y: baseY - 30, w: 74, h: 24 },
-      ];
-      for (const b of this.doorBtns) {
-        g.rect(b.x, b.y, b.w, b.h).fill({ color: 0x2b3240 }).stroke({ color: 0x6d7686, width: 1 });
-        const t = txt(b.open ? "Open doors" : "Close doors", 10, 0xffffff);
-        t.position.set(b.x + 6, b.y + 5);
-        this.hud.addChild(t);
+      const x = SYS_X0 + systems.length * SYS_DX + 8;
+      const y = H - 92;
+      const base = texNow("systemUI/button_door_base.png");
+      if (base) {
+        h.sprite("doorB", base, x, y);
+        h.sprite("doorT", texNow("systemUI/button_door_top_on.png"), x, y);
+        h.sprite("doorD", texNow("systemUI/button_door_bottom_on.png"), x, y);
+      } else {
+        g.roundRect(x, y, 40, 79, 4).stroke({ color: 0xdfe8e0, width: 2 });
+        h.text("doorTx", "OPEN\n\nSHUT", x + 20, y + 40, style(9, 0xffffff, "700", "center"), [0.5, 0.5]);
       }
-    } else this.doorBtns = [];
+      this.doorBtns = [
+        { open: true, box: { x, y, w: 40, h: 40 } },
+        { open: false, box: { x, y: y + 40, w: 40, h: 39 } },
+      ];
+    }
   }
 
-  private weaponsTray(g: Graphics, s: ShipView): void {
+  private weaponsTray(s: ShipView): void {
+    const h = this.hud;
     this.weapHit = [];
-    const x0 = 470;
-    const y0 = 610;
+    const n = Math.max(2, Math.min(4, s.weapons.length));
+    const boxT = texNow(`box_weapons_bottom${n}.png`);
+    const x0 = 430;
+    const y0 = WEAP_Y;
+    const g = h.gfx("weap");
+    if (boxT) h.sprite("wbox", boxT, x0, y0);
+    else g.roundRect(x0 + 6, y0 + 6, 12 + n * 97, 76, 4).fill({ color: 0x2a1c26, alpha: 0.85 }).stroke({ color: 0xdfe8e0, width: 2 });
+    const label = texNow("box_weapons_bottom_label.png");
+    if (label) h.sprite("wlab", label, x0 + 8, y0 - 18);
     const ws = s.systems.weapons;
-    const label = txt(ws ? `WEAPONS  ${ws.power}/${usable(ws)}` : "NO WEAPONS SYSTEM", 11, 0xb8c0cc, "700");
-    label.position.set(x0, y0 - 18);
-    this.hud.addChild(label);
+    if (label) h.text("wlabT", "WPN", x0 + 14, y0 - 13, style(10, 0x1a1a1a, "700"));
+    if (ws) h.text("wpow", `WEAPONS ${Math.min(ws.power + (ws.bonus ?? 0), usable(ws))}/${usable(ws)}`, x0 + 64, y0 - 13, style(10, 0xb8c0cc, "700"));
     s.weapons.forEach((w, i) => {
       const bp = this.db.weapons[w.bp];
-      const x = x0 + i * 140;
+      const bx = x0 + 14 + i * 97;
+      const by = y0 + 13;
       const armed = this.armed === i;
-      g.rect(x, y0, 132, 94).fill({ color: armed ? 0x3a2a14 : 0x1a1d24, alpha: 0.95 }).stroke({ color: armed ? 0xffd27a : w.powered ? 0x6fdc6f : 0x5a6272, width: 2 });
-      const t = txt(`${i + 1}. ${bp?.title ?? w.bp}`, 11, w.powered ? 0xffffff : 0x9aa3b2, "700");
-      t.position.set(x + 6, y0 + 4);
-      this.hud.addChild(t);
-      for (let p = 0; p < (bp?.power ?? 1); p++) g.rect(x + 6 + p * 12, y0 + 24, 9, 9).fill({ color: w.powered ? 0x6fdc6f : 0x000000 }).stroke({ color: 0x6fdc6f, width: 1 });
+      const ready = w.powered && w.volleys > 0;
+      const glow = texNow("bar_weapon_minibox_glow.png");
+      if (ready && glow) h.sprite(`wg${i}`, glow, bx - 18, by - 12, { w: 125, h: 85, alpha: 0.55 + 0.25 * Math.sin(this.time * 6), tint: armed ? 0xffd040 : 0x78ff78 });
+      g.roundRect(bx, by, 90, 58, 3).fill({ color: armed ? 0x4a3410 : 0x10141a, alpha: 0.9 }).stroke({ color: armed ? 0xffd040 : w.powered ? 0x78ff78 : 0x8a92a0, width: armed ? 3 : 1.5 });
+      // Power pips down the left edge, then name and charge bar.
+      for (let p = 0; p < (bp?.power ?? 1); p++) g.rect(bx + 4, by + 46 - p * 10, 8, 8).fill({ color: w.powered ? 0x78ff78 : 0x10141a }).stroke({ color: 0x78ff78, width: 1 });
+      const title = (bp?.title ?? w.bp).replace("Mark ", "Mk ").replace("Laser", "Laser");
+      h.text(`wn${i}`, title.length > 15 ? `${title.slice(0, 14)}…` : title, bx + 16, by + 5, style(10, w.powered ? (ready ? 0xffe070 : 0xffffff) : 0x8a92a0, "700"));
       const cd = bp?.cooldown ?? 1;
-      const ready = w.volleys > 0;
-      g.rect(x + 6, y0 + 40, 120, 8).fill({ color: 0x222222 }).rect(x + 6, y0 + 40, 120 * Math.min(1, ready ? 1 : w.charge / cd), 8).fill({ color: ready ? 0xffd040 : 0x6fdc6f });
-      const st = txt(
-        bp ? `${bp.type === "BURST" ? "flak" : bp.type.toLowerCase()} · ${bp.damage}dmg x${bp.type === "BEAM" ? 1 : bp.shots}${bp.missiles ? ` · ${bp.missiles} msl` : ""}${bp.chargeLevels > 1 ? ` · ${w.volleys}/${bp.chargeLevels}` : ""}` : "",
-        10, 0xaab3c0,
-      );
-      st.position.set(x + 6, y0 + 52);
-      this.hud.addChild(st);
-      const auto = { x: x + 6, y: y0 + 68, w: 120, h: 20 };
-      g.rect(auto.x, auto.y, auto.w, auto.h).fill({ color: w.autofire ? 0x5a4a14 : 0x2b3240 }).stroke({ color: w.autofire ? 0xffd040 : 0x6d7686, width: 1 });
-      const at = txt(w.autofire ? "AUTOFIRE ON" : "autofire off", 10, w.autofire ? 0xffe080 : 0xb8c0cc, "700");
-      at.position.set(auto.x + 6, auto.y + 4);
-      this.hud.addChild(at);
-      this.weapHit.push({ slot: i, x, y: y0, w: 132, h: 66, auto });
+      const k = ready ? 1 : Math.min(1, Math.max(0, w.charge) / cd);
+      // Charge: a row of lights that come on as the weapon readies.
+      const lights = 10;
+      for (let l = 0; l < lights; l++) {
+        const on = l < Math.floor(k * lights + 1e-6);
+        g.rect(bx + 16 + l * 7, by + 22, 5, 8).fill({ color: on ? (ready ? 0xffd040 : 0x78ff78) : 0x1d2a1d });
+      }
+      if (bp?.chargeLevels && bp.chargeLevels > 1) h.text(`wcl${i}`, `${w.volleys}/${bp.chargeLevels}`, bx + 86, by + 34, style(10, 0xffe070, "700"), [1, 0]);
+      if (bp?.missiles) h.text(`wm${i}`, `${bp.missiles} msl`, bx + 16, by + 36, style(9, s.missiles >= bp.missiles ? 0xb8c0cc : 0xff6050));
+      if (w.autofire) h.text(`wa${i}`, "AUTO", bx + 86, by + 46, style(9, 0xffd040, "700"), [1, 0]);
+      this.weapHit.push({ slot: i, box: { x: bx, y: by, w: 90, h: 58 } });
     });
+    // Autofire toggle for the armed weapon (or all weapons when none is armed).
+    const ab = texNow("box_weapons_autofire_base.png");
+    const ax = x0 + 14 + n * 97 + 6;
+    const anyAuto = s.weapons.some((w) => w.autofire);
+    if (ab) h.sprite("auto", ab, ax, y0 + 18, { tint: anyAuto ? 0xffd040 : 0xffffff });
+    else g.roundRect(ax, y0 + 18, 34, 44, 4).stroke({ color: anyAuto ? 0xffd040 : 0xdfe8e0, width: 2 });
+    h.text("autoT", "AUTO", ax + 17, y0 + 68, style(9, anyAuto ? 0xffd040 : 0xb8c0cc, "700"), [0.5, 0]);
+    this.autoBox = { x: ax, y: y0 + 18, w: 37, h: 50 };
   }
 
   // ---------------------------------------------------------------- input
-
-  private inBox(p: { x: number; y: number }, b: { x: number; y: number; w: number; h: number }) {
-    return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
-  }
 
   private onDown(e: FederatedPointerEvent): void {
     const v = this.view;
@@ -556,26 +793,32 @@ export class Battle {
     const right = e.button === 2;
     const own = v.ships[v.you];
     for (const s of this.sysHit) {
-      if (this.inBox(p, s)) {
-        if (!SUBSYSTEMS.includes(s.id)) this.send({ c: "power", system: s.id, delta: right ? -1 : 1 });
-        return;
-      }
+      if (!inBox(p, s.box)) continue;
+      if (!SUBSYSTEMS.includes(s.id)) this.powerClick(own, s.id, right ? -1 : 1);
+      return;
     }
-    for (const b of this.doorBtns) if (this.inBox(p, b)) return this.send({ c: "doorsAll", open: b.open });
-    for (const w of this.weapHit) {
-      if (this.inBox(p, w.auto)) return this.send({ c: "autofire", slot: w.slot, on: !own.weapons[w.slot].autofire });
-      if (this.inBox(p, w)) return this.clickWeapon(w.slot, right);
+    for (const b of this.doorBtns) {
+      if (!inBox(p, b.box)) continue;
+      this.send({ c: "doorsAll", open: b.open });
+      play(this.db, [b.open ? "doorOpen" : "doorClose"]);
+      return;
     }
+    if (this.autoBox && inBox(p, this.autoBox)) {
+      const slots = this.armed !== null ? [this.armed] : own.weapons.map((_, i) => i);
+      const on = !(this.armed !== null ? own.weapons[this.armed].autofire : own.weapons.some((w) => w.autofire));
+      for (const slot of slots) this.send({ c: "autofire", slot, on });
+      play(this.db, [on ? "autofireOn" : "autofireOff"]);
+      return;
+    }
+    for (const w of this.weapHit) if (inBox(p, w.box)) return this.clickWeapon(w.slot, right);
     for (const c of this.crewHit) {
-      if (this.inBox(p, c)) {
-        if (!e.shiftKey) this.selected.clear();
-        this.selected.add(c.id);
-        return;
-      }
+      if (!inBox(p, c.box)) continue;
+      if (!e.shiftKey) this.selected.clear();
+      this.selected.add(c.id);
+      return;
     }
-    // Enemy ship: targeting
     const ep = this.enemy.root.toLocal(e.global);
-    const eh = this.enemy.pick(ep.x, ep.y);
+    const eh = inBox(p, WIN) ? this.enemy.pick(ep.x, ep.y) : { room: -1, door: -1 };
     if (this.armed !== null) {
       if (right) return this.disarm();
       const bp = this.db.weapons[own.weapons[this.armed].bp];
@@ -594,14 +837,18 @@ export class Battle {
       }
       return;
     }
-    // Own ship: crew, doors
     const op = this.own.root.toLocal(e.global);
     const oh = this.own.pick(op.x, op.y);
     if (right) {
       if (oh.room >= 0 && this.selected.size) this.send({ c: "moveCrew", crew: [...this.selected], room: oh.room });
       return;
     }
-    if (oh.door >= 0) return this.send({ c: "door", door: oh.door, open: !own.doors[oh.door] });
+    if (oh.door >= 0) {
+      const open = !own.doors[oh.door];
+      this.send({ c: "door", door: oh.door, open });
+      play(this.db, [open ? "doorOpen" : "doorClose"]);
+      return;
+    }
     const hit = own.crew.find((c) => !c.dead && Math.hypot(c.x + 0.5 - op.x / 35, c.y + 0.5 - op.y / 35) < 0.45);
     if (hit) {
       if (!e.shiftKey) this.selected.clear();
@@ -611,16 +858,28 @@ export class Battle {
     this.drag = { x: p.x, y: p.y, x2: p.x, y2: p.y };
   }
 
+  /** Predict whether the power change will succeed, for instant FTL click sounds; the server decides. */
+  private powerClick(own: ShipView, id: SystemId, delta: 1 | -1): void {
+    const s = own.systems[id];
+    if (!s) return;
+    const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
+    const ok = delta > 0 ? used < own.reactor && s.power < usable(s) : s.power > 0;
+    play(this.db, [ok ? (delta > 0 ? "powerUpSystem" : "powerDownSystem") : "powerUpFail"]);
+    if (ok) this.send({ c: "power", system: id, delta });
+  }
+
   private onMove(e: FederatedPointerEvent): void {
     const p = this.stage.toLocal(e.global);
     if (this.drag) {
       this.drag.x2 = p.x;
       this.drag.y2 = p.y;
     }
-    const op = this.own.root?.toLocal(e.global);
-    const ep = this.enemy?.root.toLocal(e.global);
-    if (op) this.hoverOwn = this.selected.size ? this.own.pick(op.x, op.y) : { room: -1, door: this.own.pick(op.x, op.y).door };
-    if (ep) this.hoverEnemy = this.enemy.pick(ep.x, ep.y);
+    if (!this.own) return;
+    const op = this.own.root.toLocal(e.global);
+    const ep = this.enemy.root.toLocal(e.global);
+    const ph = this.own.pick(op.x, op.y);
+    this.hoverOwn = this.selected.size ? ph : { room: -1, door: ph.door };
+    this.hoverEnemy = inBox(p, WIN) ? this.enemy.pick(ep.x, ep.y) : { room: -1, door: -1 };
   }
 
   private onUp(e: FederatedPointerEvent): void {
@@ -646,12 +905,22 @@ export class Battle {
     const own = this.view!.ships[this.view!.you];
     const w = own.weapons[slot];
     if (!w) return;
+    const bp = this.db.weapons[w.bp];
     if (right) {
-      if (w.powered) this.send({ c: "weaponPower", slot, on: false });
+      if (w.powered) {
+        this.send({ c: "weaponPower", slot, on: false });
+        play(this.db, ["powerDownSystem"]);
+      }
       if (this.armed === slot) this.disarm();
       return;
     }
-    if (!w.powered) return this.send({ c: "weaponPower", slot, on: true });
+    if (!w.powered) {
+      const ws = own.systems.weapons;
+      const load = own.weapons.filter((q) => q.powered).reduce((a, q) => a + (this.db.weapons[q.bp]?.power ?? 1), 0);
+      const ok = !!ws && load + (bp?.power ?? 1) <= usable(ws);
+      play(this.db, [ok ? "powerUpSystem" : "powerUpFail"]);
+      return this.send({ c: "weaponPower", slot, on: true });
+    }
     if (this.armed === slot) {
       this.send({ c: "target", slot, target: null });
       return this.disarm();
@@ -678,8 +947,7 @@ export class Battle {
     else if (e.key.toLowerCase() === "x") this.send({ c: "doorsAll", open: false });
     else if (e.key === "Tab") {
       e.preventDefault();
-      const alive = own.crew.filter((c) => !c.dead);
-      this.selected = new Set(alive.map((c) => c.id));
+      this.selected = new Set(own.crew.filter((c) => !c.dead).map((c) => c.id));
     }
   }
 }

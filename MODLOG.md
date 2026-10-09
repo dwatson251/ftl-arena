@@ -52,6 +52,35 @@
   - per-race crewCount entries weren't summed.
 - **Publish check:** `um publish check` on a `git archive` export passed, 56 files.
 
+## UI polish and bot difficulty (2026-10-09, second session)
+- **FTL HUD art, verified by screenshot.**
+  - `statusUI/top_hull_bar_mask.png` is 30 segments of 11 px with 1 px gaps. It sits at (8, 0) in
+    `top_hull.png`.
+  - Inside `combatUI/box_hostiles_mask.png`, the window interior is (14, 29)-(389, 532). The mask art is
+    **black** inside, and Pixi sprite masks read red × alpha, so I used a polygon mask instead.
+- **`people/<race>_color.png` is a white silhouette**, not a shirt layer. FTL uses it for the selection
+  glow, and so does the arena now.
+- **`effects/door_sheet.png`** is 5×5 frames of 35 px: the rows are door level (orange, grey blast
+  levels 2-4, purple hacked) and the columns go from closed to open.
+- **Enemy ships point up.** Their mounts are `rotate="false"` and weapon art points up. A player hull
+  rotated by −90° matches that.
+- **Gibs:** `<explosion><gibN>` has `velocity`/`direction`/`angular` ranges and an x,y offset from the
+  hull image. Velocity ×20 px/s looks right.
+- **Bot difficulty, measured.**
+  - Mirror fights stop separating bot levels above about 0.5.
+  - Measured with `ab.ts` at 40 seeds vs level 0.5:
+    - "man stations": 33 % with it, 45 % without;
+    - "missiles on shields": 51 % without.
+
+    Both are off now.
+  - The bot's hangar also wasted extra scrap on bars it couldn't power (17 bars of demand on an
+    11-bar reactor). Now it buys reactor bars to match.
+  - The difficulty slider then became monotonic: 0 → 0 %, 20 → 40 %, 40 → 75 %, 100 → 100 % vs a fixed
+    level-0.6 player.
+- **The debug drawer** is built once and updated in place. Re-creating it at 15 Hz detached buttons
+  between mousedown and mouseup, so clicks were lost.
+- **`names.xml`** includes localised names (Chinese, Russian). The parser keeps Latin-script ones.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

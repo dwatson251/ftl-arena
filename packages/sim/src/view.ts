@@ -6,6 +6,7 @@
 import { geometry } from "./geometry.ts";
 import type { Match } from "./match.ts";
 import type { MatchEvent, MatchState, Projectile, ShipState } from "./state.ts";
+import { raceOf } from "./rules.ts";
 
 export interface ShipView extends ShipState {
   /** Room ids the viewer can see inside; null = all. */
@@ -27,12 +28,13 @@ export interface MatchView {
   endReason: string;
 }
 
-export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.events): MatchView {
+export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.events, reveal = false): MatchView {
   const st = m.state;
   const own = st.ships[you];
   const enemy = st.ships[1 - you];
   const sensors = m.eff(own.systems.sensors);
-  const over = st.winner !== null;
+  const over = st.winner !== null || reveal;
+  const telepath = own.crew.some((c) => !c.dead && raceOf(c.race).telepathic);
 
   const ownView: ShipView = { ...structuredClone(own), visibleRooms: null, interior: true, weaponsKnown: true };
   if (sensors <= 0 && !over) {
@@ -45,7 +47,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   ev.interior = over || sensors >= 2;
   ev.weaponsKnown = over || sensors >= 3;
   if (!ev.interior) {
-    ev.crew = [];
+    if (!telepath) ev.crew = [];
     ev.visibleRooms = [];
     for (const r of ev.rooms) {
       r.o2 = -1;

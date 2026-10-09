@@ -41,13 +41,24 @@ runtime from your own blueprints** and aren't repeated here.
 | Store prices | blueprint `cost`; missiles 6; crew from the race blueprint; sell refund 50 % | bp / wiki |
 | Reactor price | 30 + 5 per 5 levels above 5 | est |
 
+## Races
+- **Traits:** `RACES` in `rules.ts`, all at wiki level.
+  - Engi repair ×2. Mantis speed ×1.2, repair ×0.5. Rockman 150 HP, fire-immune, speed ×0.5.
+  - Zoltan 70 HP, +1 power to the system in its room. Crystal 125 HP, suffocation ×0.5, speed ×0.8.
+  - Lanius doesn't suffocate and drains 1.5 % O2/s from its room (est). Slug is telepathic: it sees enemy
+    crew.
+- **Repair multiplier:** it also scales firefighting and breach repair.
+- **Combat multipliers:** recorded for boarding in v2.
+
 ## Rules specific to the arena (not in FTL)
 - **No pause.** Both ships run in real time.
 - **Simultaneous processing** alternates which ship goes first every tick, so neither side always wins
   ties. In bot-vs-bot mirrors this went from 20/20 for ship 0 to 7/13 over 20 seeds.
 - **Charge weapons on autofire** wait for full charge. A manual target fires whatever is stored.
 - **Kill-the-crew mode** floors hulls at 1.
-- **v1 crews are all human.** A hull's per-race `<crewCount>` entries are summed.
+- **Starting crew:** a hull's per-race `<crewCount>` entries give its starting crew, free. Hiring costs the race's
+  blueprint `cost`.
+- **Opening power plan:** shields, then engines, then 1 bar of oxygen, then weapons in slot order, then the medbay.
 
 ## Parity pass (to do)
 Values marked **est** still need measuring against real single-player FTL:

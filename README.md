@@ -30,7 +30,23 @@ Open http://localhost:5173 in two browsers:
 2. The other player clicks **Join**.
 3. Both spend scrap and press **Ready**.
 
-**Practice vs bot** gives you a solo opponent.
+**Practice vs bot** gives you a solo opponent. In the lobby, a **difficulty slider (0-100)** sets it:
+- **0-60:** raises its play skill: reaction time, mistakes, targeting, volley sync, beam timing, repairs,
+  medbay and firefighting, and power swaps.
+- **60-100:** skill is maxed, and the bot also gets up to +100% hangar scrap. It always spends that scrap on
+  a powered build.
+
+Measured against a steady mid-level player, the bot wins 0% at difficulty 0, 40% at 20, about 75-80% at
+40-80, and 100% at 100 (`npx tsx tools/bench/difficulty.ts`). You can also choose the bot's hull.
+
+**Debug tools** (practice lobbies; on by default) add a drawer on the right in battle:
+- sim speed from pause to 8×, and single-tick or 1-second steps;
+- restart the match;
+- reveal the enemy, god mode, and "autopilot me" (a level-1 bot flies your ship, so you can watch bot vs
+  bot);
+- change the bot's difficulty live;
+- quick sabotage on either ship: −5 hull, start a fire, break a system;
+- the bot's reasoning log.
 
 **LAN or internet:** one player runs the server and the client. The other opens
 `http://<host>:5173/?server=<host>:8787`, or the host builds the client (`npx vite build apps/client`) and
@@ -50,6 +66,14 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 | Doors | click a door; `Z`/`X` open/close all (airlocks stay shut) |
 | Sound | `M` |
 
+## The hangar
+Ship creation runs in steps: **Ship → Systems → Weapons → Crew → Launch**.
+1. **Ship:** pick a hull from FTL's ship-select thumbnails.
+2. **Systems:** buy system levels, reactor bars and missiles.
+3. **Weapons:** buy weapons from a store that shows each weapon's art and stats.
+4. **Crew:** hire named crew of any race (Human, Engi, Mantis, Rockman, Slug, Zoltan, Crystal, Lanius), each
+   at its blueprint price. Rename them or roll a name from FTL's name list.
+
 ## What's in v1
 - **Systems:** shields, engines, piloting, oxygen, medbay, weapons, sensors and doors, with reactor power,
   system damage, ion and repair.
@@ -59,10 +83,28 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 - **Crew:** pathfinding, manning bonuses, skills, firefighting, repair and medbay healing.
 - **Sensor fog**, enforced by the server: level 2 shows the enemy interior, level 3 shows enemy weapon
   charge, and with broken sensors you only see rooms your own crew stand in.
-- **14 player hulls** from your install. In v1 every crew member is human.
+- **14 player hulls** from your install, with their starting crews.
+- **Races:**
+  - Engi: repairs twice as fast.
+  - Mantis: fast but repairs slowly.
+  - Rockman: 150 HP and immune to fire.
+  - Zoltan: 70 HP and powers the system it stands in.
+  - Slug: telepathic, so it sees enemy crew without sensors.
+  - Crystal: 125 HP and suffocates slowly.
+  - Lanius: doesn't breathe and drains O2 from its room.
+
+  Boarding isn't in v1, so combat strength doesn't matter yet.
+- **FTL's UI:**
+  - the hull bar and frame, shield squares, the evade/O2 panel and the missile counter;
+  - the reactor wire and system power columns (repair progress fills the damaged bar);
+  - the weapon tray, whose charge lights fill as weapons ready;
+  - doors from FTL's door sheet, green destination tiles and selection glow;
+  - the enemy ship standing vertically in the hostiles window.
+- **Shots:** they leave one view, vanish, and enter the other view a moment later. Missed shots fly past.
+- **Destroyed ships** break into their gibs before the result screen.
 
 Planned for v2: drones, cloaking, teleporter/boarding and crew combat, hacking, mind control, battery,
-clone bay, non-human races and augments.
+clone bay and augments.
 
 ## Layout
 | Path | What |
@@ -82,6 +124,10 @@ npm test                      # vitest: parsers, PKG round trip (if FTL is insta
 npm run bench -- --seed 3     # headless bot vs bot, prints winner + state hash
 npx tsx tools/bench/netsmoke.ts ws://localhost:8787/ws 15
 npx tsx tools/bench/e2e.ts --secs 60 [--win crew] [--limit 90] [--video]   # two Chromium pages, screenshots in traces/
+npx tsx tools/bench/practice-e2e.ts [--gibs] [--burst]                      # practice walkthrough: hangar steps, debug drawer, explosion
+npx tsx tools/bench/ladder.ts --levels 0,0.5,1                              # bot level vs bot level win matrix
+npx tsx tools/bench/difficulty.ts                                           # the 0-100 slider vs a fixed player
+npx tsx tools/bench/ab.ts                                                   # A/B one bot behaviour against level 0.5
 ```
 
 ## Credits

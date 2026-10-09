@@ -40,7 +40,7 @@ const systems: SystemBP[] = [
 /** An original 13-room hull: a 3-wide spine with wings. */
 const skiff: ShipLayout = {
   id: "ph_skiff", xOffset: 1, yOffset: 1, img: { x: -40, y: -40, w: 560, h: 330 }, floor: { x: 0, y: 0 },
-  ellipse: { a: 320, b: 200, x: 0, y: 0 }, mounts: [
+  ellipse: { a: 320, b: 200, x: 0, y: 0 }, gibs: [], mounts: [
     { x: 380, y: 30, rotate: true, mirror: true }, { x: 380, y: 220, rotate: true, mirror: false },
     { x: 250, y: 30, rotate: true, mirror: true }, { x: 250, y: 220, rotate: true, mirror: false },
   ],
@@ -78,11 +78,18 @@ export function placeholderDb(): GameDB {
     source: "placeholder",
     weapons: Object.fromEntries(weapons.map((x) => [x.id, x])),
     systems: Object.fromEntries(systems.map((x) => [x.id, x])),
-    crew: { human: { id: "human", title: "Human", cost: 45 } },
+    crew: {
+      human: { id: "human", title: "Human", cost: 45 },
+      engi: { id: "engi", title: "Engi", cost: 45 },
+      mantis: { id: "mantis", title: "Mantis", cost: 55 },
+      rock: { id: "rock", title: "Rockman", cost: 55 },
+      energy: { id: "energy", title: "Zoltan", cost: 60 },
+      slug: { id: "slug", title: "Slug", cost: 45 },
+    },
     ships: {
       PH_SKIFF: {
         id: "PH_SKIFF", title: "Arena Skiff", layout: "ph_skiff", img: "", weaponSlots: 4, weapons: ["PH_TORPEDO", "PH_TRIPLE"],
-        missiles: 8, health: 30, maxPower: 8, crewCount: 3, crewRace: "human",
+        missiles: 8, health: 30, maxPower: 8, crewCount: 3, crewRace: "human", crewRaces: ["human", "human", "human"],
         systems: [
           { id: "pilot", room: 0, power: 1, start: true, station: 1 },
           { id: "shields", room: 1, power: 2, start: true, station: 0 },
@@ -96,6 +103,6 @@ export function placeholderDb(): GameDB {
       },
     },
     layouts: { ph_skiff: skiff },
-    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, hangar: ["PH_SKIFF"],
+    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, names: [], hangar: ["PH_SKIFF"],
   };
 }

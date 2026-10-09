@@ -33,6 +33,8 @@ export interface SystemState {
   station: string;
   /** Fractional fire damage accumulator. */
   fireDmg: number;
+  /** Free power from Zoltan crew standing in the room (recomputed every tick). */
+  bonus: number;
 }
 
 export interface RoomState {

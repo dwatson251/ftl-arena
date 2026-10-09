@@ -1,73 +1,330 @@
-/** A simple opponent for practice and for the bench. It only issues Commands, like a human. */
+/**
+ * The practice opponent. One `level` in [0, 1] drives everything, so difficulty is a single slider:
+ *
+ *   level   thinks every   mistakes   targeting                        crew / power
+ *   0.0     ~3 s           45 %       random rooms                     never touches crew or power
+ *   0.3     ~2.2 s         31 %       shields > weapons > helm         repairs, keeps shields fed
+ *   0.6     ~1.4 s         18 %       + volley sync                    + medbay, firefighting, power swaps
+ *   1.0     ~0.3 s         0 %        + beams held until shields drop  (same, faster and error-free)
+ *
+ * Past ~0.5, play quality stops separating bots in mirror fights, so difficultyToBot() adds hangar scrap
+ * on top. Bench: npx tsx tools/bench/ladder.ts.
+ *
+ * It only issues Commands, exactly like a player, so it can't cheat the sim. `log` keeps its recent
+ * reasoning for the debug panel.
+ */
+import type { GameDB, SystemId } from "@ftl/data";
 import type { Command } from "./commands.ts";
-import { geometry, roomCentre } from "./geometry.ts";
+import { geometry, roomCentre, type Geometry } from "./geometry.ts";
+import { baseLoadout, buyableWeapons, hullSystems, priceLoadout, randomCrewName, usable, type Loadout } from "./loadout.ts";
 import type { Match } from "./match.ts";
-import { TICK_HZ } from "./rules.ts";
+import { Rng } from "./rng.ts";
+import { DT, RACES } from "./rules.ts";
+import type { CrewState, ShipState } from "./state.ts";
 
-export function botCommands(m: Match, me: 0 | 1): Command[] {
-  const st = m.state;
-  if (st.tick % TICK_HZ !== me * 7) return [];
-  const out: Command[] = [];
-  const ship = st.ships[me];
-  const enemy = st.ships[1 - me];
-  const eg = geometry(m.db.layouts[enemy.layout]);
-  const prefer = (ids: string[]) => {
-    for (const id of ids) {
-      const s = enemy.systems[id as keyof typeof enemy.systems];
+export interface BotSkills {
+  thinkEvery: number;
+  mistake: number;
+  smartTargets: boolean;
+  syncVolleys: boolean;
+  missilesOnShields: boolean;
+  beamAfterShields: boolean;
+  repair: boolean;
+  powerMgmt: boolean;
+  medbay: boolean;
+  firefight: boolean;
+  stations: boolean;
+}
+
+export function botSkills(level: number): BotSkills {
+  const l = Math.max(0, Math.min(1, level));
+  return {
+    thinkEvery: 3.0 - 2.7 * l,
+    mistake: 0.45 * (1 - l),
+    smartTargets: l >= 0.25,
+    syncVolleys: l >= 0.55,
+    // Measured (tools/bench/ab.ts, 40 seeds vs level 0.5): aiming missiles at shields and pulling crew
+    // back to stations both lost games, so they stay off unless forced via overrides.
+    missilesOnShields: false,
+    beamAfterShields: l >= 0.75,
+    repair: l >= 0.2,
+    powerMgmt: l >= 0.3,
+    medbay: l >= 0.45,
+    firefight: l >= 0.55,
+    stations: false,
+  };
+}
+
+const PRIORITY: SystemId[] = ["shields", "weapons", "pilot", "engines", "oxygen", "medbay", "sensors", "doors"];
+
+export class Bot {
+  level = 0;
+  skills = botSkills(0);
+  log: string[] = [];
+  private next = 0;
+  private rng: Rng;
+
+  constructor(level: number, seed = 12345, public overrides: Partial<BotSkills> = {}) {
+    this.rng = new Rng(seed);
+    this.setLevel(level);
+  }
+
+  setLevel(level: number): void {
+    this.level = Math.max(0, Math.min(1, level));
+    this.skills = { ...botSkills(this.level), ...this.overrides };
+  }
+
+  private note(m: Match, s: string): void {
+    this.log.push(`${(m.state.tick * DT).toFixed(1)}s  ${s}`);
+    if (this.log.length > 60) this.log.shift();
+  }
+
+  think(m: Match, me: 0 | 1): Command[] {
+    const t = m.state.tick * DT;
+    if (t < this.next) return [];
+    const sk = this.skills;
+    this.next = t + sk.thinkEvery * (0.75 + this.rng.next() * 0.5);
+    if (this.rng.chance(sk.mistake)) {
+      this.note(m, "hesitates");
+      return [];
+    }
+    const out: Command[] = [];
+    const ship = m.state.ships[me];
+    const enemy = m.state.ships[1 - me];
+    this.weapons(m, ship, enemy, out);
+    if (sk.powerMgmt) this.power(m, ship, out);
+    this.crew(m, ship, out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------- weapons
+
+  private pickRoom(enemy: ShipState, prefer: SystemId[]): number {
+    if (!this.skills.smartTargets) return this.rng.pick(enemy.rooms).id;
+    for (const id of prefer) {
+      const s = enemy.systems[id];
       if (s && s.damage < s.level) return s.room;
     }
-    return enemy.rooms[0].id;
-  };
-  ship.weapons.forEach((w, slot) => {
-    const bp = m.wbp(w.bp);
-    if (!w.powered) out.push({ c: "weaponPower", slot, on: true });
-    if (!w.autofire) out.push({ c: "autofire", slot, on: true });
-    const room = bp.type === "MISSILES" || bp.type === "BOMB" ? prefer(["weapons", "shields", "pilot"]) : prefer(["shields", "weapons", "engines"]);
-    if (bp.type === "BEAM") {
-      const c = roomCentre(eg, room);
-      out.push({ c: "target", slot, target: { kind: "beam", x1: c.x, y1: c.y, x2: c.x + 100, y2: c.y } });
-    } else if (!w.target || (w.target.kind === "room" && w.target.room !== room)) {
-      out.push({ c: "target", slot, target: { kind: "room", room } });
+    return this.rng.pick(enemy.rooms).id;
+  }
+
+  private weapons(m: Match, ship: ShipState, enemy: ShipState, out: Command[]): void {
+    const sk = this.skills;
+    const eg = geometry(m.db.layouts[enemy.layout]);
+    ship.weapons.forEach((w, slot) => {
+      if (!w.powered) out.push({ c: "weaponPower", slot, on: true });
+    });
+    const lasers = ship.weapons.filter((w) => {
+      const bp = m.wbp(w.bp);
+      return w.powered && (bp.type === "LASER" || bp.type === "BURST");
+    });
+    const shotsReady = lasers.filter((w) => w.volleys > 0).reduce((a, w) => a + m.wbp(w.bp).shots, 0);
+    const shotsTotal = lasers.reduce((a, w) => a + m.wbp(w.bp).shots, 0);
+    // Volley sync: hold lasers until together they can strip the shields, then release them all.
+    const release = !sk.syncVolleys || shotsTotal <= enemy.shieldLayers || shotsReady >= shotsTotal || shotsReady > enemy.shieldLayers + 1;
+    ship.weapons.forEach((w, slot) => {
+      if (!w.powered) return;
+      const bp = m.wbp(w.bp);
+      if (bp.type === "BEAM") {
+        if (sk.beamAfterShields && bp.damage > 0 && enemy.shieldLayers >= bp.damage) {
+          if (w.target) out.push({ c: "target", slot, target: null });
+          return;
+        }
+        const room = this.pickRoom(enemy, ["shields", "weapons", "oxygen"]);
+        if (w.target && w.autofire) return;
+        out.push({ c: "autofire", slot, on: true }, { c: "target", slot, target: { kind: "beam", ...this.beamLine(eg, room, bp.length || 60) } });
+        this.note(m, `${bp.title} sweeps from room ${room}`);
+        return;
+      }
+      const missile = bp.type === "MISSILES" || bp.type === "BOMB";
+      if (missile && ship.missiles < bp.missiles) return;
+      let prefer: SystemId[] = missile ? ["weapons", "shields", "pilot"] : ["shields", "weapons", "engines", "pilot"];
+      // Missiles on the shield room only pay off when the lasers can't break the shields alone.
+      if (missile && sk.missilesOnShields && enemy.shieldLayers >= 2 && shotsTotal > 0 && shotsTotal <= enemy.shieldLayers + 1)
+        prefer = ["shields", "weapons"];
+      const room = this.pickRoom(enemy, prefer);
+      if (!missile && !release) {
+        if (w.autofire) out.push({ c: "autofire", slot, on: false });
+        if (w.target) out.push({ c: "target", slot, target: null });
+        return;
+      }
+      if (!w.autofire) out.push({ c: "autofire", slot, on: true });
+      if (!(w.target?.kind === "room" && w.target.room === room)) {
+        out.push({ c: "target", slot, target: { kind: "room", room } });
+        const sys = Object.values(enemy.systems).find((s) => s && s.room === room);
+        this.note(m, `${bp.title} → ${sys ? sys.id : `room ${room}`}${!missile && sk.syncVolleys ? " (volley)" : ""}`);
+      }
+    });
+  }
+
+  /** A beam line from the room's centre toward a neighbouring room, so it crosses two rooms. */
+  private beamLine(g: Geometry, room: number, length: number) {
+    const a = roomCentre(g, room);
+    const nb = (g.roomDoors.get(room) ?? []).filter((r) => r >= 0);
+    const b = nb.length ? roomCentre(g, nb[0]) : { x: a.x + length, y: a.y };
+    const dx = b.x - a.x || 1;
+    const dy = b.y - a.y;
+    const d = Math.hypot(dx, dy);
+    return { x1: a.x, y1: a.y, x2: a.x + (dx / d) * length, y2: a.y + (dy / d) * length };
+  }
+
+  // ---------------------------------------------------------------- power
+
+  private power(m: Match, ship: ShipState, out: Command[]): void {
+    const med = ship.systems.medbay;
+    const hurt = this.skills.medbay && ship.crew.some((c) => !c.dead && c.hp < c.maxHp * 0.45);
+    const order: [SystemId, number][] = [["shields", 99], ["engines", 99], ["oxygen", ship.rooms.some((r) => r.o2 < 60) ? 99 : 1]];
+    if (med) order.splice(hurt ? 0 : 3, 0, ["medbay", hurt ? 99 : 0]);
+    for (const [id, n] of order) {
+      const s = ship.systems[id];
+      if (!s) continue;
+      if (s.power < Math.min(n, usable(s))) out.push({ c: "power", system: id, delta: 1 });
+      if (n === 0 && s.power > 0) out.push({ c: "power", system: id, delta: -1 });
     }
-  });
-  // Keep the shields and engines fed, then send idle crew to damaged or burning rooms.
-  const med = ship.systems.medbay;
-  out.push({ c: "power", system: "shields", delta: 1 });
-  if (!med || med.power === 0) out.push({ c: "power", system: "engines", delta: 1 });
-  const g = geometry(m.db.layouts[ship.layout]);
-  const busy = new Set<number>();
-  // Wounded crew go to the medbay (powering it from the engines if the reactor is full), and come back.
-  if (med) {
-    const hurt = ship.crew.filter((c) => !c.dead && c.hp < 45 && g.tiles.get(c.home)?.room !== med.room);
-    if (hurt.length && med.power === 0) out.push({ c: "power", system: "engines", delta: -1 }, { c: "power", system: "medbay", delta: 1 });
-    for (const c of hurt) {
+    if (med && hurt && med.power === 0 && (ship.systems.engines?.power ?? 0) > 0) {
+      out.push({ c: "power", system: "engines", delta: -1 }, { c: "power", system: "medbay", delta: 1 });
+      this.note(m, "engines → medbay");
+    }
+  }
+
+  // ---------------------------------------------------------------- crew
+
+  private crew(m: Match, ship: ShipState, out: Command[]): void {
+    const sk = this.skills;
+    if (!sk.repair) return;
+    const g = geometry(m.db.layouts[ship.layout]);
+    const roomOf = (c: CrewState) => g.tiles.get(c.home)!.room;
+    const busy = new Set<number>();
+    const alive = ship.crew.filter((c) => !c.dead);
+    const send = (c: CrewState, room: number, why: string) => {
       busy.add(c.id);
-      out.push({ c: "moveCrew", crew: [c.id], room: med.room });
-    }
-    const healed = ship.crew.filter((c) => !c.dead && c.hp >= c.maxHp && g.tiles.get(c.home)?.room === med.room);
-    for (const c of healed) {
-      const free = (["weapons", "shields", "engines", "pilot"] as const).map((id) => ship.systems[id]).find(
-        (s) => s && !ship.crew.some((q) => !q.dead && q.home === s.station),
-      );
-      if (free) {
-        busy.add(c.id);
-        out.push({ c: "moveCrew", crew: [c.id], room: free.room });
+      if (roomOf(c) === room) return;
+      out.push({ c: "moveCrew", crew: [c.id], room });
+      this.note(m, `${c.name} → ${why}`);
+    };
+    const pilot = ship.systems.pilot;
+    const isPilot = (c: CrewState) => !!pilot && c.home === pilot.station;
+    const spare = () => alive.find((c) => !busy.has(c.id) && !isPilot(c) && c.hp > c.maxHp * 0.3);
+    // 1. Wounded to the medbay; patients stay until healed.
+    const med = ship.systems.medbay;
+    if (sk.medbay && med && m.eff(med) > 0) {
+      for (const c of alive) {
+        if (c.hp < c.maxHp * 0.4 && roomOf(c) !== med.room) send(c, med.room, "medbay");
+        else if (roomOf(c) === med.room && c.hp < c.maxHp) busy.add(c.id);
       }
     }
-    if (!hurt.length && !ship.crew.some((c) => !c.dead && g.tiles.get(c.home)?.room === med.room) && med.power > 0)
-      out.push({ c: "power", system: "medbay", delta: -1 });
-  }
-  for (const rs of ship.rooms) {
-    const sys = Object.values(ship.systems).find((s) => s && s.room === rs.id);
-    const bad = Object.keys(rs.fires).length || Object.keys(rs.breaches).length || (sys && sys.damage > 0);
-    if (!bad) continue;
-    const here = ship.crew.some((c) => !c.dead && g.tiles.get(c.home)?.room === rs.id);
-    if (here) continue;
-    const spare = ship.crew.find((c) => !c.dead && !busy.has(c.id) && (c.task === "idle" || c.task === "man") && c.tile !== ship.systems.pilot?.station);
-    if (spare) {
-      busy.add(spare.id);
-      out.push({ c: "moveCrew", crew: [spare.id], room: rs.id });
+    // 2. Fires (if allowed), breaches and damaged systems, most important room first.
+    const sysIn = (room: number) => Object.values(ship.systems).find((s) => s && s.room === room);
+    const rank = (room: number) => {
+      const s = sysIn(room);
+      return s ? PRIORITY.indexOf(s.id) : 99;
+    };
+    for (const rs of [...ship.rooms].sort((a, b) => rank(a.id) - rank(b.id))) {
+      const sys = sysIn(rs.id);
+      const fires = Object.keys(rs.fires).length;
+      const problem = (sk.firefight && fires > 0) || Object.keys(rs.breaches).length > 0 || (sys && sys.damage > 0);
+      if (!problem) continue;
+      const here = alive.filter((c) => roomOf(c) === rs.id);
+      for (const c of here) busy.add(c.id);
+      const needed = fires > 0 || (sys && sys.damage >= 2) ? 2 : 1;
+      for (let i = here.length; i < needed; i++) {
+        const c = spare();
+        if (!c) break;
+        if (fires > 2 && !RACES[c.race]?.fireImmune && this.level < 0.9) break;
+        send(c, rs.id, sys && sys.damage ? `repair ${sys.id}` : fires ? "fight fire" : "fix breach");
+      }
+    }
+    // 3. Keep stations manned, helm first.
+    if (sk.stations) {
+      for (const id of ["pilot", "weapons", "shields", "engines"] as SystemId[]) {
+        const s = ship.systems[id];
+        if (!s || !s.station || s.damage >= s.level) continue;
+        if (alive.some((c) => c.home === s.station)) continue;
+        // Only crew with nothing to do: pulling repairers back to stations loses more than manning gains.
+        const c = alive.find((q) => !busy.has(q.id) && q.task === "idle" && q.path.length === 0 && q.hp > q.maxHp * 0.6);
+        if (c) send(c, s.room, `man ${id}`);
+      }
     }
   }
-  return out;
+}
+
+/**
+ * The bot's hangar. Low levels spend at random. From level 0.5 it follows a build order (2 shield
+ * layers, good weapons, weapon bars to power them, engines, more shields) and buys reactor bars whenever
+ * its systems would draw more than the reactor gives, so extra scrap turns into usable strength.
+ */
+export function botLoadout(db: GameDB, shipId: string, scrap: number, level: number, seed = 1): Loadout {
+  const rng = new Rng(seed);
+  const l = baseLoadout(db, shipId);
+  const ship = db.ships[shipId];
+  const hs = hullSystems(db, shipId);
+  const lv = (x: Loadout, id: SystemId) => x.systems[id] ?? hs.find((s) => s.id === id)?.base ?? 0;
+  const tryApply = (f: (x: Loadout) => boolean | void) => {
+    const c = structuredClone(l);
+    if (f(c) === false) return false;
+    const ok = priceLoadout(db, c, scrap).ok;
+    if (ok) Object.assign(l, c);
+    return ok;
+  };
+  const weaponsPower = (x: Loadout) => x.weapons.reduce((a, w) => a + (db.weapons[w]?.power ?? 1), 0);
+  /** Reactor bars the main systems want: shields, engines, 1 oxygen, 1 medbay, and the weapons in use. */
+  const demand = (x: Loadout) => lv(x, "shields") + lv(x, "engines") + Math.min(1, lv(x, "oxygen")) + Math.min(1, lv(x, "medbay")) + Math.min(lv(x, "weapons"), weaponsPower(x));
+  const feedReactor = () => {
+    while (demand(l) > l.reactor && tryApply((x) => void (x.reactor += 1)));
+  };
+  const sysTo = (id: SystemId, target: number) => () => {
+    let any = false;
+    while (lv(l, id) < target && tryApply((x) => {
+      const h = hs.find((s) => s.id === id);
+      if (!h || lv(x, id) >= h.max) return false;
+      x.systems[id] = lv(x, id) + 1;
+    })) {
+      any = true;
+      feedReactor();
+    }
+    return any;
+  };
+  const shop = buyableWeapons(db).map((id) => db.weapons[id]);
+  const good = ["LASER_BURST_2", "LASER_BURST_3", "MISSILES_2_PLAYER", "LASER_HEAVY_1", "ION_1", "SHOTGUN_PLAYER", "PH_TRIPLE", "PH_TORPEDO", "PH_HEAVY", "PH_SCATTER"];
+  const buy = () => {
+    if (l.weapons.length >= ship.weaponSlots) return false;
+    const pool = level >= 0.5 ? shop.filter((w) => good.includes(w.id)) : shop;
+    const ok = tryApply((x) => void x.weapons.push(rng.pick(pool.length ? pool : shop).id));
+    if (ok) {
+      // Enough weapon bars to power what we carry.
+      sysTo("weapons", Math.min(8, weaponsPower(l)))();
+      feedReactor();
+    }
+    return ok;
+  };
+  if (level >= 0.5) {
+    const plan = [sysTo("shields", 4), sysTo("weapons", weaponsPower(l)), buy, sysTo("engines", 4), buy, sysTo("shields", 6), sysTo("engines", 5), sysTo("pilot", 2), buy, sysTo("shields", 8), sysTo("engines", 6), sysTo("pilot", 3)];
+    for (const p of plan) p();
+  } else {
+    for (let i = 0; i < 6; i++) rng.chance(0.5) ? buy() : sysTo(rng.pick(["engines", "oxygen", "medbay", "shields", "weapons"] as SystemId[]), 8)();
+  }
+  feedReactor();
+  for (let i = 0; i < 4; i++) {
+    const race = level >= 0.5 && db.crew.engi ? "engi" : "human";
+    tryApply((x) => void x.crew.push({ race, name: randomCrewName(db, x.crew.map((c) => c.name), seed + i * 13) }));
+  }
+  return l;
+}
+
+/** Convenience for the bench and tests: one bot per side per match, created on first use. */
+const shared = new WeakMap<Match, [Bot, Bot]>();
+export function botCommands(m: Match, me: 0 | 1, level = 0.6): Command[] {
+  let b = shared.get(m);
+  if (!b) {
+    b = [new Bot(level, 1), new Bot(level, 2)];
+    shared.set(m, b);
+  }
+  return b[me].think(m, me);
+}
+
+/** One difficulty slider (0-100) → bot skill and hangar scrap bonus. Skill tops out at 60; above that the
+ *  bot gets extra scrap (up to +100 % at 100), because play skill alone stops separating bots past ~0.5. */
+export function difficultyToBot(d: number): { level: number; scrapBonus: number } {
+  const x = Math.max(0, Math.min(100, d));
+  return { level: Math.min(1, x / 60), scrapBonus: x <= 60 ? 0 : (x - 60) / 40 };
 }

@@ -46,20 +46,25 @@ if (args.includes("--limit")) {
 }
 await a.waitForTimeout(400);
 // Alice upgrades shields and buys a weapon; Bob picks another hull.
+await a.click('button[data-step="Systems"]');
 await a.click('button[data-sys="shields"][data-d="1"]');
 await a.click('button[data-sys="shields"][data-d="1"]');
+await a.click('button[data-step="Weapons"]');
 await a.click('button[data-buy="LASER_HEAVY_1"]').catch(() => console.log("no LASER_HEAVY_1 in store"));
-await b.selectOption("select[data-ship]", { index: Number(get("--bob-ship", "3")) }).catch((e) => console.log("select failed", e.message));
+await b.click(`button[data-ship="${get("--bob-ship", "PLAYER_SHIP_FED")}"]`).catch((e) => console.log("ship pick failed", e.message));
 await b.waitForTimeout(300);
-console.log("bob hull:", await b.$eval("select[data-ship]", (el) => (el as HTMLSelectElement).value));
+console.log("bob hull:", await b.$eval(".hg-summary h2", (el) => el.textContent));
+await b.click('button[data-step="Systems"]');
 await b.click('button[data-sys="engines"][data-d="1"]').catch(() => {});
+await a.click('button[data-step="Launch"]');
+await b.click('button[data-step="Launch"]');
 await a.waitForTimeout(800);
 await shot(a, "01-hangar-alice");
 await shot(b, "02-hangar-bob");
 console.log("alice errors:", await a.$$eval(".toast, .err", (els) => els.map((e) => e.textContent)));
 await a.click("button[data-ready]");
 await b.click("button[data-ready]");
-await a.waitForFunction(() => !document.querySelector(".hangar"), null, { timeout: 15000 });
+await a.waitForFunction(() => !document.querySelector(".hg"), null, { timeout: 15000 });
 console.log("battle started");
 await a.waitForTimeout(1500);
 await shot(a, "03-battle-start");

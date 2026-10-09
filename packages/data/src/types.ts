@@ -68,6 +68,8 @@ export interface CrewBP {
   id: string;
   title: string;
   cost: number;
+  /** Shirt colour (first colour of layer 1), 0xRRGGBB. */
+  shirt?: number;
 }
 
 export interface Room {
@@ -107,6 +109,18 @@ export interface ShipLayout {
   mounts: WeaponMount[];
   /** Shield ellipse: centre offset and radii. */
   ellipse: { a: number; b: number; x: number; y: number };
+  /** Hull break-up pieces (<explosion><gibN>): image <img>_gibN.png at hull-image offset x,y. */
+  gibs: Gib[];
+}
+
+export interface Gib {
+  n: number;
+  x: number;
+  y: number;
+  velocity: [number, number];
+  /** Degrees. */
+  direction: [number, number];
+  angular: [number, number];
 }
 
 export interface ShipSystemSlot {
@@ -133,6 +147,8 @@ export interface ShipBP {
   maxPower: number;
   crewCount: number;
   crewRace: string;
+  /** One race per starting crew member, in blueprint order. */
+  crewRaces: string[];
 }
 
 export interface AnimSheet {
@@ -173,6 +189,8 @@ export interface GameDB {
   anims: Record<string, Anim>;
   /** Sound name -> file under audio/waves/ and volume (0-10ish). */
   sounds: Record<string, { file: string; volume: number }>;
+  /** Crew name pool (names.xml). */
+  names: string[];
   /** Base hulls offered in the hangar, in order. */
   hangar: string[];
 }
