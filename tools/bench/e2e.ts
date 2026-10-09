@@ -13,7 +13,8 @@ const secs = Number(get("--secs", "40"));
 const out = get("--out", "traces");
 
 const browser = await chromium.launch();
-const ctx = (n: string) => browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 }).then(async (c) => {
+const video = args.includes("--video") ? { dir: `${out}/video`, size: { width: 1280, height: 720 } } : undefined;
+const ctx = (n: string) => browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, recordVideo: video }).then(async (c) => {
   const p = await c.newPage();
   p.on("console", (m) => m.type() === "error" && console.log(`[${n}] console:`, m.text()));
   p.on("pageerror", (e) => console.log(`[${n}] pageerror:`, e.message));
@@ -97,4 +98,7 @@ while (Date.now() - t0 < secs * 1000) {
 await shot(b, `${String(n++).padStart(2, "0")}-bob-view`);
 const ov = await a.$(".overlay");
 console.log("overlay:", ov ? (await ov.textContent())?.replace(/\s+/g, " ").trim() : "none (still fighting)");
+await a.context().close();
+await b.context().close();
+if (video) console.log("videos:", await a.video()?.path(), await b.video()?.path());
 await browser.close();
