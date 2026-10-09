@@ -88,3 +88,28 @@ button.on { background: #2f5e3a; border-color: var(--ok); }
 .debug-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .debug-log { margin-top: 10px; font: 11px/1.35 ui-monospace, Consolas, monospace; color: #c8d0dc; max-height: 45vh; overflow: auto; border-top: 1px solid #333a47; padding-top: 4px; }
 .debug-log b { display: block; margin-top: 4px; color: var(--warn); font-family: system-ui, sans-serif; }
+
+/* FTL fonts (when extracted): JustinFont12Bold for text, HL2 for headings, JustinFont10 for small notes. */
+body.ftl-fonts { font-family: 'FTL-JustinFont12Bold', Consolas, monospace; font-size: 19px; line-height: 1.05; -webkit-font-smoothing: none; }
+body.ftl-fonts button, body.ftl-fonts input, body.ftl-fonts select { font-family: inherit; font-size: 19px; }
+body.ftl-fonts .note, body.ftl-fonts .err, body.ftl-fonts .stats { font-family: 'FTL-JustinFont10', Consolas, monospace; font-size: 19px; line-height: 0.95; }
+body.ftl-fonts .panel h2, body.ftl-fonts .hg-main h3, body.ftl-fonts .menu h1, body.ftl-fonts .code, body.ftl-fonts .scrap, body.ftl-fonts .hg-step,
+body.ftl-fonts .debug .dlabel, body.ftl-fonts .debug-log b, body.ftl-fonts .overlay h1 { font-family: 'FTL-HL2', Consolas, monospace; letter-spacing: 0; }
+body.ftl-fonts .panel h2 { font-size: 24px; color: #dfe8e0; }
+body.ftl-fonts .hg-main h3 { font-size: 24px; }
+body.ftl-fonts .menu h1, body.ftl-fonts .overlay h1 { font-size: 48px; }
+body.ftl-fonts .code { font-size: 48px; }
+body.ftl-fonts .scrap { font-size: 36px; }
+body.ftl-fonts .hg-step { font-size: 24px; }
+body.ftl-fonts .debug { font-size: 19px; }
+body.ftl-fonts .debug-log { font-family: 'FTL-JustinFont10', monospace; font-size: 19px; line-height: 0.95; }
+body.ftl-fonts b { font-weight: 400; }
+.scrap-icon { width: 20px; height: 20px; vertical-align: -3px; margin-right: 3px; image-rendering: pixelated; }
+.hg-scrap .scrap-icon { width: 28px; height: 28px; vertical-align: -5px; }
+button.buy { display: inline-flex; align-items: center; min-width: 64px; justify-content: center; }
+.wslots-sticky { position: sticky; top: -12px; z-index: 2; background: var(--panel); padding: 8px 0 6px; margin: 0 0 6px; border-bottom: 1px solid #333a47; }
+.wcard[draggable="true"], .wslot[draggable="true"] { cursor: grab; }
+.dragging .wslot { outline: 2px dashed var(--warn); outline-offset: 2px; }
+.dragging .shop-drop { outline: 2px dashed #4a5262; outline-offset: 4px; }
+.hg-side .kv, .hg-summary .kv { min-height: 30px; }
+.hg-side select { max-width: 160px; }

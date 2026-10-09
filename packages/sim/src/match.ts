@@ -148,8 +148,11 @@ export class Match {
           ship.doors[cmd.door] = cmd.open;
         } else {
           const g = this.geo(ship);
-          // "Open all" keeps airlocks shut, like FTL's door panel; the airlocks get their own button.
-          ship.doors = ship.doors.map((o, i) => (g.doors[i].roomA === -1 || g.doors[i].roomB === -1 ? (cmd.open ? o : false) : cmd.open));
+          const airlock = (i: number) => g.doors[i].roomA === -1 || g.doors[i].roomB === -1;
+          // FTL's door button: the first "open" opens the interior doors; pressed again with them all
+          // open, it opens the airlocks too (venting the ship). "Close" shuts everything.
+          const interiorOpen = ship.doors.every((o, i) => airlock(i) || o);
+          ship.doors = ship.doors.map((o, i) => (!cmd.open ? false : airlock(i) ? o || interiorOpen : true));
         }
         return true;
       }
@@ -580,9 +583,11 @@ export class Match {
           }
         }
         if (this.rng.chance(RULES.fireSpreadPerSec * DT)) {
-          const opts = (g.adj.get(t) ?? []).filter((e) => e.door < 0 || ship.doors[e.door]);
-          if (opts.length) {
-            const to = this.rng.pick(opts).to;
+          // Fire crosses doors too; a closed door halves the chance.
+          const opts = g.adj.get(t) ?? [];
+          const e = opts.length ? this.rng.pick(opts) : null;
+          if (e && (e.door < 0 || ship.doors[e.door] || this.rng.chance(0.5))) {
+            const to = e.to;
             const tr = byId.get(g.tiles.get(to)!.room)!;
             if (!(to in tr.fires) && tr.o2 >= RULES.fireMinO2) {
               tr.fires[to] = RULES.fireHp;
@@ -610,7 +615,7 @@ export class Match {
       const a = d.roomA >= 0 ? byId.get(d.roomA) : undefined;
       const b = d.roomB >= 0 ? byId.get(d.roomB) : undefined;
       if (a && b) {
-        const f = (a.o2 - b.o2) * RULES.doorFlow * DT * 0.5;
+        const f = (a.o2 - b.o2) * Math.min(0.5, RULES.doorFlow * DT * 0.5);
         a.o2 -= f;
         b.o2 += f;
       } else (a ?? b)!.o2 -= RULES.ventDrain * DT;

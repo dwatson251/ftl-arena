@@ -12,6 +12,8 @@ export interface Loadout {
   weapons: string[];
   crew: CrewPick[];
   missiles: number;
+  /** Server-built bot loadouts only: hull points override (enemy hulls are small). */
+  hull?: number;
 }
 
 export interface CrewPick {
@@ -174,7 +176,7 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     } satisfies SystemState;
   }
   const ship: ShipState = {
-    idx, player, bp: l.ship, layout: bp.layout, hull: bp.health, maxHull: bp.health, reactor: l.reactor, systems,
+    idx, player, bp: l.ship, layout: bp.layout, hull: l.hull ?? bp.health, maxHull: l.hull ?? bp.health, reactor: l.reactor, systems,
     rooms: layout.rooms.map((r) => ({ id: r.id, o2: 100, fires: {}, breaches: {} })),
     doors: layout.doors.map(() => false),
     crew: [],

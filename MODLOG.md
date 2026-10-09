@@ -81,6 +81,41 @@
   between mousedown and mouseup, so clicks were lost.
 - **`names.xml`** includes localised names (Chinese, Russian). The parser keeps Latin-script ones.
 
+## FTL fidelity pass (third session)
+- **References:** the user's real 1280×720 FTL screenshots in `traces/real/` (gitignored with `traces/`).
+  `tools/align/match.py` finds each UI image in them by masked SSD (via FFT).
+  - Exact hits (error ≤ 0.004):
+    - `top_hull` (0, 0); `top_shields4_on` (0, 43); shield squares (30 + 22i, 47);
+    - fuel, missiles and drones boxes (122 / 188 / 258, 43);
+    - `box_weapons_bottom4` (234, 607); door button (1122, 597);
+    - system icons `s_*_green1` / `grey1` at (58 + 36i, 651); subsystems (1015 + 36i, 633);
+    - `top_evade_oxygen_up_red` (1, 89).
+  - The Kestrel hull is at (141, 137).
+- **Room icons** in the real game are `s_<sys>_overlay.png` tinted grey, not the `_grey1` disc. Powered
+  or not they look the same; they turn blue when ionised, orange when damaged, red when destroyed.
+- **FTL `.font` format** (decoded here):
+  - Header: "FONT", u8 version, u8 lineHeight, u8 baseline, then u32 glyph table offset (24), u16 count,
+    u16 record size (16), u32 image offset, u32 image length.
+  - Glyph: u32 code point, u16 x, u16 y, u8 w, u8 h, i8 bearingY, i8 bearingX, i8 advance extra, u8 ?,
+    u8 spacing, u8 ?.
+  - Image: "TEX\n" + a 32-byte header, then 8-bit coverage, 256 px wide.
+  - Fonts: HL2 is the outlined label font (drawn at 2×), JustinFont8/10/11Bold/12Bold for text,
+    num_font for the counters.
+- **Sounds:** the UI sounds (`powerUpSystem`, `doorOpen`, …) are `.wav`. The sound parser kept only
+  `.ogg`, which is why there was no power-up or power-down sound.
+- **Enemy hulls:** art lives in `img/ships_glow/<img>_base.png` and gibs, with no floor image, and they
+  share `ship/enemy_shields.png`.
+  - Weapons come from `blueprintList` pools.
+  - Systems have `power="a" max="b"`; crew has `amount..max`.
+  - The `_DLC` variants are re-tunes. Auto ships have no crew.
+- **Thrusters:** there's no thruster position data, because FTL hard-codes it. The client finds the
+  nozzle banks as flat runs of 30-95 px on the hull art's rear edge.
+- **Sim tuning:**
+  - Venting was too slow: equalisation through doors was the bottleneck. It now has door flow 3/s and an
+    airlock drain of 30 %/s, so an open Kestrel vents in about 15 s.
+  - Crew suffocate below 10 % O2. At the old 5 %, the crewed rooms never got low enough.
+  - Fire spreads at 0.16/s per tile, and through closed doors at half the chance.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

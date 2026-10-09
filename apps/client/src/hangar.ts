@@ -3,6 +3,7 @@
  * computed locally for instant feedback; the server re-prices every loadout before it accepts "ready".
  */
 import type { GameDB, SystemId } from "@ftl/data";
+import { play } from "./audio.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
@@ -34,6 +35,64 @@ export class Hangar {
     this.el.addEventListener("change", (e) => this.onChange(e));
     this.el.addEventListener("input", (e) => this.onInput(e));
     this.el.addEventListener("focusout", () => this.pendingRender && setTimeout(() => this.render(), 0));
+    // Drag and drop: store cards and equipped weapons can be dropped on a slot; equipped ones dropped
+    // back on the store are sold.
+    this.el.addEventListener("dragstart", (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>("[data-drag]");
+      if (!t || !e.dataTransfer) return;
+      e.dataTransfer.setData("text/plain", t.dataset.drag!);
+      e.dataTransfer.effectAllowed = "move";
+      this.el.classList.add("dragging");
+    });
+    this.el.addEventListener("dragend", () => this.el.classList.remove("dragging"));
+    this.el.addEventListener("dragover", (e) => {
+      if ((e.target as HTMLElement).closest("[data-slot], .shop-drop")) e.preventDefault();
+    });
+    this.el.addEventListener("drop", (e) => {
+      e.preventDefault();
+      this.el.classList.remove("dragging");
+      const data = e.dataTransfer?.getData("text/plain") ?? "";
+      const slotEl = (e.target as HTMLElement).closest<HTMLElement>("[data-slot]");
+      if (slotEl) this.dropOnSlot(data, Number(slotEl.dataset.slot));
+      else if ((e.target as HTMLElement).closest(".shop-drop") && data.startsWith("slot:")) this.sellSlot(Number(data.slice(5)));
+    });
+  }
+
+  private sfx(name: string): void {
+    play(this.db, [name], 0.8);
+  }
+
+  private dropOnSlot(data: string, slot: number): void {
+    if (!this.loadout) return;
+    const l = structuredClone(this.loadout);
+    const ship = this.db.ships[l.ship];
+    if (slot >= ship.weaponSlots) return;
+    if (data.startsWith("slot:")) {
+      // Reorder: slot order is mount order on the hull.
+      const from = Number(data.slice(5));
+      if (from === slot || !l.weapons[from]) return;
+      const a = l.weapons[from];
+      if (slot < l.weapons.length) [l.weapons[from], l.weapons[slot]] = [l.weapons[slot], a];
+      else {
+        l.weapons.splice(from, 1);
+        l.weapons.push(a);
+      }
+      this.sfx("powerUpSystem");
+    } else if (data.startsWith("buy:")) {
+      const id = data.slice(4);
+      if (slot < l.weapons.length) l.weapons[slot] = id; // replace (the old one is sold)
+      else if (l.weapons.length < ship.weaponSlots) l.weapons.push(id);
+      this.sfx("powerUpSystem");
+    }
+    this.change(l);
+  }
+
+  private sellSlot(i: number): void {
+    if (!this.loadout) return;
+    const l = structuredClone(this.loadout);
+    l.weapons.splice(i, 1);
+    this.sfx("powerDownSystem");
+    this.change(l);
   }
 
   update(lobby: LobbyState): void {
@@ -84,6 +143,10 @@ export class Hangar {
     return `<img class="miniship" src="/assets/img/customizeUI/miniship_${h(img)}.png" onerror="this.src='/assets/img/ship/${h(img)}_base.png'">`;
   }
 
+  private scrapIcon(): string {
+    return this.hasArt() ? `<img class="scrap-icon" src="/assets/img/upgradeUI/details_scrap.png" alt="">` : "";
+  }
+
   private sysIcon(id: string): string {
     return this.hasArt() ? `<img class="sysicon" src="/assets/img/icons/s_${id}_green1.png">` : `<span class="sysicon ph">${id.slice(0, 2).toUpperCase()}</span>`;
   }
@@ -109,7 +172,7 @@ export class Hangar {
     this.el.innerHTML = `
       <div class="hg">
         <div class="hg-steps">${STEPS.map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""}" data-step="${s}"><b>${i + 1}</b> ${s}</button>`).join("")}
-          <div class="hg-scrap"><span class="scrap">${cfg.scrap - priced.total}</span> <span class="note">scrap left of ${cfg.scrap}</span></div></div>
+          <div class="hg-scrap">${this.scrapIcon()}<span class="scrap">${cfg.scrap - priced.total}</span> <span class="note">scrap left of ${cfg.scrap}</span></div></div>
         <div class="hg-body">
           <div class="panel hg-side">${this.sidebar(lobby)}</div>
           <div class="panel hg-main">${body}</div>
@@ -144,8 +207,13 @@ export class Hangar {
         <div class="kv"><span>Difficulty</span><b>${pc.difficulty}</b></div>
         <input type="range" min="0" max="100" step="5" value="${pc.difficulty}" data-prac="difficulty" style="width:100%">
         <div class="note">Skill ${Math.round(bot.level * 100)}%${bot.scrapBonus ? ` · +${Math.round(bot.scrapBonus * 100)}% scrap` : ""}. 0-60 raises its play (reaction, targeting, volley sync, crew and power care); above 60 it also gets extra scrap.</div>
-        <div class="kv"><span>Bot hull</span><select data-prac="botShip"><option value="">Random</option>${pool.map((id) => `<option value="${id}" ${pc.botShip === id ? "selected" : ""}>${h(this.db.ships[id].title)}</option>`).join("")}</select></div>
-        ${botShip ? `<div class="note">Bot flies: ${h(this.db.ships[botShip]?.title ?? botShip)}</div>` : ""}
+        <div class="kv"><span>Opponent</span><select data-prac="botShip">
+          <option value="" ${pc.botShip === "" ? "selected" : ""}>Random player cruiser</option>
+          <option value="@enemy" ${pc.botShip === "@enemy" ? "selected" : ""}>Random single-player enemy</option>
+          <optgroup label="Player cruisers">${pool.map((id) => `<option value="${id}" ${pc.botShip === id ? "selected" : ""}>${h(this.db.ships[id].title)} (${h(this.db.ships[id].className)})</option>`).join("")}</optgroup>
+          ${this.db.enemies.length ? `<optgroup label="Single-player enemies">${this.db.enemies.map((id) => `<option value="${id}" ${pc.botShip === id ? "selected" : ""}>${h(this.db.ships[id].className || id)}</option>`).join("")}</optgroup>` : ""}
+        </select></div>
+        ${botShip ? `<div class="note">Bot flies: ${h(this.db.ships[botShip]?.className || this.db.ships[botShip]?.title || botShip)}${this.db.ships[botShip]?.enemy ? ` · hull ${lobby.players.find((p) => p.bot)?.loadout?.hull ?? ""}` : ""}</div>` : ""}
         <label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}
       <div style="margin-top:14px"><button data-leave>Leave lobby</button></div>`;
   }
@@ -156,6 +224,7 @@ export class Hangar {
     const sys = hullSystems(db, l.ship).filter((s) => (l.systems[s.id] ?? s.base) > 0).map((s) => `${s.id} ${l.systems[s.id] ?? s.base}`).join(" · ");
     return `
       <h2>${h(ship.title)}</h2>
+      <div class="note">${h(ship.className)}</div>
       ${this.miniship(ship.img)}
       <div class="note">Hull ${ship.health} · reactor ${l.reactor} · ${l.missiles} missiles</div>
       <div class="note">${h(sys)}</div>
@@ -181,7 +250,7 @@ export class Hangar {
         const races = [...new Set(s.crewRaces)].map((r) => db.crew[r]?.title ?? r).join(", ");
         return `<button class="ship-card ${id === l.ship ? "on" : ""}" data-ship="${id}">
           ${this.miniship(s.img)}
-          <b>${h(s.title)}</b><span class="note">${h(id.replace("PLAYER_SHIP_", ""))}</span>
+          <b>${h(s.title)}</b><span class="note">${h(s.className || "")}</span>
           <span class="note">${s.weapons.map((w) => h(db.weapons[w]?.title ?? w)).join(", ") || "no weapons"}</span>
           <span class="note">${s.crewRaces.length} crew (${h(races)}) · reactor ${s.maxPower}</span></button>`;
       })
@@ -220,9 +289,9 @@ export class Hangar {
     const ship = db.ships[l.ship];
     const slots = Array.from({ length: ship.weaponSlots }, (_, i) => {
       const id = l.weapons[i];
-      if (!id) return `<div class="wslot empty">empty slot</div>`;
+      if (!id) return `<div class="wslot empty" data-slot="${i}">${i + 1} · drop a weapon here</div>`;
       const w = db.weapons[id];
-      return `<div class="wslot">${this.weaponArt(id, 1)}<div><b>${i + 1}. ${h(w?.title ?? id)}</b><div class="note">${w ? this.stats(id) : ""}</div></div><button class="small" data-sell="${i}" title="Sell / remove">✕</button></div>`;
+      return `<div class="wslot" data-slot="${i}" draggable="true" data-drag="slot:${i}">${this.weaponArt(id, 1)}<div><b>${i + 1}. ${h(w?.title ?? id)}</b><div class="note">${w ? this.stats(id) : ""}</div></div><button class="small" data-sell="${i}" title="Sell / remove">✕</button></div>`;
     }).join("");
     const groups = new Map<string, string[]>();
     for (const id of buyableWeapons(db)) {
@@ -235,12 +304,15 @@ export class Hangar {
       .map(([t, ids]) => `<h3>${label[t] ?? t}</h3><div class="wgrid">${ids
         .map((id) => {
           const w = db.weapons[id];
-          return `<div class="wcard">${this.weaponArt(id, 1)}<div class="wcard-body"><b>${h(w.title)}</b><div class="note">${this.stats(id)}</div></div>
-            <button class="small" data-buy="${id}" ${full ? "disabled" : ""}>${w.cost}</button></div>`;
+          return `<div class="wcard" draggable="true" data-drag="buy:${id}">${this.weaponArt(id, 1)}<div class="wcard-body"><b>${h(w.title)}</b><div class="note">${this.stats(id)}</div></div>
+            <button class="small buy" data-buy="${id}" ${full ? "disabled" : ""}>${this.scrapIcon()}${w.cost}</button></div>`;
         })
         .join("")}</div>`)
       .join("");
-    return `<h2>3 · Weapons</h2><div class="wslots">${slots}</div><div class="note">Selling a starting weapon refunds half its price. Weapons need weapon-system bars equal to their power.</div>${shop}${this.nav("Systems", "Crew")}`;
+    return `<h2>3 · Weapons</h2>
+      <div class="wslots-sticky"><div class="wslots">${slots}</div>
+      <div class="note">Drag weapons onto a slot (or click a price). Drag an equipped weapon to another slot to reorder, or back to the store to sell it for half price.</div></div>
+      <div class="shop-drop">${shop}</div>${this.nav("Systems", "Crew")}`;
   }
 
   private stats(id: string): string {
@@ -304,10 +376,14 @@ export class Hangar {
     const ship = this.db.ships[l.ship];
     if (d.step) {
       this.step = d.step as Step;
+      this.sfx("hoverBeep");
       return this.render();
     }
     if ("ship" in d && d.ship) {
-      if (d.ship !== l.ship) this.change(baseLoadout(this.db, d.ship));
+      if (d.ship !== l.ship) {
+        this.sfx("powerUpSystem");
+        this.change(baseLoadout(this.db, d.ship));
+      }
       return;
     }
     if (d.sys) {
@@ -321,9 +397,14 @@ export class Hangar {
     else if (d.hire && l.crew.length < RULES.maxCrew) l.crew.push({ race: d.hire, name: randomCrewName(this.db, l.crew.map((c) => c.name), Date.now() & 0xffff) });
     else if (d.fire) l.crew.splice(Number(d.fire), 1);
     else if (d.reroll) l.crew[Number(d.reroll)].name = randomCrewName(this.db, l.crew.map((c) => c.name), (Date.now() * 7) & 0xffff);
-    else if (d.ready) return this.hooks.ready(d.ready === "1");
+    else if (d.ready) {
+      this.sfx(d.ready === "1" ? "acceptUpgrades" : "undoUpgrades");
+      return this.hooks.ready(d.ready === "1");
+    }
     else if ("leave" in d) return this.hooks.leave();
     else return;
+    const down = !!(d.sell || d.fire || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
+    this.sfx(down ? "powerDownSystem" : "powerUpSystem");
     this.change(l);
   }
 

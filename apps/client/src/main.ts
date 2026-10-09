@@ -3,6 +3,7 @@ import type { GameDB } from "@ftl/data";
 import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
 import type { MatchView } from "@ftl/sim";
 import { preload } from "./assets.ts";
+import { loadFtlFonts } from "./ftlfonts.ts";
 import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar } from "./hangar.ts";
 import { Net } from "./net.ts";
@@ -41,8 +42,9 @@ function onMsg(m: ServerMsg): void {
     case "welcome":
       db = m.db;
       token = m.token;
-      void preload(db).then((ok) => {
+      void Promise.all([preload(db), loadFtlFonts()]).then(([ok]) => {
         hasArt = ok;
+        document.body.classList.toggle("ftl-fonts", ok);
         render();
       });
       break;

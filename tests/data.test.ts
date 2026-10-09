@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { parseLayout, parseXml, placeholderDb, walk } from "@ftl/data";
 import { PkgArchive } from "@ftl/extract";
+import { parseFtlFont } from "../packages/extract/src/font.ts";
 
 describe("xml", () => {
   it("drops comments, tolerates fragments, spacing and stray closes", () => {
@@ -47,5 +48,23 @@ describe.skipIf(!existsSync(DAT))("ftl.dat (owner's install)", () => {
     }
     expect(rebuilt.equals(buf.subarray(namesAt, namesAt + size))).toBe(true);
     expect(pkg.read("data/blueprints.xml").toString("utf8")).toContain("shipBlueprint");
+  });
+});
+
+describe.skipIf(!existsSync(DAT))("FTL bitmap fonts", () => {
+  it("decodes every .font: glyphs inside the atlas, ASCII present", () => {
+    const pkg = new PkgArchive(readFileSync(DAT));
+    const fonts = pkg.entries.filter((e) => /^fonts\/[^/]+\.font$/.test(e.path));
+    expect(fonts.length).toBeGreaterThan(5);
+    for (const e of fonts) {
+      const f = parseFtlFont(pkg.readEntry(e));
+      const codes = new Set(f.metrics.glyphs.map((g) => g.c));
+      for (const ch of "AZaz09%") expect(codes.has(ch.charCodeAt(0))).toBe(true);
+      for (const g of f.metrics.glyphs) {
+        expect(g.x + g.w).toBeLessThanOrEqual(f.metrics.width);
+        expect(g.y + g.h).toBeLessThanOrEqual(f.metrics.height);
+      }
+      expect(f.coverage.length).toBe(f.metrics.width * f.metrics.height);
+    }
   });
 });

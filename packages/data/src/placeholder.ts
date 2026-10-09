@@ -41,8 +41,8 @@ const systems: SystemBP[] = [
 const skiff: ShipLayout = {
   id: "ph_skiff", xOffset: 1, yOffset: 1, img: { x: -40, y: -40, w: 560, h: 330 }, floor: { x: 0, y: 0 },
   ellipse: { a: 320, b: 200, x: 0, y: 0 }, gibs: [], mounts: [
-    { x: 380, y: 30, rotate: true, mirror: true }, { x: 380, y: 220, rotate: true, mirror: false },
-    { x: 250, y: 30, rotate: true, mirror: true }, { x: 250, y: 220, rotate: true, mirror: false },
+    { x: 380, y: 30, rotate: true, mirror: true, slide: "up" }, { x: 380, y: 220, rotate: true, mirror: false, slide: "down" },
+    { x: 250, y: 30, rotate: true, mirror: true, slide: "up" }, { x: 250, y: 220, rotate: true, mirror: false, slide: "down" },
   ],
   rooms: [
     { id: 0, x: 12, y: 2, w: 2, h: 1 }, // pilot
@@ -88,7 +88,7 @@ export function placeholderDb(): GameDB {
     },
     ships: {
       PH_SKIFF: {
-        id: "PH_SKIFF", title: "Arena Skiff", layout: "ph_skiff", img: "", weaponSlots: 4, weapons: ["PH_TORPEDO", "PH_TRIPLE"],
+        id: "PH_SKIFF", title: "Arena Skiff", className: "Practice Skiff · Type A", artDir: "ship", layout: "ph_skiff", img: "", weaponSlots: 4, weapons: ["PH_TORPEDO", "PH_TRIPLE"],
         missiles: 8, health: 30, maxPower: 8, crewCount: 3, crewRace: "human", crewRaces: ["human", "human", "human"],
         systems: [
           { id: "pilot", room: 0, power: 1, start: true, station: 1 },
@@ -103,6 +103,6 @@ export function placeholderDb(): GameDB {
       },
     },
     layouts: { ph_skiff: skiff },
-    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, names: [], hangar: ["PH_SKIFF"],
+    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, names: [], enemies: [], hangar: ["PH_SKIFF"],
   };
 }

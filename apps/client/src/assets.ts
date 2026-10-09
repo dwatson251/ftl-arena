@@ -86,7 +86,16 @@ export async function preload(db: GameDB): Promise<boolean> {
     files.add(`ship/${s.img}_shields1.png`);
     files.add(`customizeUI/miniship_${s.img}.png`);
   }
-  for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"]) files.add(`icons/s_${sys}_blue1.png`);
+  for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"]) {
+    for (const c of ["blue", "grey", "orange", "red", "green"]) files.add(`icons/s_${sys}_${c}1.png`);
+    files.add(`icons/s_${sys}_overlay.png`);
+  }
+  for (const id of db.enemies ?? []) {
+    const s = db.ships[id];
+    files.add(`${s.artDir}/${s.img}_base.png`);
+    for (const g of db.layouts[s.layout]?.gibs ?? []) files.add(`${s.artDir}/${s.img}_gib${g.n}.png`);
+  }
+  for (let i = 1; i <= 4; i++) files.add(`misc/crosshairs_placed${i}.png`), files.add(`misc/crosshairs_placed${i}_yellow.png`);
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
   const r = await Promise.all([...files].map(tex));
@@ -104,5 +113,5 @@ export const UI_FILES = [
   "bar_weapon_minibox_glow.png", "wireUI/wire_full.png", "wireUI/wire_456_cap.png", "wireUI/wire_36.png", "wireUI/wire_54_cap.png",
   "systemUI/button_door_base.png", "systemUI/button_door_top_on.png", "systemUI/button_door_top_off.png", "systemUI/button_door_bottom_on.png",
   "systemUI/button_door_bottom_off.png", "systemUI/button_door_top_select2.png", "systemUI/button_door_bottom_select2.png",
-  "people/green_destination.png", "people/health_box.png", "people/health_box_red.png", "effects/door_sheet.png", "effects/low_o2_stripes_2x2.png",
+  "people/green_destination.png", "systemUI/manning_white.png", "statusUI/button_station_base.png", "statusUI/button_station_assign_on.png", "statusUI/button_station_return_on.png", "effects/thrusters_on.png", "ship/enemy_shields.png", "upgradeUI/details_scrap.png", "people/health_box.png", "people/health_box_red.png", "effects/door_sheet.png", "effects/low_o2_stripes_2x2.png",
 ];

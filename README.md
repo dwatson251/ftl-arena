@@ -30,7 +30,10 @@ Open http://localhost:5173 in two browsers:
 2. The other player clicks **Join**.
 3. Both spend scrap and press **Ready**.
 
-**Practice vs bot** gives you a solo opponent. In the lobby, a **difficulty slider (0-100)** sets it:
+**Practice vs bot** gives you a solo opponent. Its **opponent** can be:
+- any player cruiser (built with its own scrap);
+- any of the **single-player enemy ships**, such as Rebel Fighter, Mantis Bomber or Zoltan Bomber. These
+  fly with their own vertical art, crew and weapon pool, scaled by difficulty. In the lobby, a **difficulty slider (0-100)** sets it:
 - **0-60:** raises its play skill: reaction time, mistakes, targeting, volley sync, beam timing, repairs,
   medbay and firefighting, and power swaps.
 - **60-100:** skill is maxed, and the bot also gets up to +100% hangar scrap. It always spends that scrap on
@@ -63,7 +66,8 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 | Select crew | click, drag a box, or `Tab` for all |
 | Move crew | right-click a room on your ship |
 | System power | click the system's bars for +1, right-click for −1 |
-| Doors | click a door; `Z`/`X` open/close all (airlocks stay shut) |
+| Doors | click a door; `Z`/`X` open/close all. Opening again when every inner door is open opens the airlocks and vents the ship |
+| Stations | the two buttons under the crew list save positions and return crew to them |
 | Sound | `M` |
 
 ## The hangar
@@ -94,7 +98,10 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Crew → Launch*
   - Lanius: doesn't breathe and drains O2 from its room.
 
   Boarding isn't in v1, so combat strength doesn't matter yet.
-- **FTL's UI:**
+- **FTL's own fonts:** the extractor converts `fonts/*.font` (a bitmap format, decoded in
+  `packages/extract/src/font.ts`) to atlases, and the client turns them into web fonts. HL2 is used for
+  labels, JustinFont for text and num_font for counters.
+- **FTL's UI**, placed by matching each art piece against real 1280×720 screenshots (`tools/align/match.py`):
   - the hull bar and frame, shield squares, the evade/O2 panel and the missile counter;
   - the reactor wire and system power columns (repair progress fills the damaged bar);
   - the weapon tray, whose charge lights fill as weapons ready;

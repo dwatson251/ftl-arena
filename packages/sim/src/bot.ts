@@ -328,3 +328,40 @@ export function difficultyToBot(d: number): { level: number; scrapBonus: number 
   const x = Math.max(0, Math.min(100, d));
   return { level: Math.min(1, x / 60), scrapBonus: x <= 60 ? 0 : (x - 60) / 40 };
 }
+
+/**
+ * A single-player enemy hull as the bot's ship. Systems scale from the blueprint's starting power toward
+ * its max with `level`; weapons are drawn from the hull's own pool (stronger picks at higher levels) to
+ * fit its weapon bars and mounts; crew grow from amount toward max. `hullBonus` adds hull points, since
+ * sector enemies have 7-14 hull against a player cruiser's 30.
+ */
+export function enemyLoadout(db: GameDB, shipId: string, level: number, seed = 1, hullBonus = 0): Loadout {
+  const s = db.ships[shipId];
+  const rng = new Rng(seed);
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * Math.max(0, Math.min(1, level)) * 0.6);
+  const systems: Loadout["systems"] = {};
+  for (const h of hullSystems(db, shipId)) {
+    const slot = s.systems.find((x) => x.id === h.id)!;
+    systems[h.id] = Math.min(h.max, lerp(slot.power, slot.max ?? slot.power));
+  }
+  const mounts = Math.min(4, db.layouts[s.layout].mounts.length);
+  const bars = systems.weapons ?? 0;
+  const pool = (s.weaponPool ?? s.weapons).map((id) => db.weapons[id]).filter(Boolean);
+  // Higher levels draw from the pricier half of the pool.
+  const sorted = [...pool].sort((a, b) => a.cost - b.cost);
+  const top = level >= 0.5 ? sorted.slice(Math.floor(sorted.length / 3)) : sorted.slice(0, Math.ceil((sorted.length * 2) / 3));
+  const weapons: string[] = [];
+  let used = 0;
+  for (let tries = 0; tries < 40 && weapons.length < mounts; tries++) {
+    const w = rng.pick(top.length ? top : sorted);
+    if (used + w.power > bars) continue;
+    weapons.push(w.id);
+    used += w.power;
+  }
+  if (!weapons.length && sorted.length) weapons.push(sorted[0].id);
+  const n = lerp(s.crewCount, s.crewMax ?? s.crewCount);
+  const race = s.crewRaces[0] ?? "human";
+  const crew = Array.from({ length: Math.max(1, n) }, (_, i) => ({ race: RACES[race] ? race : "human", name: randomCrewName(db, [], seed * 7 + i * 31) }));
+  const demand = (systems.shields ?? 0) + (systems.engines ?? 0) + Math.min(1, systems.oxygen ?? 0) + Math.min(1, systems.medbay ?? 0) + used;
+  return { ship: shipId, systems, reactor: Math.max(s.maxPower, demand), weapons, crew, missiles: Math.max(s.missiles, 8), hull: s.health + hullBonus };
+}

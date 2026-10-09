@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { PkgArchive } from "./pkg.ts";
+import { fontToPng, parseFtlFont } from "./font.ts";
 
 export interface ExtractOptions {
   /** FTL install folder (holding ftl.dat) or the ftl.dat path itself. */
@@ -11,7 +12,7 @@ export interface ExtractOptions {
 }
 
 /** Folders the arena never uses. Everything else is unpacked from the owner's own ftl.dat. */
-const SKIP = [/^img\/loc-/, /^img\/ipad\//, /^img\/achievements\//, /^img\/map\//, /^fonts\//, /^data\/text-/];
+const SKIP = [/^img\/loc-/, /^img\/ipad\//, /^img\/achievements\//, /^img\/map\//, /^fonts\/(ja|zh)/, /^data\/text-/];
 
 export function extractFtl(opts: ExtractOptions): { files: number; bytes: number } {
   const datPath = opts.ftl.endsWith(".dat") ? opts.ftl : join(opts.ftl, "ftl.dat");
@@ -26,6 +27,16 @@ export function extractFtl(opts: ExtractOptions): { files: number; bytes: number
     const dest = join(opts.out, e.path);
     mkdirSync(dirname(dest), { recursive: true });
     const data = pkg.readEntry(e);
+    if (e.path.endsWith(".font")) {
+      // Bitmap fonts become a PNG atlas + JSON metrics the browser can use.
+      const f = parseFtlFont(data);
+      const base = dest.replace(/\.font$/, "").replace(/&/g, "and");
+      writeFileSync(`${base}.png`, fontToPng(f));
+      writeFileSync(`${base}.json`, JSON.stringify(f.metrics));
+      manifest.push(e.path);
+      files++;
+      continue;
+    }
     writeFileSync(dest, data);
     manifest.push(e.path);
     files++;

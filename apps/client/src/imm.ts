@@ -104,3 +104,21 @@ export class Imm {
     this.root.sortableChildren = true;
   }
 }
+
+import { family, fontSize, hasFont, type FtlFont } from "./ftlfonts.ts";
+const fstyles = new Map<string, TextStyle>();
+/** A TextStyle in one of FTL's fonts (falls back to monospace). `stroke` draws FTL's outlined labels. */
+export function fstyle(font: FtlFont, fill: number, o: { scale?: number; stroke?: number; strokeWidth?: number; align?: "left" | "center" | "right"; wrap?: number } = {}): TextStyle {
+  const k = `${font}|${fill}|${o.scale ?? 1}|${o.stroke ?? ""}|${o.strokeWidth ?? 2}|${o.align ?? "left"}|${o.wrap ?? 0}|${hasFont(font)}`;
+  let s = fstyles.get(k);
+  if (!s) {
+    s = new TextStyle({
+      fontFamily: hasFont(font) ? family(font) : "Consolas, 'Lucida Console', monospace",
+      fontSize: fontSize(font, o.scale ?? 1), fill, align: o.align ?? "left", lineHeight: fontSize(font, o.scale ?? 1) * (o.wrap ? 0.62 : 1),
+      stroke: o.stroke !== undefined ? { color: o.stroke, width: o.strokeWidth ?? 2, join: "miter" } : undefined,
+      wordWrap: !!o.wrap, wordWrapWidth: o.wrap ?? 0, breakWords: false,
+    });
+    fstyles.set(k, s);
+  }
+  return s;
+}

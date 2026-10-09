@@ -4,7 +4,7 @@ import {
   PROTOCOL_VERSION, SNAP_EVERY, type DebugInfo, type DebugOp, type LobbyPlayer, type LobbyState, type PracticeConfig, type ServerMsg,
 } from "@ftl/protocol";
 import {
-  baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, difficultyToBot, Match, priceLoadout, viewFor, type Command, type Loadout,
+  baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, difficultyToBot, enemyLoadout, Match, priceLoadout, viewFor, type Command, type Loadout,
   type MatchConfig, type MatchEvent,
 } from "@ftl/sim";
 
@@ -88,10 +88,18 @@ export class Lobby {
     if (!p || !pc) return;
     const { level, scrapBonus } = difficultyToBot(pc.difficulty);
     const pool = this.config.shipPool.length ? this.config.shipPool : this.db.hangar;
-    const ship = pc.botShip && pool.includes(pc.botShip) ? pc.botShip : pool[Math.abs(this.config.seed) % pool.length];
-    const scrap = Math.round(this.config.scrap * (1 + scrapBonus));
-    p.loadout = botLoadout(this.db, ship, scrap, level, this.config.seed);
-    p.priced = priceLoadout(this.db, p.loadout, scrap);
+    const seed = Math.abs(this.config.seed);
+    if (pc.botShip === "@enemy" || this.db.enemies.includes(pc.botShip)) {
+      // A single-player enemy hull: its own systems/weapon pool, scaled by difficulty, plus bonus hull.
+      const ship = pc.botShip === "@enemy" ? this.db.enemies[seed % this.db.enemies.length] : pc.botShip;
+      p.loadout = enemyLoadout(this.db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14));
+      p.priced = { ok: true, total: 0, lines: [], errors: [] };
+    } else {
+      const ship = pc.botShip && pool.includes(pc.botShip) ? pc.botShip : pool[seed % pool.length];
+      const scrap = Math.round(this.config.scrap * (1 + scrapBonus));
+      p.loadout = botLoadout(this.db, ship, scrap, level, this.config.seed);
+      p.priced = priceLoadout(this.db, p.loadout, scrap);
+    }
     p.name = `Bot (${pc.difficulty})`;
   }
 
@@ -100,7 +108,10 @@ export class Lobby {
     if (c.id !== this.host) return "only the host can change the bot";
     const next = { ...this.practiceCfg };
     if (cfg.difficulty !== undefined) next.difficulty = Math.max(0, Math.min(100, Math.round(Number(cfg.difficulty) || 0)));
-    if (cfg.botShip !== undefined) next.botShip = this.db.hangar.includes(String(cfg.botShip)) ? String(cfg.botShip) : "";
+    if (cfg.botShip !== undefined) {
+      const b = String(cfg.botShip);
+      next.botShip = this.db.hangar.includes(b) || this.db.enemies.includes(b) || b === "@enemy" ? b : "";
+    }
     if (cfg.debug !== undefined) next.debug = !!cfg.debug;
     this.practiceCfg = next;
     if (this.phase === "lobby") this.rebuildBot();

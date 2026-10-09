@@ -5,6 +5,8 @@ export type WeaponType = "LASER" | "MISSILES" | "BEAM" | "BOMB" | "BURST";
 export interface WeaponBP {
   id: string;
   title: string;
+  /** FTL's short name for the weapons tray ("Burst Laser II"). */
+  short?: string;
   type: WeaponType;
   damage: number;
   shots: number;
@@ -95,6 +97,8 @@ export interface WeaponMount {
   y: number;
   rotate: boolean;
   mirror: boolean;
+  /** Direction the weapon retracts into the hull when unpowered. */
+  slide: "up" | "down" | "left" | "right" | "";
 }
 
 export interface ShipLayout {
@@ -127,6 +131,8 @@ export interface ShipSystemSlot {
   id: SystemId;
   room: number;
   power: number;
+  /** Enemy blueprints: the most bars this system can be given. */
+  max?: number;
   start: boolean;
   /** Station tile index inside the room (row-major), -1 when the system has no station. */
   station: number;
@@ -137,6 +143,15 @@ export interface ShipSystemSlot {
 export interface ShipBP {
   id: string;
   title: string;
+  /** FTL's class line ("Kestrel Cruiser"), plus A/B/C for player layouts. */
+  className: string;
+  /** Single-player enemy hull: vertical art under img/ships_glow, weapons from a pool. */
+  enemy?: boolean;
+  /** Folder under img/ holding <img>_base.png and gibs. */
+  artDir: "ship" | "ships_glow";
+  /** Enemy hulls: weapon blueprint pool and crew cap. */
+  weaponPool?: string[];
+  crewMax?: number;
   layout: string;
   img: string;
   systems: ShipSystemSlot[];
@@ -191,6 +206,8 @@ export interface GameDB {
   sounds: Record<string, { file: string; volume: number }>;
   /** Crew name pool (names.xml). */
   names: string[];
+  /** Single-player enemy hulls the practice bot can fly. */
+  enemies: string[];
   /** Base hulls offered in the hangar, in order. */
   hangar: string[];
 }

@@ -47,15 +47,15 @@ export const RULES = {
   /** Breach drain %/s per breached tile, scaled by 4/roomTiles (est). */
   breachDrain: 3.0,
   /** Airlock door open to space: %/s (est). */
-  ventDrain: 15,
-  /** Door O2 equalisation rate (fraction of the difference per second) (est). */
-  doorFlow: 0.6,
+  ventDrain: 30,
+  /** Door O2 equalisation rate (fraction of the difference per second); fast enough that an open ship vents in ~15-20 s (est). */
+  doorFlow: 3.0,
   /** Below this O2 % crew suffocate at suffocateDps (est). */
-  suffocateAt: 5,
+  suffocateAt: 10,
   suffocateDps: 5,
   /** Fire: HP of a new fire tile, per-second spread chance, burn-out below this O2 %, damages (est). */
   fireHp: 100,
-  fireSpreadPerSec: 0.05,
+  fireSpreadPerSec: 0.16,
   fireMinO2: 10,
   fireStarve: 20,
   fireO2Use: 1.2,

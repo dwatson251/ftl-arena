@@ -1,7 +1,7 @@
 /** Builds a GameDB from FTL's own data files (blueprints.xml, ship layouts, animations, text). */
 import { kid, kids, num, parseXml, txt, walk, type XNode } from "./xml.ts";
 import type {
-  Anim, AnimSheet, CrewBP, GameDB, ShipBP, ShipLayout, ShipSystemSlot, SystemBP, SystemId, WeaponAnim, WeaponBP,
+  WeaponMount, Anim, AnimSheet, CrewBP, GameDB, ShipBP, ShipLayout, ShipSystemSlot, SystemBP, SystemId, WeaponAnim, WeaponBP,
   WeaponType,
 } from "./types.ts";
 
@@ -38,6 +38,7 @@ export function parseWeapon(n: XNode, text: Record<string, string>): WeaponBP | 
   return {
     id: n.attrs.name,
     title: title(n, "title", text) || n.attrs.name,
+    short: title(n, "short", text) || undefined,
     type: type as WeaponType,
     damage: num(n, "damage"),
     shots: type === "BURST" && pieces > 0 ? pieces : num(n, "shots", 1) || 1,
@@ -106,14 +107,19 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
       start: s.attrs.start !== "false",
       station: MANNED.has(s.tag) || s.tag === "medbay" ? station : -1,
       img: s.attrs.img,
+      max: s.attrs.max ? Number(s.attrs.max) : undefined,
     });
   }
   const wl = kid(n, "weaponList");
   // Hulls list one <crewCount> per race (the Osprey has four); v1 crews are all human, so sum them.
   const crews = kids(n, "crewCount");
+  const cls = title(n, "class", text);
+  const letter = /_3$/.test(n.attrs.name) ? "C" : /_2$/.test(n.attrs.name) ? "B" : "A";
   return {
     id: n.attrs.name,
-    title: title(n, "name", text) || n.attrs.name,
+    title: title(n, "name", text) || cls || n.attrs.name,
+    className: n.attrs.name.startsWith("PLAYER_SHIP_") ? `${cls || "Cruiser"} · Type ${letter}` : cls,
+    artDir: n.attrs.name.startsWith("PLAYER_SHIP_") ? "ship" : "ships_glow",
     layout: n.attrs.layout,
     img: n.attrs.img,
     systems,
@@ -157,6 +163,7 @@ export function parseLayout(id: string, txtSrc: string, xmlSrc: string | undefin
     if (floor) L.floor = { x: +floor.attrs.x || 0, y: +floor.attrs.y || 0 };
     L.mounts = walk(x, "mount").map((m) => ({
       x: +m.attrs.x || 0, y: +m.attrs.y || 0, rotate: m.attrs.rotate === "true", mirror: m.attrs.mirror === "true",
+      slide: (["up", "down", "left", "right"].includes(m.attrs.slide) ? m.attrs.slide : "") as WeaponMount["slide"],
     }));
     const ex = walk(x, "explosion")[0];
     const range = (g: XNode, t: string): [number, number] => {
@@ -217,9 +224,11 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   const text = { ...parseText(read("data/text_blueprints.xml") ?? ""), ...parseText(read("data/text_misc.xml") ?? "") };
   const db: GameDB = {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
-    anims: {}, sounds: {}, names: [], hangar: [],
+    anims: {}, sounds: {}, names: [], hangar: [], enemies: [],
   };
-  for (const f of ["data/blueprints.xml", "data/dlcBlueprints.xml", "data/dlcBlueprintsOverwrite.xml"]) {
+  const lists: Record<string, string[]> = {};
+  const enemyNodes: XNode[] = [];
+  for (const f of ["data/blueprints.xml", "data/dlcBlueprints.xml", "data/dlcBlueprintsOverwrite.xml", "data/autoBlueprints.xml"]) {
     const src = read(f);
     if (!src) continue;
     const root = parseXml(src);
@@ -234,7 +243,8 @@ export function buildDbFromFtl(read: FileSource): GameDB {
       } else if (n.tag === "crewBlueprint") db.crew[n.attrs.name] = parseCrew(n, text);
       else if (n.tag === "shipBlueprint" && n.attrs.name?.startsWith("PLAYER_SHIP_")) {
         db.ships[n.attrs.name] = parseShip(n, text);
-      }
+      } else if (n.tag === "blueprintList" && n.attrs.name) lists[n.attrs.name] = kids(n, "name").map((x) => x.text.trim());
+      else if (n.tag === "shipBlueprint" && n.attrs.name && n.attrs.layout && f.includes("Blueprints")) enemyNodes.push(n);
     }
   }
   for (const id of HANGAR) {
@@ -244,6 +254,26 @@ export function buildDbFromFtl(read: FileSource): GameDB {
     if (!t) continue;
     db.layouts[s.layout] = parseLayout(s.layout, t, read(`data/${s.layout}.xml`));
     db.hangar.push(id);
+  }
+  // Single-player enemies (autoBlueprints): weapons come from a named pool, crew from amount..max.
+  for (const n of enemyNodes) {
+    const id = n.attrs.name;
+    // Skip bosses, the DLC re-tunes of the same hulls, and crewless Auto ships (they need the AI-ship rules).
+    if (db.ships[id] || /BOSS|FLAGSHIP|DRONE_|_PEACE|_DLC$|^AUTO_/.test(id)) continue;
+    const wl = kid(n, "weaponList");
+    const pool = (wl?.attrs.load ? lists[wl.attrs.load] : undefined) ?? kids(wl, "weapon").map((w) => w.attrs.name);
+    const s = parseShip(n, text);
+    const crew = kids(n, "crewCount")[0];
+    s.enemy = true;
+    s.weaponPool = (pool ?? []).filter((w) => db.weapons[w]);
+    s.crewMax = Number(crew?.attrs.max ?? s.crewCount) || s.crewCount;
+    s.weaponSlots = 4;
+    if (!s.weaponPool.length && !s.weapons.length) continue;
+    const t = read(`data/${s.layout}.txt`);
+    if (!t) continue;
+    db.layouts[s.layout] ??= parseLayout(s.layout, t, read(`data/${s.layout}.xml`));
+    db.ships[id] = s;
+    db.enemies.push(id);
   }
   for (const f of ["data/animations.xml", "data/dlcAnimations.xml"]) {
     const src = read(f);
@@ -255,7 +285,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
     const root = parseXml(src);
     const top = root.children.find((c) => c.tag === "FTL") ?? root;
     for (const n of top.children) {
-      if (n.tag === "music" || !n.text.trim().endsWith(".ogg")) continue;
+      if (n.tag === "music" || !/\.(ogg|wav)$/.test(n.text.trim())) continue;
       db.sounds[n.tag] = { file: n.text.trim(), volume: Number(n.attrs.volume ?? 5) || 5 };
     }
   }

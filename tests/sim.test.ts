@@ -106,3 +106,38 @@ describe("fog", () => {
     expect(v.ships[1].weaponsKnown).toBe(true);
   });
 });
+
+describe("oxygen, doors and fire", () => {
+  it("open-all twice opens the airlocks and vents the ship, which suffocates the crew", () => {
+    const m = mk();
+    const s = m.state.ships[0];
+    const g = m.geo(s);
+    const airlocks = g.doors.filter((d) => d.roomA === -1 || d.roomB === -1).map((d) => d.index);
+    expect(airlocks.length).toBeGreaterThan(0);
+    m.push(0, { c: "doorsAll", open: true });
+    m.step();
+    expect(airlocks.every((i) => !s.doors[i])).toBe(true);
+    m.push(0, { c: "doorsAll", open: true });
+    m.step();
+    expect(airlocks.every((i) => s.doors[i])).toBe(true);
+    s.systems.oxygen!.damage = s.systems.oxygen!.level; // no refill: venting alone
+    for (let i = 0; i < 30 * 40; i++) m.step();
+    expect(s.rooms.reduce((a, r) => a + r.o2, 0) / s.rooms.length).toBeLessThan(35); // one airlock, O2 system still running
+    expect(s.crew.some((c) => c.hp < c.maxHp)).toBe(true);
+    m.push(0, { c: "doorsAll", open: false });
+    m.step();
+    expect(s.doors.every((o) => !o)).toBe(true);
+  });
+  it("fire spreads across a room", () => {
+    const m = mk({ seed: 5 });
+    const s = m.state.ships[1];
+    const room = s.rooms.find((r) => (m.geo(s).roomTiles.get(r.id)?.length ?? 0) >= 4 && !s.crew.some((c) => m.geo(s).tiles.get(c.tile)!.room === r.id))!;
+    room.fires[m.geo(s).roomTiles.get(room.id)![0]] = 100;
+    let most = 0;
+    for (let i = 0; i < 30 * 30; i++) {
+      m.step();
+      most = Math.max(most, s.rooms.reduce((a, r) => a + Object.keys(r.fires).length, 0));
+    }
+    expect(most).toBeGreaterThanOrEqual(3);
+  });
+});
