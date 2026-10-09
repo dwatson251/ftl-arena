@@ -21,7 +21,13 @@ export class Match {
 
   constructor(public db: GameDB, config: MatchConfig, loadouts: [Loadout, Loadout], players: [string, string]) {
     this.rng = new Rng(config.seed);
-    const pick = (n: string[]) => n[this.rng.int(n.length)];
+    const used = new Set<string>();
+    const pick = (n: string[]) => {
+      const free = n.filter((x) => !used.has(x));
+      const name = free.length ? free[this.rng.int(free.length)] : n[this.rng.int(n.length)];
+      used.add(name);
+      return name;
+    };
     const ships: [ShipState, ShipState] = [
       buildShip(db, loadouts[0], 0, players[0], pick),
       buildShip(db, loadouts[1], 1, players[1], pick),

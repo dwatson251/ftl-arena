@@ -64,6 +64,12 @@ export function parseWeapon(n: XNode, text: Record<string, string>): WeaponBP | 
     boost: boost
       ? { type: txt(boost, "type") === "damage" ? "damage" : "cooldown", amount: num(boost, "amount"), count: num(boost, "count") }
       : undefined,
+    sounds: {
+      launch: kids(kid(n, "launchSounds"), "sound").map((x) => x.text.trim()),
+      hit: kids(kid(n, "hitShipSounds"), "sound").map((x) => x.text.trim()),
+      shield: kids(kid(n, "hitShieldSounds"), "sound").map((x) => x.text.trim()),
+      miss: kids(kid(n, "missSounds"), "sound").map((x) => x.text.trim()),
+    },
   };
 }
 
@@ -101,7 +107,8 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     });
   }
   const wl = kid(n, "weaponList");
-  const crew = kid(n, "crewCount");
+  // Hulls list one <crewCount> per race (the Osprey has four); v1 crews are all human, so sum them.
+  const crews = kids(n, "crewCount");
   return {
     id: n.attrs.name,
     title: title(n, "name", text) || n.attrs.name,
@@ -113,8 +120,8 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     missiles: Number(wl?.attrs.missiles ?? 0) || 0,
     health: Number(kid(n, "health")?.attrs.amount ?? 30),
     maxPower: Number(kid(n, "maxPower")?.attrs.amount ?? 8),
-    crewCount: Number(crew?.attrs.amount ?? 3),
-    crewRace: crew?.attrs.class ?? "human",
+    crewCount: crews.length ? crews.reduce((a, c) => a + (Number(c.attrs.amount) || 0), 0) : 3,
+    crewRace: crews[0]?.attrs.class ?? "human",
   };
 }
 
@@ -185,14 +192,14 @@ const HANGAR = [
 ];
 
 /**
- * Load order mirrors the game: blueprints.xml, then dlcBlueprints.xml, then dlcBlueprintsOverwrite.xml, and
- * autoBlueprints.xml for completeness. Later definitions win.
+ * Load order mirrors the game: blueprints.xml, then dlcBlueprints.xml, then dlcBlueprintsOverwrite.xml;
+ * later definitions win.
  */
 export function buildDbFromFtl(read: FileSource): GameDB {
   const text = { ...parseText(read("data/text_blueprints.xml") ?? ""), ...parseText(read("data/text_misc.xml") ?? "") };
   const db: GameDB = {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
-    anims: {}, hangar: [],
+    anims: {}, sounds: {}, hangar: [],
   };
   for (const f of ["data/blueprints.xml", "data/dlcBlueprints.xml", "data/dlcBlueprintsOverwrite.xml"]) {
     const src = read(f);
@@ -223,6 +230,16 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   for (const f of ["data/animations.xml", "data/dlcAnimations.xml"]) {
     const src = read(f);
     if (src) parseAnimations(src, db);
+  }
+  for (const f of ["data/sounds.xml", "data/dlcSounds.xml"]) {
+    const src = read(f);
+    if (!src) continue;
+    const root = parseXml(src);
+    const top = root.children.find((c) => c.tag === "FTL") ?? root;
+    for (const n of top.children) {
+      if (n.tag === "music" || !n.text.trim().endsWith(".ogg")) continue;
+      db.sounds[n.tag] = { file: n.text.trim(), volume: Number(n.attrs.volume ?? 5) || 5 };
+    }
   }
   return db;
 }

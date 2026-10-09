@@ -96,6 +96,6 @@ export function placeholderDb(): GameDB {
       },
     },
     layouts: { ph_skiff: skiff },
-    animSheets: {}, weaponAnims: {}, anims: {}, hangar: ["PH_SKIFF"],
+    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, hangar: ["PH_SKIFF"],
   };
 }

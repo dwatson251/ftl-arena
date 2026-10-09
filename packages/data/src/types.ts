@@ -41,6 +41,8 @@ export interface WeaponBP {
   chargeLevels: number;
   /** Chain weapons: each volley adds `amount` (cooldown seconds or damage), up to `count` times. */
   boost?: { type: "cooldown" | "damage"; amount: number; count: number };
+  /** Sound names (keys of GameDB.sounds) per event. */
+  sounds?: { launch: string[]; hit: string[]; shield: string[]; miss: string[] };
 }
 
 export type SystemId =
@@ -169,6 +171,8 @@ export interface GameDB {
   animSheets: Record<string, AnimSheet>;
   weaponAnims: Record<string, WeaponAnim>;
   anims: Record<string, Anim>;
+  /** Sound name -> file under audio/waves/ and volume (0-10ish). */
+  sounds: Record<string, { file: string; volume: number }>;
   /** Base hulls offered in the hangar, in order. */
   hangar: string[];
 }
