@@ -53,6 +53,9 @@ export class ShipRenderer {
   marksRoot = new Container();
   marks: Imm;
   private thrusterRoot = new Container();
+  /** Weapons sit behind the hull art, poking out at their mounts. */
+  private weaponRoot = new Container();
+  private weaponsImm: Imm;
   private thrusters: Imm;
   private nozzles: { x: number; y: number; h: number }[] | null = null;
   private retract: number[] = [];
@@ -74,7 +77,8 @@ export class ShipRenderer {
     this.gibs = new Imm(this.gibRoot);
     this.marks = new Imm(this.marksRoot);
     this.thrusters = new Imm(this.thrusterRoot);
-    this.root.addChild(this.shieldG, this.thrusterRoot, this.hull, this.floorG, this.interior, this.stripeRoot, this.dynRoot, this.fog, this.overlay, this.marksRoot, this.gibRoot);
+    this.weaponsImm = new Imm(this.weaponRoot);
+    this.root.addChild(this.shieldG, this.thrusterRoot, this.weaponRoot, this.hull, this.floorG, this.interior, this.stripeRoot, this.dynRoot, this.fog, this.overlay, this.marksRoot, this.gibRoot);
   }
 
   /** img/<dir>/<img>_<suffix>.png for this hull (player hulls in ship/, enemy hulls in ships_glow/). */
@@ -175,7 +179,7 @@ export class ShipRenderer {
     const up = this.upright;
     const d = this.dyn;
     const exploded = o.exploded ?? null;
-    for (const n of [this.hull, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot]) n.visible = exploded === null;
+    for (const n of [this.hull, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.weaponRoot, this.thrusterRoot]) n.visible = exploded === null;
     if (this.shieldArt) this.shieldArt.visible = exploded === null;
     if (exploded !== null) {
       this.drawGibs(exploded);
@@ -212,7 +216,8 @@ export class ShipRenderer {
     if (v.interior) {
       for (const rs of v.rooms) {
         if (!visible(rs.id)) continue;
-        for (const t of Object.keys(rs.breaches)) this.tileAnim(`br${t}`, t, animFrame(this.db, "breach", Math.floor(time * 8)), 0x2a2a2a, 0.9);
+        // A breach is a state, not a loop: the crack shrinks back through its frames as it's repaired.
+        for (const [t, hp] of Object.entries(rs.breaches)) this.tileAnim(`br${t}`, t, animFrame(this.db, "breach", Math.max(0, Math.min(6, Math.ceil((hp / 100) * 7) - 1))), 0x2a2a2a, 1);
         for (const t of Object.keys(rs.fires)) this.tileAnim(`fi${t}`, t, animFrame(this.db, "fire_large", Math.floor(time * 10 + t.length)), 0xff7a1a, 0.9);
       }
     }
@@ -255,11 +260,16 @@ export class ShipRenderer {
         else gg.rect(dr.px - 15 + f * 3, dr.py - 3, 30 - f * 6, 6).fill({ color: col });
       }
     });
-    for (const cd of crew) this.drawCrew(cd, time);
+    const facing = new Map<string, string>();
+    for (const s of Object.values(v.systems)) if (s?.station && s.facing) facing.set(s.station, s.facing);
+    const medRoom = v.systems.medbay && (v.systems.medbay.power + (v.systems.medbay.bonus ?? 0)) > 0 ? v.systems.medbay.room : -1;
+    for (const cd of crew) this.drawCrew(cd, time, facing, medRoom);
     // Weapons on the hull; the battle decides the frame (charge lights, firing). Unpowered weapons slide
     // back into the hull along their mount's slide direction, like FTL.
     const dt = Math.min(0.1, Math.max(0, time - this.lastTime));
     this.lastTime = time;
+    const wi = this.weaponsImm;
+    wi.begin();
     if (L.img.w > 0 && this.hasArt()) {
       v.weapons.forEach((w, i) => {
         const m = L.mounts[i];
@@ -273,12 +283,26 @@ export class ShipRenderer {
         this.retract[i] = cur + Math.sign(target - cur) * Math.min(Math.abs(target - cur), dt * 2.5);
         const k = this.retract[i] * 14;
         const [sx, sy] = { up: [0, 1], down: [0, -1], left: [1, 0], right: [-1, 0], "": [0, 0] }[m.slide ?? ""];
-        d.sprite(`wp${i}`, f, L.img.x + m.x + sx * k, L.img.y + m.y + sy * k, {
+        const mx = L.img.x + m.x + sx * k;
+        const my = L.img.y + m.y + sy * k;
+        wi.sprite(`wp${i}`, f, mx, my, {
           anchor: [anim.mountPoint.x / f.width, anim.mountPoint.y / f.height], scale: [m.mirror ? -1 : 1, 1],
           rotation: m.rotate ? Math.PI / 2 : 0,
         });
+        // Enemy weapons we can read (sensors 3) get FTL's small yellow charge bar beside the gun.
+        if (this.enemy && v.weaponsKnown && w.charge >= 0) {
+          const cdw = w.cd ?? bp.cooldown;
+          const kk = w.volleys > 0 ? 1 : Math.min(1, w.charge / (cdw || 1));
+          const bx = mx + (m.mirror ? 14 : -20);
+          const by = my - 28;
+          const g2 = d.gfx(`ec${i}`);
+          g2.rect(bx, by, 6, 30).fill({ color: 0x101010, alpha: 0.8 }).stroke({ color: 0xfff0a0, width: 1 });
+          const hgt = Math.floor(28 * kk / 2) * 2;
+          g2.rect(bx + 1, by + 29 - hgt, 4, hgt).fill({ color: w.volleys > 0 ? 0xfff040 : 0xffc020 });
+        }
       });
     }
+    wi.end();
     // Engine glow at the nozzles while the engines have power.
     const th = this.thrusters;
     th.begin();
@@ -335,7 +359,7 @@ export class ShipRenderer {
     else this.dyn.gfx(key).rect(x * TILE + 4, y * TILE + 4, TILE - 8, TILE - 8).fill({ color: fallback, alpha });
   }
 
-  private drawCrew(cd: CrewDraw, time: number): void {
+  private drawCrew(cd: CrewDraw, time: number, facing: Map<string, string>, medRoom: number): void {
     const { c } = cd;
     if (c.dead) return;
     const d = this.dyn;
@@ -361,8 +385,15 @@ export class ShipRenderer {
       anim = `${race}_fire_down`;
       fr = Math.floor(time * 5);
     } else if (c.task === "man") {
-      anim = `${race}_type_up`;
+      // Face the station's computer (the blueprint's slot <direction>).
+      anim = `${race}_type_${facing.get(c.tile) ?? "up"}`;
       fr = Math.floor(time * 6);
+    }
+    if (c.dying !== undefined) {
+      // Death animation, played once over the dying time.
+      anim = `${race}_death_right`;
+      const a = this.db.anims[anim];
+      fr = Math.min((a?.frames ?? 5) - 1, Math.floor((1 - c.dying / 0.9) * (a?.frames ?? 5)));
     }
     const t = animFrame(this.db, anim, fr) ?? animFrame(this.db, `${race}_walk_down`, 0);
     const key = `cr${c.id}`;
@@ -378,7 +409,7 @@ export class ShipRenderer {
       d.gfx(key).circle(px, py, 9).fill({ color: this.enemy ? 0xe05555 : 0x5fa8ff }).stroke({ color: cd.selected ? 0x30ff30 : 0x000000, width: 2 });
     }
     // Health box (shown when hurt or selected), kept above the sprite on screen.
-    if (cd.selected || c.hp < c.maxHp) {
+    if (c.dying === undefined && (cd.selected || c.hp < c.maxHp)) {
       const hp = Math.max(0, c.hp / c.maxHp);
       const col = hp > 0.5 ? 0x5fdc5f : hp > 0.25 ? 0xf0c030 : 0xff4040;
       const gx = d.gfx(`${key}h`);
@@ -389,6 +420,12 @@ export class ShipRenderer {
       } else gx.rect(px + 17, py - 13, 4, 26 * hp).fill({ color: col });
     }
     if (c.stun > 0) d.gfx(`${key}s`).circle(px, py - 14, 4).fill({ color: 0x9fd0ff });
+    // Healing crosses while the medbay heals this crew member.
+    const heal = texNow("people/healing_strip11.png");
+    const tileRoom = this.geo.tiles.get(c.tile)?.room;
+    if (heal && c.dying === undefined && tileRoom === medRoom && c.hp < c.maxHp && c.path.length === 0) {
+      d.sprite(`${key}heal`, frame(heal, (Math.floor(time * 12) % 11) * 32, 0, 32, 32), px, py - 4, { anchor: 0.5, rotation: this.upright });
+    }
   }
 
   private drawGibs(t: number): void {

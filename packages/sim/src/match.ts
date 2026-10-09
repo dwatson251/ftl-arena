@@ -31,8 +31,8 @@ export class Match {
       return name;
     };
     const ships: [ShipState, ShipState] = [
-      buildShip(db, loadouts[0], 0, players[0], pick),
-      buildShip(db, loadouts[1], 1, players[1], pick),
+      buildShip(db, loadouts[0], 0, players[0], pick, config.unlimited),
+      buildShip(db, loadouts[1], 1, players[1], pick, config.unlimited),
     ];
     this.state = { tick: 0, rng: this.rng.s, nextId: 1, config, ships, projectiles: [], events: [], winner: null, endReason: "" };
     for (const s of ships) this.updateDerived(s);
@@ -85,7 +85,8 @@ export class Match {
     switch (cmd.c) {
       case "power": {
         const s = ship.systems[cmd.system];
-        if (!s || isSubsystem(s.id)) return false;
+        // An ionised system is locked: power can neither enter nor leave it.
+        if (!s || isSubsystem(s.id) || s.ion > 0) return false;
         if (cmd.delta > 0) {
           if (reactorUsed(ship) >= ship.reactor || s.power >= usable(s)) return false;
           s.power++;
@@ -99,7 +100,7 @@ export class Match {
       case "weaponPower": {
         const w = ship.weapons[cmd.slot];
         const ws = ship.systems.weapons;
-        if (!w || !ws) return false;
+        if (!w || !ws || ws.ion > 0) return false;
         if (!cmd.on) {
           if (!w.powered) return false;
           w.powered = false;
@@ -137,6 +138,14 @@ export class Match {
           const c = ship.crew.find((q) => q.id === id && !q.dead);
           if (c) this.sendCrew(ship, g, c, cmd.room);
         }
+        return true;
+      }
+      case "swapWeapons": {
+        const { a, b } = cmd;
+        if (a === b || !ship.weapons[a] || !ship.weapons[b]) return false;
+        [ship.weapons[a], ship.weapons[b]] = [ship.weapons[b], ship.weapons[a]];
+        ship.weapons[a].slot = a;
+        ship.weapons[b].slot = b;
         return true;
       }
       case "door":
@@ -190,7 +199,9 @@ export class Match {
 
   eff(s: SystemState | undefined): number {
     if (!s) return 0;
-    return isSubsystem(s.id) ? usable(s) : Math.min(s.power + (s.bonus ?? 0), usable(s));
+    // A manned subsystem (sensors, doors) works one level up while it has any power.
+    if (isSubsystem(s.id)) return usable(s) > 0 ? usable(s) + (s.manBonus ?? 0) : 0;
+    return Math.min(s.power + (s.bonus ?? 0), usable(s));
   }
 
   private weaponLoad(ship: ShipState): number {
@@ -209,7 +220,7 @@ export class Match {
   mannedBy(ship: ShipState, id: SystemId): CrewState | undefined {
     const s = ship.systems[id];
     if (!s || !s.station || this.eff(s) <= 0) return undefined;
-    return ship.crew.find((c) => !c.dead && c.stun <= 0 && c.path.length === 0 && c.tile === s.station);
+    return ship.crew.find((c) => !c.dead && !c.dying && c.stun <= 0 && c.path.length === 0 && c.tile === s.station);
   }
 
   skill(c: CrewState | undefined, sk: SkillId): number {
@@ -227,6 +238,10 @@ export class Match {
     for (const s of Object.values(ship.systems)) {
       if (!s) continue;
       s.bonus = 0;
+      s.manBonus = 0;
+      if ((s.id === "sensors" || s.id === "doors") && s.station && usable(s) > 0) {
+        if (ship.crew.some((c) => !c.dead && !c.dying && c.stun <= 0 && c.path.length === 0 && c.tile === s.station)) s.manBonus = 1;
+      }
       for (const c of ship.crew) {
         const p = raceOf(c.race).power;
         if (p && !c.dead && c.path.length === 0 && g.tiles.get(c.tile)?.room === s.room) s.bonus += p;
@@ -280,20 +295,26 @@ export class Match {
 
   // ---------------------------------------------------------------- weapons and projectiles
 
+  /**
+   * The charge ceiling: FTL doesn't charge faster when manned or chained; the target comes down. Manned
+   * weapons take 10/15/20 % off by skill; chain weapons take `amount` off per boost.
+   */
   cooldownOf(ship: ShipState, slot: number): number {
     const w = ship.weapons[slot];
     const bp = this.wbp(w.bp);
     let cd = bp.cooldown;
+    const m = this.mannedBy(ship, "weapons");
+    if (m) cd *= 1 - RULES.weaponManBonus[this.skill(m, "weapons")];
     if (bp.boost?.type === "cooldown") cd = Math.max(1, cd - bp.boost.amount * w.boost);
     return cd;
   }
 
   private weaponsTick(ship: ShipState): void {
-    const manned = this.mannedBy(ship, "weapons");
-    const rate = 1 + (manned ? RULES.weaponManBonus[this.skill(manned, "weapons")] : 0);
     for (const w of ship.weapons) {
       const bp = this.wbp(w.bp);
       const cd = this.cooldownOf(ship, w.slot);
+      w.cd = cd;
+      const rate = 1;
       if (!w.powered) {
         w.charge = Math.max(0, w.charge - DT * RULES.weaponDrain);
         w.volleys = 0;
@@ -301,7 +322,7 @@ export class Match {
         continue;
       }
       if (w.volleys < bp.chargeLevels) {
-        w.charge += DT * rate;
+        w.charge = Math.min(cd, w.charge + DT * rate);
         if (w.charge >= cd) {
           w.volleys++;
           w.charge = w.volleys < bp.chargeLevels ? 0 : cd;
@@ -443,10 +464,15 @@ export class Match {
   private hitRoom(src: ShipState, T: ShipState, g: Geometry, bp: WeaponBP, room: number, dmg: number, px: number, py: number, rollHazards: boolean): void {
     const st = this.state;
     const sys = Object.values(T.systems).find((s) => s && s.room === room);
+    if (this.god.has(T.idx)) {
+      // God mode: nothing harms this ship or its crew.
+      st.events.push({ e: "hit", ship: T.idx, room, damage: 0, px, py });
+      return;
+    }
     let hullDmg = bp.type === "BOMB" ? 0 : dmg;
     if (bp.hullBust && !sys) hullDmg *= 2;
     if (hullDmg > 0) {
-      const floor = st.config.winCondition === "crew" || this.god.has(T.idx) ? 1 : 0;
+      const floor = st.config.winCondition === "crew" ? 1 : 0;
       const before = T.hull;
       T.hull = Math.max(floor, T.hull - hullDmg);
       src.stats.damageDealt += before - T.hull;
@@ -475,7 +501,8 @@ export class Match {
         st.events.push({ e: "fireStart", ship: T.idx, room });
       }
     }
-    if (rollHazards && bp.breachChance > 0 && this.rng.chance(bp.breachChance / 10)) {
+    // At most one breach per room.
+    if (rollHazards && bp.breachChance > 0 && !Object.keys(rs.breaches).length && this.rng.chance(bp.breachChance / 10)) {
       const t = this.rng.pick(tiles);
       if (!(t in rs.breaches)) {
         rs.breaches[t] = 100;
@@ -491,8 +518,19 @@ export class Match {
     const g = this.geo(ship);
     const medbay = ship.systems.medbay;
     const heal = RULES.medbayHeal[Math.min(3, this.eff(medbay))];
+    const god = this.god.has(ship.idx);
     for (const c of ship.crew) {
       if (c.dead) continue;
+      if (c.dying !== undefined) {
+        // The death animation plays out before the crew member counts as dead.
+        c.dying -= DT;
+        if (c.dying <= 0) {
+          c.dead = true;
+          c.dying = undefined;
+          this.state.events.push({ e: "death", ship: ship.idx, crew: c.id });
+        }
+        continue;
+      }
       const room = g.tiles.get(c.tile)!.room;
       const rs = ship.rooms.find((r) => r.id === room)!;
       // Hazards
@@ -500,13 +538,14 @@ export class Match {
       if (c.tile in rs.fires && !tr.fireImmune) c.hp -= RULES.fireCrewDps * DT;
       if (rs.o2 < RULES.suffocateAt) c.hp -= RULES.suffocateDps * tr.suffocation * DT;
       if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - tr.drainO2 * DT);
-      if (this.god.has(ship.idx)) c.hp = Math.max(1, c.hp);
+      if (god) c.hp = c.maxHp;
       if (medbay && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
       if (c.hp <= 0) {
-        c.dead = true;
         c.hp = 0;
         c.path = [];
-        this.state.events.push({ e: "death", ship: ship.idx, crew: c.id });
+        c.x = Number(c.tile.split(",")[0]);
+        c.y = Number(c.tile.split(",")[1]);
+        c.dying = RULES.deathAnim;
         continue;
       }
       if (c.stun > 0) {
@@ -598,7 +637,7 @@ export class Match {
       }
       const sys = Object.values(ship.systems).find((s) => s && s.room === rs.id);
       const burning = Object.keys(rs.fires).length;
-      if (sys && burning) {
+      if (sys && burning && !this.god.has(ship.idx)) {
         sys.fireDmg += (DT * burning) / RULES.fireSysSeconds;
         if (sys.fireDmg >= 1) {
           sys.fireDmg = 0;
@@ -609,7 +648,31 @@ export class Match {
         }
       }
     }
-    // Doors: open interior doors equalise O2, open airlocks vent to space.
+    // Open airlocks pull air out of every room joined to them through open doors, weaker with distance
+    // (air rushes out; it doesn't diffuse room by room).
+    const depth = new Map<number, number>();
+    const q: number[] = [];
+    g.doors.forEach((d, i) => {
+      if (!ship.doors[i] || (d.roomA >= 0 && d.roomB >= 0)) return;
+      const r = d.roomA >= 0 ? d.roomA : d.roomB;
+      if (!depth.has(r)) {
+        depth.set(r, 0);
+        q.push(r);
+      }
+    });
+    while (q.length) {
+      const r = q.shift()!;
+      g.doors.forEach((d, i) => {
+        if (!ship.doors[i] || d.roomA < 0 || d.roomB < 0) return;
+        const o = d.roomA === r ? d.roomB : d.roomB === r ? d.roomA : -1;
+        if (o >= 0 && !depth.has(o)) {
+          depth.set(o, depth.get(r)! + 1);
+          q.push(o);
+        }
+      });
+    }
+    for (const [r, dd] of depth) if (dd > 0) byId.get(r)!.o2 -= (RULES.ventPull / (1 + 0.5 * (dd - 1))) * DT;
+    // Doors: open interior doors share O2 gradually, open airlocks vent to space.
     g.doors.forEach((d, i) => {
       if (!ship.doors[i]) return;
       const a = d.roomA >= 0 ? byId.get(d.roomA) : undefined;

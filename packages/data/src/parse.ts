@@ -99,6 +99,7 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
   for (const s of kid(n, "systemList")?.children ?? []) {
     if (!SYSTEM_IDS.has(s.tag)) continue;
     const slotNum = kid(kid(s, "slot"), "number");
+    const dir = kid(kid(s, "slot"), "direction")?.text.trim();
     const station = slotNum ? Number(slotNum.text.trim()) : MANNED.has(s.tag) ? 0 : -1;
     systems.push({
       id: s.tag as SystemId,
@@ -108,6 +109,7 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
       station: MANNED.has(s.tag) || s.tag === "medbay" ? station : -1,
       img: s.attrs.img,
       max: s.attrs.max ? Number(s.attrs.max) : undefined,
+      facing: (["up", "down", "left", "right"].includes(dir ?? "") ? dir : undefined) as ShipSystemSlot["facing"],
     });
   }
   const wl = kid(n, "weaponList");
@@ -224,7 +226,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   const text = { ...parseText(read("data/text_blueprints.xml") ?? ""), ...parseText(read("data/text_misc.xml") ?? "") };
   const db: GameDB = {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
-    anims: {}, sounds: {}, names: [], hangar: [], enemies: [],
+    anims: {}, sounds: {}, names: [], hangar: [], enemies: [], music: [],
   };
   const lists: Record<string, string[]> = {};
   const enemyNodes: XNode[] = [];
@@ -285,7 +287,11 @@ export function buildDbFromFtl(read: FileSource): GameDB {
     const root = parseXml(src);
     const top = root.children.find((c) => c.tag === "FTL") ?? root;
     for (const n of top.children) {
-      if (n.tag === "music" || !/\.(ogg|wav)$/.test(n.text.trim())) continue;
+      if (n.tag === "music") {
+        for (const t of kids(n, "track")) db.music.push({ name: txt(t, "name") ?? "", explore: txt(t, "explore"), combat: txt(t, "combat") });
+        continue;
+      }
+      if (!/\.(ogg|wav)$/.test(n.text.trim())) continue;
       db.sounds[n.tag] = { file: n.text.trim(), volume: Number(n.attrs.volume ?? 5) || 5 };
     }
   }

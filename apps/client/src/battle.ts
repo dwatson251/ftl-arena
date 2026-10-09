@@ -11,7 +11,7 @@ import type { GameDB, SystemId } from "@ftl/data";
 import { SUBSYSTEMS } from "@ftl/data";
 import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
 import { animFrame, texNow } from "./assets.ts";
-import { play, setSound, soundOn } from "./audio.ts";
+import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, setSound, soundOn, stopLoops } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
 import { ShipRenderer, type CrewDraw } from "./render/ship.ts";
 
@@ -117,6 +117,7 @@ export class Battle {
   }
 
   destroy(): void {
+    stopLoops();
     window.removeEventListener("keydown", this.keyHandler);
     this.stage.destroy({ children: true });
   }
@@ -183,9 +184,13 @@ export class Battle {
   }
 
   onSnapshot(v: MatchView): void {
-    if (!this.view) this.setupShips(v);
+    if (!this.view) {
+      this.setupShips(v);
+      music(pickBattleTrack(this.db, v.config.seed));
+    }
     this.prev = this.view ?? v;
     this.view = v;
+    this.soundscape(v);
     this.snapAt = performance.now();
     for (const e of v.events) this.onEvent(e);
     const own = v.ships[v.you];
@@ -214,7 +219,14 @@ export class Battle {
     switch (e.e) {
       case "fire":
         this.firedAt.set(`${e.ship}:${e.slot}`, this.time);
-        play(this.db, bpOf(e.ship, e.slot)?.sounds?.launch, e.ship === v.you ? 1 : 0.6);
+        play(this.db, bpOf(e.ship, e.slot)?.type === "BOMB" ? ["bombTeleport"] : bpOf(e.ship, e.slot)?.sounds?.launch, e.ship === v.you ? 1 : 0.6);
+        break;
+      case "breach":
+        play(this.db, ["breach", "airLoss"], e.ship === v.you ? 1 : 0.5);
+        if (e.ship === v.you) this.say("Hull breach!", 0xff5a50);
+        break;
+      case "fireStart":
+        if (e.ship === v.you) play(this.db, ["fire"], 0.6);
         break;
       case "hit":
         this.boom(e.ship, e.px, e.py, e.damage > 0 ? 1 : 0.7);
@@ -395,9 +407,12 @@ export class Battle {
     const anim = bp && this.db.weaponAnims[bp.weaponArt];
     if (!anim) return 0;
     const fired = this.firedAt.get(`${ship}:${slot}`);
-    if (fired !== undefined && this.time - fired < 0.35) {
-      const n = anim.frames - anim.fireFrame;
-      return Math.min(anim.frames - 1, anim.fireFrame + Math.floor(((this.time - fired) / 0.35) * n));
+    // After firing, play the frames past the charged one (recoil for guns, the teleport for bomb launchers).
+    const fireDur = bp.type === "BOMB" ? 0.7 : 0.35;
+    if (fired !== undefined && this.time - fired < fireDur) {
+      const first = anim.chargedFrame + 1;
+      const n = anim.frames - first;
+      return Math.min(anim.frames - 1, first + Math.floor(((this.time - fired) / fireDur) * n));
     }
     if (w.charge < 0) return 0;
     if (w.volleys > 0) return anim.chargedFrame;
@@ -422,7 +437,8 @@ export class Battle {
     mk.begin();
     own.weapons.forEach((w, i) => {
       if (!w.target) return;
-      const yellow = this.armed === i;
+      // FTL: yellow reticle = autofire, red = fire once.
+      const yellow = w.autofire;
       if (w.target.kind === "room") {
         const r = this.enemy.layout.rooms.find((q) => q.id === (w.target as { room: number }).room);
         if (!r) return;
@@ -479,7 +495,20 @@ export class Battle {
       }
       const target = this.stage.toLocal(dst.root.toGlobal({ x: tx, y: ty }));
       if (p.kind === "BOMB") {
-        if (k2 >= 0) this.drawShot(mine ? this.projWin : this.projOwn, bp?.image, target.x, target.y, 0, "BOMB", Math.min(1, k2 * 2));
+        // The bomb materialises in the room: its spin frames (0-3), then its teleport-out frames.
+        if (k2 >= 0) {
+          const a = bp?.image ? this.db.anims[bp.image] : undefined;
+          const n = a?.frames ?? 9;
+          const fr = k2 < 0.7 ? Math.floor(this.time * 10) % Math.min(4, n) : Math.min(n - 1, 4 + Math.floor(((k2 - 0.7) / 0.3) * (n - 4)));
+          const f = bp?.image ? animFrame(this.db, bp.image, fr) : null;
+          const layer = mine ? this.projWin : this.projOwn;
+          if (f) {
+            const sp = new Sprite(f);
+            sp.anchor.set(0.5);
+            sp.position.set(target.x, target.y);
+            layer.addChild(sp);
+          } else this.drawShot(layer, undefined, target.x, target.y, 0, "BOMB", 1);
+        }
         continue;
       }
       if (k1 <= 1) {
@@ -547,6 +576,19 @@ export class Battle {
     this.systemsBar(own);
     this.subsystems(own);
     this.weaponsTray(own);
+    for (const id of [...MAIN_SYS, ...SUB_SYS]) {
+      const sys = own.systems[id];
+      if (!sys) continue;
+      const main = MAIN_SYS.filter((x) => own.systems[x]).indexOf(id);
+      const sub = SUB_SYS.filter((x) => own.systems[x]).indexOf(id);
+      if (main >= 0) this.ionPie(`ion${id}`, sys, SYS_X0 + 32 + main * SYS_DX, SYS_ICON_Y + 32);
+      else if (sub >= 0) this.ionPie(`ion${id}`, sys, SUB_X0 + 32 + sub * SYS_DX, SUB_ICON_Y + 32);
+    }
+    if (this.message && this.time < this.message.until) {
+      const t = h.text("msg", this.message.text, 440, 588, fstyle("JustinFont12Bold", this.message.color, { stroke: 0x101010, strokeWidth: 3 }), [0.5, 0]);
+      t.alpha = Math.min(1, (this.message.until - this.time) / 0.4);
+    }
+    this.tooltip(v);
     if (this.armed !== null) {
       const bp = this.db.weapons[own.weapons[this.armed]?.bp];
       if (bp?.type === "BEAM") h.text("hint", this.beamStart ? "Click to aim the beam" : "Click where the beam starts", OWN.cx, 588, fstyle("JustinFont10", 0xffd27a, { stroke: 0x101010 }), [0.5, 0]);
@@ -556,6 +598,62 @@ export class Battle {
       h.text("clock", `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, 640, 8, fstyle("HL2", 0xffffff, { stroke: 0x101010 }), [0.5, 0]);
     }
     h.end();
+  }
+
+  private hoverCrew: { id: number; mine: boolean } | null = null;
+  private mouse = { x: 0, y: 0 };
+
+  /** Hovering a crew member (on the ship or in the crew list) shows their name, race and health. */
+  private tooltip(v: MatchView): void {
+    if (!this.hoverCrew) return;
+    const ship = this.hoverCrew.mine ? v.ships[v.you] : v.ships[1 - v.you];
+    const c = ship.crew.find((q) => q.id === this.hoverCrew!.id && !q.dead);
+    if (!c) return;
+    const h = this.hud;
+    const race = this.db.crew[c.race]?.title ?? c.race;
+    const x = Math.min(W - 150, this.mouse.x + 14);
+    const y = this.mouse.y < 60 ? this.mouse.y + 18 : this.mouse.y - 46;
+    const g = h.gfx("tip");
+    g.rect(x, y, 136, 40).fill({ color: 0x141a1c, alpha: 0.95 }).stroke({ color: 0xdfe8e0, width: 2 });
+    h.text("tipN", c.name, x + 7, y + 2, fstyle("JustinFont10", 0xffffff));
+    h.text("tipR", race, x + 129, y + 3, fstyle("JustinFont8", 0xa8b4b0), [1, 0]);
+    const hp = Math.max(0, c.hp / c.maxHp);
+    g.rect(x + 7, y + 25, 88, 8).fill({ color: 0x2a1010 }).rect(x + 7, y + 25, Math.floor(88 * hp), 8).fill({ color: hp > 0.5 ? 0x78ff78 : hp > 0.25 ? 0xffe050 : 0xff5040 });
+    h.text("tipH", `${Math.ceil(c.hp)}/${c.maxHp}`, x + 129, y + 21, fstyle("JustinFont8", 0xffffff), [1, 0]);
+  }
+
+  /** Ambient loops and event sounds driven by our own ship's state. */
+  private lowHpBeep = new Map<number, number>();
+  private soundscape(v: MatchView): void {
+    const own = v.ships[v.you];
+    const g = this.own.geo;
+    const alive = own.crew.filter((c) => !c.dead && c.dying === undefined);
+    const roomOf = (c: { tile: string }) => g.tiles.get(c.tile)?.room;
+    const over = v.winner !== null;
+    loop(this.db, "fire", !over && own.rooms.some((r) => Object.keys(r.fires).length > 0), 0.8);
+    const venting = g.doors.some((d, i) => own.doors[i] && (d.roomA < 0 || d.roomB < 0));
+    loop(this.db, "airLeak", !over && (venting || own.rooms.some((r) => Object.keys(r.breaches).length > 0)), 1);
+    loop(this.db, "repair", !over && alive.some((c) => c.task === "repair" || c.task === "breach"), 0.8);
+    loop(this.db, "extinguish", !over && alive.some((c) => c.task === "fire"), 0.8);
+    const med = own.systems.medbay;
+    loop(this.db, "healing", !over && !!med && alive.some((c) => c.hp < c.maxHp && roomOf(c) === med.room && c.path.length === 0), 0.7);
+    // Low-health beep: when someone drops under 30 %, then every 6 s while they stay there.
+    for (const c of alive) {
+      const low = c.hp < c.maxHp * 0.3;
+      const last = this.lowHpBeep.get(c.id);
+      if (low && (last === undefined || this.time - last > 6)) {
+        play(this.db, ["lowCrewHealth"]);
+        this.lowHpBeep.set(c.id, this.time);
+      } else if (!low) this.lowHpBeep.delete(c.id);
+    }
+    // Doors opening/closing (by us, crew or the AI) make their sound.
+    const prev = this.prev?.ships[v.you];
+    if (prev && prev.doors.length === own.doors.length) {
+      const opened = own.doors.some((o, i) => o && !prev.doors[i]);
+      const closed = own.doors.some((o, i) => !o && prev.doors[i]);
+      if (opened) play(this.db, ["doorOpen"], 0.8);
+      else if (closed) play(this.db, ["doorClose"], 0.8);
+    }
   }
 
   /** An FTL outlined label (HL2, dark letters with a light outline). */
@@ -606,7 +704,7 @@ export class Battle {
       else g.roundRect(x + 4, 51, 20, 20, 4).fill({ color: i < s.shieldLayers ? 0x2a7bff : 0x101820 }).stroke({ color: 0x6fc0ff, width: 2 });
     }
     // The blue bar only shows while a layer is recharging.
-    if (s.shieldLayers < max && s.shieldCharge > 0) g.rect(32, 78, 90 * s.shieldCharge, 6).fill({ color: 0x2a7bff });
+    if (s.shieldLayers < max && s.shieldCharge > 0) g.rect(32, 78, Math.floor((90 * s.shieldCharge) / 3) * 3, 6).fill({ color: 0x2a7bff });
     // Missiles (FTL's fuel slot is unused in the arena, so missiles take its place).
     const mt = texNow(s.missiles > 0 ? "statusUI/top_missiles_on.png" : "statusUI/top_missiles_on_red.png");
     if (mt) h.sprite("msl", mt, 122, 43);
@@ -652,19 +750,7 @@ export class Battle {
     h.text("tgtClass", `Class: ${bp?.className?.split(" · ")[0] || bp?.title || en.bp}`, x + 382, y + 37, fstyle("JustinFont10", 0xffffff), [1, 0]);
     h.text("tgtRel", `Captain: ${en.player}`, x + 382, y + 53, fstyle("JustinFont10", 0xff5a50), [1, 0]);
     h.text("tgtEv", `Evasion ${en.evasion}%`, x + 382, y + 69, fstyle("JustinFont8", 0xe8d0d0), [1, 0]);
-    // Weapon charge bars (sensors 3): charging fills white, ready turns green.
-    if (en.weaponsKnown) {
-      en.weapons.forEach((w, i) => {
-        const bpw = this.db.weapons[w.bp];
-        const k = w.volleys > 0 ? 1 : Math.min(1, Math.max(0, w.charge) / (bpw?.cooldown || 1));
-        const bx = x + 296 + i * 22;
-        const by = y + 84;
-        const bar = texNow("combatUI/box_hostiles_weapon_charge.png");
-        if (bar) h.sprite(`ewc${i}`, bar, bx, by);
-        else g.rect(bx, by, 8, 35).stroke({ color: 0xffffff, width: 1 });
-        g.rect(bx + 2, by + 33 - 31 * k, 4, 31 * k).fill({ color: w.volleys > 0 ? 0x78ff78 : w.powered ? 0xe8e8e8 : 0x707070 });
-      });
-    }
+    // (Enemy weapon charge is drawn beside each gun on the enemy ship; see ShipRenderer.)
     // Enemy systems along the bottom of the window.
     const order: SystemId[] = ["pilot", "oxygen", "shields", "engines", "weapons", "medbay", "sensors", "doors"];
     order.filter((id) => en.systems[id]).forEach((id, i) => {
@@ -692,9 +778,14 @@ export class Battle {
       const sil = animFrame(this.db, `${race}_portrait`, 0, `people/${race}_color.png`);
       if (sil) h.sprite(`cps${c.id}`, sil, 27, y + 13, { anchor: 0.5, scale: 1.16, tint: 0xffe040 });
       if (por) h.sprite(`cp${c.id}`, por, 27, y + 13, { anchor: 0.5 });
-      const long = c.name.length > 7;
-      const nm = c.name.length > 9 ? `${c.name.slice(0, 8)}.` : c.name;
-      h.text(`cn${c.id}`, nm, 44, y - 2, fstyle(long ? "JustinFont8" : "JustinFont10", sel ? 0xffffff : 0xe8ece8));
+      // One size for every name: JustinFont8, measured against real FTL screenshots (~8 px capitals).
+      // Long names are cut off at the box edge rather than shrunk.
+      const t = h.text(`cn${c.id}`, c.name, 44, y - 1, fstyle("JustinFont8", sel ? 0xffffff : 0xe8ece8));
+      let nm = c.name;
+      while (t.width > 50 && nm.length > 1) {
+        nm = nm.slice(0, -1);
+        t.text = nm;
+      }
       const hp = Math.max(0, c.hp / c.maxHp);
       g.rect(44, y + 18, 46 * hp, 4).fill({ color: hp > 0.5 ? 0x78ff78 : hp > 0.25 ? 0xffe050 : 0xff5040 });
       this.crewHit.push({ id: c.id, box: { x: 10, y, w: 86, h: 26 } });
@@ -715,12 +806,41 @@ export class Battle {
   }
 
   private stationBtns: { kind: "assign" | "return"; box: Box }[] = [];
+  /** AUTOFIRE mode: new targets autofire unless Shift is held (and vice versa). */
+  private autoMode = false;
   /** Saved stations: crew id -> room. */
   private savedStations = new Map<number, number>();
 
   /** One system's power bars above its icon. Damaged bars are red, filling yellow while repaired. */
+  /** Bar pitch: FTL's 9 px, squeezed for unrestricted builds with many bars. */
+  private pitch(level: number): number {
+    return level <= 8 ? BAR_PITCH : Math.max(3, Math.floor(72 / level));
+  }
+
+  /**
+   * Ion lock: one segmented ring per ion stack around the system icon; the current one empties as its
+   * timer runs out (FTL's countdown pie).
+   */
+  private ionPie(key: string, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, cy: number): void {
+    if (sys.ion <= 0) return;
+    const g = this.hud.gfx(key);
+    const segs = 8;
+    for (let r = 0; r < sys.ion; r++) {
+      const rad = 16 + r * 4;
+      const left = r === 0 ? Math.max(0, sys.ionTimer / RULES.ionDuration) : 1;
+      const lit = Math.ceil(left * segs);
+      for (let i = 0; i < segs; i++) {
+        const a0 = -Math.PI / 2 + (i / segs) * Math.PI * 2 + 0.08;
+        const a1 = -Math.PI / 2 + ((i + 1) / segs) * Math.PI * 2 - 0.08;
+        g.arc(cx, cy, rad, a0, a1).stroke({ color: i < lit ? 0x6ab4ff : 0x1c2a40, width: 3 });
+      }
+    }
+  }
+
   private bars(key: string, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
     const g = this.hud.gfx(key);
+    const BAR_PITCH = this.pitch(sys.level);
+    const BAR_H = Math.min(7, BAR_PITCH - 2);
     const isSub = SUBSYSTEMS.includes(sys.id);
     const cap = usable(sys);
     const bonus = sys.bonus ?? 0;
@@ -732,7 +852,7 @@ export class Battle {
       const powered = !damaged && !ion && b < (isSub ? cap : Math.min(cap, sys.power + bonus));
       if (damaged) {
         g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0xff3a2a });
-        if (b === sys.level - sys.damage && sys.repair > 0) g.rect(x, yy, BAR_W * sys.repair, BAR_H).fill({ color: 0xffe050 });
+        if (b === sys.level - sys.damage && sys.repair > 0) g.rect(x, yy, Math.floor((BAR_W * sys.repair) / 3) * 3, BAR_H).fill({ color: 0xffe050 });
       } else if (ion) g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0x3a7fd0 });
       else if (powered) g.rect(x, yy, BAR_W, BAR_H).fill({ color: !isSub && b >= sys.power ? 0xd8ff50 : 0x78ff78 });
       else g.rect(x + 0.5, yy + 0.5, BAR_W - 1, BAR_H - 1).stroke({ color: 0xe8ece8, width: 1 });
@@ -776,11 +896,11 @@ export class Battle {
       const cx = SYS_X0 + 32 + i * SYS_DX;
       g.moveTo(cx - 10, 704).lineTo(cx - 2, 696).stroke({ color: 0xe8ece8, width: 2 });
       this.bars(`b${sys.id}`, sys, cx, 657);
-      if (this.manned(s, sys.id)) h.sprite(`mn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 657 - sys.level * BAR_PITCH - 2, { anchor: [0.5, 1], scale: 0.7 });
+      if (this.manned(s, sys.id)) h.sprite(`mn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 657 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`) ?? texNow(`icons/s_${sys.id}_green1.png`);
       if (icon) h.sprite(`si${sys.id}`, icon, SYS_X0 + i * SYS_DX, SYS_ICON_Y);
       else h.text(`si${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SYS_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
-      this.sysHit.push({ id: sys.id, box: { x: cx - 16, y: 657 - sys.level * BAR_PITCH - 4, w: 32, h: sys.level * BAR_PITCH + 60 } });
+      this.sysHit.push({ id: sys.id, box: { x: cx - 16, y: 657 - sys.level * this.pitch(sys.level) - 4, w: 32, h: sys.level * this.pitch(sys.level) + 60 } });
     });
   }
 
@@ -795,7 +915,7 @@ export class Battle {
     subs.forEach((sys, i) => {
       const cx = SUB_X0 + 32 + i * SYS_DX;
       this.bars(`sb${sys.id}`, sys, cx, 639);
-      if (this.manned(s, sys.id)) h.sprite(`smn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 639 - sys.level * BAR_PITCH - 2, { anchor: [0.5, 1], scale: 0.7 });
+      if (this.manned(s, sys.id)) h.sprite(`smn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 639 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`);
       if (icon) h.sprite(`ssi${sys.id}`, icon, SUB_X0 + i * SYS_DX, SUB_ICON_Y);
       else h.text(`ssi${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SUB_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
@@ -811,8 +931,8 @@ export class Battle {
         h.sprite("doorD", texNow("systemUI/button_door_bottom_on.png"), bx, by);
       } else h.gfx("doorBG").roundRect(bx + 4, by + 4, 32, 70, 4).stroke({ color: 0xe8ece8, width: 2 });
       this.doorBtns = [
-        { open: true, box: { x: bx, y: by, w: 40, h: 38 } },
-        { open: false, box: { x: bx, y: by + 38, w: 40, h: 40 } },
+        { open: false, box: { x: bx, y: by, w: 40, h: 38 } },
+        { open: true, box: { x: bx, y: by + 38, w: 40, h: 40 } },
       ];
     }
   }
@@ -848,11 +968,27 @@ export class Battle {
         if (glow) h.sprite(`wg${i}`, glow, bx - 17, by - 13, { w: SLOT.w + 34, h: SLOT.h + 26, tint: armed ? 0xffd040 : 0x78ff78, alpha: 0.55 });
       }
       g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).fill({ color: armed ? 0x3a3010 : ready ? 0x1d3a1f : 0x0f1414, alpha: 0.9 }).stroke({ color: edge, width: 2 });
-      // Charge: a thin vertical bar, filling steadily from the bottom.
-      const cd = bp?.cooldown ?? 1;
+      // Charge: a thin vertical bar filling from the bottom in 2 px steps. Manning and chain boosts don't
+      // speed it up; they lower its ceiling (the bar's top comes down to the shorter charge time).
+      const baseCd = bp?.cooldown ?? 1;
+      const cd = w.cd ?? baseCd;
+      const full = SLOT.h - 10;
+      const ceil = Math.max(4, Math.round((full * Math.min(1, cd / baseCd)) / 2) * 2);
       const k = ready ? 1 : Math.min(1, Math.max(0, w.charge) / cd);
-      g.rect(bx + 4.5, by + 4.5, 5, SLOT.h - 9).stroke({ color: w.powered ? 0x78ff78 : 0x8a8e8a, width: 1 });
-      if (k > 0) g.rect(bx + 5, by + 5 + (SLOT.h - 10) * (1 - k), 4, (SLOT.h - 10) * k).fill({ color: 0x78ff78 });
+      const fill = Math.floor((ceil * k) / 2) * 2;
+      g.rect(bx + 4.5, by + 4.5, 5, full + 1).stroke({ color: w.powered ? 0x506a50 : 0x5a5e5a, width: 1 });
+      g.rect(bx + 4.5, by + 4.5 + (full - ceil), 5, ceil + 1).stroke({ color: w.powered ? 0x78ff78 : 0x8a8e8a, width: 1 });
+      if (fill > 0) g.rect(bx + 5, by + 5 + full - fill, 4, fill).fill({ color: 0x78ff78 });
+      // Chain weapons: one pip per possible boost, lit as charges build up.
+      if (bp?.boost) {
+        const on = texNow("combatUI/icon_chain_on.png");
+        const off = texNow("combatUI/icon_chain_off.png");
+        for (let c = 0; c < bp.boost.count; c++) {
+          const lit = c < w.boost;
+          if (on && off) h.sprite(`ch${i}_${c}`, lit ? on : off, bx + 34 + c * 12, by + SLOT.h - 13);
+          else g.rect(bx + 34 + c * 10, by + SLOT.h - 12, 8, 6).fill({ color: lit ? 0xffd040 : 0x303030 });
+        }
+      }
       // Power bars, bottom left, one per power the weapon needs.
       const pw = bp?.power ?? 1;
       for (let p = 0; p < pw; p++) {
@@ -871,7 +1007,7 @@ export class Battle {
       this.weapHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
     }
     // AUTOFIRE: a tab under the right end of the tray, lit when any weapon autofires.
-    const anyAuto = s.weapons.some((w) => w.autofire);
+    const anyAuto = this.autoMode;
     const ax = 527;
     const ay = 668;
     const ab = h.gfx("autoBtn");
@@ -899,25 +1035,35 @@ export class Battle {
     for (const b of this.doorBtns) {
       if (!inBox(p, b.box)) continue;
       this.send({ c: "doorsAll", open: b.open });
-      play(this.db, [b.open ? "doorOpen" : "doorClose"]);
       return;
     }
     if (this.autoBox && inBox(p, this.autoBox)) {
-      const on = !own.weapons.some((w) => w.autofire);
-      own.weapons.forEach((_, slot) => this.send({ c: "autofire", slot, on }));
-      play(this.db, [on ? "autofireOn" : "autofireOff"]);
+      // AUTOFIRE sets the default for new targets (and applies to weapons already targeting).
+      this.autoMode = !this.autoMode;
+      own.weapons.forEach((w, slot) => w.target && this.send({ c: "autofire", slot, on: this.autoMode }));
+      play(this.db, [this.autoMode ? "autofireOn" : "autofireOff"]);
+      this.say(this.autoMode ? "Autofire on" : "Autofire off");
       return;
     }
-    for (const w of this.weapHit) if (inBox(p, w.box)) return this.clickWeapon(w.slot, right);
+    for (const w of this.weapHit) {
+      if (!inBox(p, w.box)) continue;
+      if (right) return this.clickWeapon(w.slot, true);
+      // Left button: a click (power/arm) unless it turns into a drag onto another slot.
+      this.weaponDrag = { slot: w.slot, x: p.x, y: p.y, moved: false };
+      return;
+    }
     for (const b of this.stationBtns) {
       if (!inBox(p, b.box)) continue;
       const g = this.own.geo;
       if (b.kind === "assign") {
         for (const c of own.crew) if (!c.dead) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
         play(this.db, ["powerUpSystem"]);
+        this.say("Crew positions saved");
       } else {
+        if (!this.savedStations.size) return this.fail("No crew positions saved yet");
         for (const [id, room] of this.savedStations) if (own.crew.find((c) => c.id === id && !c.dead)) this.send({ c: "moveCrew", crew: [id], room });
-        play(this.db, [this.savedStations.size ? "powerUpSystem" : "powerUpFail"]);
+        play(this.db, ["powerUpSystem"]);
+        this.say("Crew returning to saved positions");
       }
       return;
     }
@@ -939,10 +1085,14 @@ export class Battle {
         }
         const t: WeaponTarget = { kind: "beam", x1: this.beamStart.x, y1: this.beamStart.y, x2: ep.x, y2: ep.y };
         this.send({ c: "target", slot: this.armed, target: t });
+        this.send({ c: "autofire", slot: this.armed, on: this.autoMode !== e.shiftKey });
         return this.disarm();
       }
       if (eh.room >= 0) {
+        // Autofire for this target: the AUTOFIRE mode, inverted while Shift is held (FTL's rule).
+        const auto = this.autoMode !== e.shiftKey;
         this.send({ c: "target", slot: this.armed, target: { kind: "room", room: eh.room } });
+        this.send({ c: "autofire", slot: this.armed, on: auto });
         return this.disarm();
       }
       return;
@@ -956,7 +1106,6 @@ export class Battle {
     if (oh.door >= 0) {
       const open = !own.doors[oh.door];
       this.send({ c: "door", door: oh.door, open });
-      play(this.db, [open ? "doorOpen" : "doorClose"]);
       return;
     }
     const hit = own.crew.find((c) => !c.dead && Math.hypot(c.x + 0.5 - op.x / 35, c.y + 0.5 - op.y / 35) < 0.45);
@@ -972,11 +1121,36 @@ export class Battle {
   private powerClick(own: ShipView, id: SystemId, delta: 1 | -1): void {
     const s = own.systems[id];
     if (!s) return;
-    if (SUBSYSTEMS.includes(id)) return void play(this.db, ["powerUpFail"]);
+    if (SUBSYSTEMS.includes(id)) return this.fail("Subsystems are powered by their own level");
+    if (s.ion > 0) return this.fail("System is locked by ion damage");
     const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
-    const ok = delta > 0 ? used < own.reactor && s.power < usable(s) : s.power > 0;
-    play(this.db, [ok ? (delta > 0 ? "powerUpSystem" : "powerDownSystem") : "powerUpFail"]);
-    if (ok) this.send({ c: "power", system: id, delta });
+    if (id === "weapons") {
+      // Clicking the weapons system powers the next weapon in slot order (right-click: the last one).
+      if (delta > 0) {
+        const i = own.weapons.findIndex((w) => !w.powered);
+        if (i < 0) return this.fail("All weapons are powered");
+        return this.clickWeapon(i, false);
+      }
+      const powered = own.weapons.map((w, i) => (w.powered ? i : -1)).filter((i) => i >= 0);
+      if (!powered.length) return this.fail("No weapons are powered");
+      return this.clickWeapon(powered[powered.length - 1], true);
+    }
+    if (delta > 0 && used >= own.reactor) return this.fail("Not enough available power");
+    if (delta > 0 && s.power >= usable(s)) return this.fail(s.damage > 0 ? "System is damaged" : "System is at full power");
+    if (delta < 0 && s.power <= 0) return void play(this.db, ["powerUpFail"]);
+    play(this.db, [delta > 0 ? "powerUpSystem" : "powerDownSystem"]);
+    this.send({ c: "power", system: id, delta });
+  }
+
+  /** FTL's red message above the tray, with the refusal sound. */
+  private fail(msg: string): void {
+    play(this.db, ["powerUpFail"]);
+    this.say(msg, 0xff5a50);
+  }
+
+  private message: { text: string; color: number; until: number } | null = null;
+  private say(text: string, color = 0xe8ece8): void {
+    this.message = { text, color, until: this.time + 2.2 };
   }
 
   private onMove(e: FederatedPointerEvent): void {
@@ -991,10 +1165,44 @@ export class Battle {
     const ph = this.own.pick(op.x, op.y);
     this.hoverOwn = this.selected.size ? ph : { room: -1, door: ph.door };
     this.hoverEnemy = inBox(p, WIN) ? this.enemy.pick(ep.x, ep.y) : { room: -1, door: -1 };
+    this.mouse = { x: p.x, y: p.y };
+    this.hoverCrew = null;
+    const v = this.view;
+    if (v) {
+      for (const c of this.crewHit) if (inBox(p, c.box)) this.hoverCrew = { id: c.id, mine: true };
+      const near = (s: ShipView, lx: number, ly: number) => s.crew.find((c) => !c.dead && Math.hypot(c.x + 0.5 - lx / 35, c.y + 0.5 - ly / 35) < 0.42);
+      const mineHit = !this.hoverCrew && p.x < OWN.clipX ? near(v.ships[v.you], op.x, op.y) : undefined;
+      if (mineHit) this.hoverCrew = { id: mineHit.id, mine: true };
+      const theirs = !this.hoverCrew && inBox(p, WIN) ? near(v.ships[1 - v.you], ep.x, ep.y) : undefined;
+      if (theirs) this.hoverCrew = { id: theirs.id, mine: false };
+    }
+    // Dragging a weapon box past a few pixels turns the click into a reorder.
+    if (this.weaponDrag && Math.hypot(p.x - this.weaponDrag.x, p.y - this.weaponDrag.y) > 8) this.weaponDrag.moved = true;
   }
+
+  private weaponDrag: { slot: number; x: number; y: number; moved: boolean } | null = null;
 
   private onUp(e: FederatedPointerEvent): void {
     const v = this.view;
+    if (this.weaponDrag && v) {
+      const d = this.weaponDrag;
+      this.weaponDrag = null;
+      const p = this.stage.toLocal(e.global);
+      if (!d.moved) return this.clickWeapon(d.slot, false);
+      // Drop on another slot: the weapons swap mounts on the ship, keeping their charge.
+      for (let i = 0; i < 4; i++) {
+        const box = { x: SLOT.x + i * SLOT.dx, y: SLOT.y, w: SLOT.w, h: SLOT.h };
+        if (!inBox(p, box) || i === d.slot) continue;
+        if (!v.ships[v.you].weapons[i]) return this.fail("Weapons can only swap with another weapon");
+        this.send({ c: "swapWeapons", a: d.slot, b: i });
+        if (this.armed === d.slot) this.armed = i;
+        else if (this.armed === i) this.armed = d.slot;
+        play(this.db, ["powerUpSystem"]);
+        this.say("Weapons swapped");
+        return;
+      }
+      return;
+    }
     if (!this.drag || !v) return;
     const d = this.drag;
     this.drag = null;
@@ -1019,6 +1227,7 @@ export class Battle {
     const bp = this.db.weapons[w.bp];
     if (right) {
       if (w.powered) {
+        if (own.systems.weapons && own.systems.weapons.ion > 0) return this.fail("Weapons are locked by ion damage");
         this.send({ c: "weaponPower", slot, on: false });
         play(this.db, ["powerDownSystem"]);
       }
@@ -1027,9 +1236,14 @@ export class Battle {
     }
     if (!w.powered) {
       const ws = own.systems.weapons;
+      if (ws && ws.ion > 0) return this.fail("Weapons are locked by ion damage");
       const load = own.weapons.filter((q) => q.powered).reduce((a, q) => a + (this.db.weapons[q.bp]?.power ?? 1), 0);
-      const ok = !!ws && load + (bp?.power ?? 1) <= usable(ws);
-      play(this.db, [ok ? "powerUpSystem" : "powerUpFail"]);
+      const need = load + (bp?.power ?? 1);
+      const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
+      const extra = Math.max(0, need - (ws ? ws.power + (ws.bonus ?? 0) : 0));
+      if (!ws || need > usable(ws)) return this.fail("Not enough weapon system power");
+      if (used + extra > own.reactor) return this.fail("Not enough available power");
+      play(this.db, ["powerUpSystem"]);
       return this.send({ c: "weaponPower", slot, on: true });
     }
     if (this.armed === slot) {
@@ -1053,13 +1267,17 @@ export class Battle {
     if (/^[1-4]$/.test(e.key)) this.clickWeapon(Number(e.key) - 1, false);
     else if (e.key === "Escape") this.disarm();
     else if (e.key.toLowerCase() === "a" && this.armed !== null) this.send({ c: "autofire", slot: this.armed, on: !own.weapons[this.armed].autofire });
-    else if (e.key.toLowerCase() === "m") setSound(!soundOn());
+    else if (e.key.toLowerCase() === "m") {
+      setSound(!soundOn());
+      this.say(soundOn() ? "Sound on" : "Sound off");
+    } else if (e.key.toLowerCase() === "n") {
+      setMusic(!musicEnabled());
+      this.say(musicEnabled() ? "Music on" : "Music off");
+    }
     else if (e.key.toLowerCase() === "z") {
       this.send({ c: "doorsAll", open: true });
-      play(this.db, ["doorOpen"]);
     } else if (e.key.toLowerCase() === "x") {
       this.send({ c: "doorsAll", open: false });
-      play(this.db, ["doorClose"]);
     } else if (e.key === "Tab") {
       e.preventDefault();
       this.selected = new Set(own.crew.filter((c) => !c.dead).map((c) => c.id));

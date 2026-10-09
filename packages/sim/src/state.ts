@@ -13,6 +13,8 @@ export interface MatchConfig {
   /** Seconds before the match is called a draw by hull %; 0 = no limit. */
   timeLimit: number;
   seed: number;
+  /** "For fun": system levels up to 20 and reactor up to 60 in the hangar. */
+  unlimited?: boolean;
 }
 
 export const DEFAULT_CONFIG: MatchConfig = { winCondition: "hull", scrap: 400, shipPool: [], timeLimit: 0, seed: 1 };
@@ -35,6 +37,10 @@ export interface SystemState {
   fireDmg: number;
   /** Free power from Zoltan crew standing in the room (recomputed every tick). */
   bonus: number;
+  /** Subsystems (sensors, doors) work one level higher while manned (recomputed every tick). */
+  manBonus?: number;
+  /** Direction a crew member at the station faces. */
+  facing?: "up" | "down" | "left" | "right";
 }
 
 export interface RoomState {
@@ -66,6 +72,8 @@ export interface CrewState {
   xp: Record<SkillId, number>;
   stun: number;
   dead: boolean;
+  /** Seconds left of the death animation; the crew member only counts as dead once it ends. */
+  dying?: number;
 }
 
 export type WeaponTarget =
@@ -83,6 +91,8 @@ export interface WeaponState {
   autofire: boolean;
   /** Chain weapons: boosts gained. */
   boost: number;
+  /** Current charge ceiling in seconds: the blueprint cooldown lowered by manning and chain boosts. */
+  cd?: number;
 }
 
 export interface ShipState {

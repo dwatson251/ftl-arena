@@ -136,6 +136,8 @@ export interface ShipSystemSlot {
   start: boolean;
   /** Station tile index inside the room (row-major), -1 when the system has no station. */
   station: number;
+  /** Which way the crew member at the station faces (towards the computer). */
+  facing?: "up" | "down" | "left" | "right";
   /** Interior image name (img/ship/interior/<img>.png). */
   img?: string;
 }
@@ -204,6 +206,8 @@ export interface GameDB {
   anims: Record<string, Anim>;
   /** Sound name -> file under audio/waves/ and volume (0-10ish). */
   sounds: Record<string, { file: string; volume: number }>;
+  /** Music tracks from sounds.xml: explore/combat files under audio/music/. */
+  music: { name: string; explore?: string; combat?: string }[];
   /** Crew name pool (names.xml). */
   names: string[];
   /** Single-player enemy hulls the practice bot can fly. */

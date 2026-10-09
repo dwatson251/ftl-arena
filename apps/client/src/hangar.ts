@@ -3,7 +3,7 @@
  * computed locally for instant feedback; the server re-prices every loadout before it accepts "ready".
  */
 import type { GameDB, SystemId } from "@ftl/data";
-import { play } from "./audio.ts";
+import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
@@ -165,7 +165,7 @@ export class Hangar {
     this.pendingRender = false;
     const db = this.db;
     const cfg = lobby.config;
-    const priced = priceLoadout(db, l, cfg.scrap, cfg.shipPool);
+    const priced = priceLoadout(db, l, cfg.scrap, cfg.shipPool, cfg.unlimited);
     const me = lobby.players.find((p) => p.id === this.me());
     const scrollTop = this.el.querySelector(".hg-main")?.scrollTop ?? 0;
     const body = { Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Crew: () => this.stepCrew(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
@@ -202,6 +202,12 @@ export class Hangar {
       <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="5000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="note">${cfg.winCondition === "crew" ? "Hulls can't drop below 1: only a dead crew ends it." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
+      <label class="kv"><span>Unrestricted systems <span class="note">(for fun: 20 bars, 60 reactor)</span></span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""} ${host ? "" : "disabled"}></label>
+      <div class="kv"><span>Battle music</span><select data-music>
+        <option value="" ${battleTrackSetting() === "" ? "selected" : ""}>Random</option>
+        <option value="off" ${battleTrackSetting() === "off" ? "selected" : ""}>Off</option>
+        ${this.db.music.filter((t) => t.combat).map((t) => `<option value="${h(t.name)}" ${battleTrackSetting() === t.name ? "selected" : ""}>${h(t.name)}</option>`).join("")}
+      </select></div>
       ${pc && bot ? `
         <h2 style="margin-top:14px">Practice bot</h2>
         <div class="kv"><span>Difficulty</span><b>${pc.difficulty}</b></div>
@@ -233,8 +239,34 @@ export class Hangar {
       <h2 style="margin-top:10px">Bill</h2>
       ${priced.lines.map((x) => `<div class="kv note"><span>${h(x.item)}</span><span>${x.scrap}</span></div>`).join("") || `<div class="note">Nothing bought yet.</div>`}
       ${priced.errors.map((e) => `<div class="err">${h(e)}</div>`).join("")}
-      <button class="primary big" data-ready="${ready ? 0 : 1}" ${priced.ok ? "" : "disabled"}>${ready ? "Unready" : "Ready"}</button>
+      ${this.readyButton(l, priced, ready)}
       ${this.lobby?.phase === "countdown" ? `<div class="code" style="margin-top:12px">Launch in ${this.lobby.countdown}…</div>` : ""}`;
+  }
+
+  /** Until the last step the button walks you forward; Ready only appears on Launch. */
+  private readyButton(l: Loadout, priced: ReturnType<typeof priceLoadout>, ready: boolean): string {
+    const i = STEPS.indexOf(this.step);
+    if (i < STEPS.length - 1) return `<button class="primary big" data-step="${STEPS[i + 1]}">Next: ${STEPS[i + 1]} →</button>`;
+    const warn = this.warnings(l);
+    if (this.confirming && !ready && warn.length)
+      return `<div class="warnbox"><b>Launch anyway?</b>${warn.map((w) => `<div class="err">${h(w)}</div>`).join("")}
+        <div class="row"><button class="primary" data-ready="1" data-force="1">Ready anyway</button><button data-cancel-ready>Back</button></div></div>`;
+    return `<button class="primary big" data-ready="${ready ? 0 : 1}" ${priced.ok ? "" : "disabled"}>${ready ? "Unready" : "Ready"}</button>`;
+  }
+
+  private confirming = false;
+
+  /** Things worth a second look before launching (FTL would let you, but you'd regret it). */
+  private warnings(l: Loadout): string[] {
+    const db = this.db;
+    const out: string[] = [];
+    const ws = l.weapons.map((id) => db.weapons[id]).filter(Boolean);
+    if (!ws.length) out.push("No weapons are fitted.");
+    const needsMissiles = ws.filter((w) => w.missiles > 0);
+    if (needsMissiles.length && l.missiles < 4) out.push(`${needsMissiles.map((w) => w.short ?? w.title).join(", ")} use missiles, but you only have ${l.missiles}.`);
+    const bars = l.systems.weapons ?? 0;
+    if (ws.length && !ws.some((w) => w.power <= bars)) out.push(`Weapon system level ${bars} can't power any fitted weapon.`);
+    return out;
   }
 
   private nav(back: Step | null, next: Step | null): string {
@@ -261,11 +293,12 @@ export class Hangar {
   private stepSystems(l: Loadout): string {
     const db = this.db;
     const base = baseLoadout(db, l.ship);
-    const rows = hullSystems(db, l.ship)
+    const unl = !!this.lobby?.config.unlimited;
+    const rows = hullSystems(db, l.ship, unl)
       .map((s) => {
         const lv = l.systems[s.id] ?? s.base;
         const bp = db.systems[s.id];
-        const next = lv >= s.max ? "max" : lv === 0 ? `install ${bp?.cost ?? "?"}` : `next ${bp?.upgradeCost[lv - 1] ?? "?"}`;
+        const next = lv >= s.max ? "max" : lv === 0 ? `install ${bp?.cost ?? "?"}` : `next ${bp?.upgradeCost[lv - 1] ?? bp?.upgradeCost[bp.upgradeCost.length - 1] ?? "?"}`;
         const bars = Array.from({ length: s.max }, (_, i) => `<i class="${i < s.base ? "on" : i < lv ? "new" : ""}"></i>`).join("");
         return `<div class="sys-row">${this.sysIcon(s.id)}<span class="sys-name">${s.id}</span><span class="bars">${bars}</span>
           <button class="small" data-sys="${s.id}" data-d="-1" ${lv <= s.base ? "disabled" : ""}>−</button>
@@ -277,7 +310,7 @@ export class Hangar {
       ${rows}
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>
         <button class="small" data-reactor="-1" ${l.reactor <= base.reactor ? "disabled" : ""}>−</button>
-        <button class="small" data-reactor="1" ${l.reactor >= RULES.reactorMax ? "disabled" : ""}>+</button><span class="note">${RULES.reactorPrice(l.reactor)} per bar</span></div>
+        <button class="small" data-reactor="1" ${l.reactor >= (unl ? RULES.unlimitedReactor : RULES.reactorMax) ? "disabled" : ""}>+</button><span class="note">${RULES.reactorPrice(l.reactor)} per bar</span></div>
       <div class="sys-row"><span class="sysicon ph">⦿</span><span class="sys-name">missiles</span><span><b>${l.missiles}</b></span>
         <button class="small" data-msl="-1" ${l.missiles <= 0 ? "disabled" : ""}>−</button>
         <button class="small" data-msl="1">+</button><span class="note">${RULES.missilePrice} each (missile weapons and bombs use them)</span></div>
@@ -388,7 +421,7 @@ export class Hangar {
     }
     if (d.sys) {
       const id = d.sys as SystemId;
-      const base = hullSystems(this.db, l.ship).find((s) => s.id === id)!.base;
+      const base = hullSystems(this.db, l.ship, !!this.lobby?.config.unlimited).find((s) => s.id === id)!.base;
       l.systems[id] = Math.max(base, (l.systems[id] ?? base) + Number(d.d));
     } else if (d.reactor) l.reactor += Number(d.reactor);
     else if (d.msl) l.missiles = Math.max(0, l.missiles + Number(d.msl));
@@ -398,8 +431,17 @@ export class Hangar {
     else if (d.fire) l.crew.splice(Number(d.fire), 1);
     else if (d.reroll) l.crew[Number(d.reroll)].name = randomCrewName(this.db, l.crew.map((c) => c.name), (Date.now() * 7) & 0xffff);
     else if (d.ready) {
+      if (d.ready === "1" && !d.force && this.warnings(l).length) {
+        this.confirming = true;
+        this.sfx("powerUpFail");
+        return this.render();
+      }
+      this.confirming = false;
       this.sfx(d.ready === "1" ? "acceptUpgrades" : "undoUpgrades");
       return this.hooks.ready(d.ready === "1");
+    } else if ("cancelReady" in d) {
+      this.confirming = false;
+      return this.render();
     }
     else if ("leave" in d) return this.hooks.leave();
     else return;
@@ -418,9 +460,13 @@ export class Hangar {
 
   private onChange(e: Event): void {
     const t = e.target as HTMLInputElement | HTMLSelectElement;
-    if (t.dataset.cfg) {
+    if ("music" in t.dataset) {
+      setBattleTrack(t.value);
+      this.sfx("hoverBeep");
+    } else if (t.dataset.cfg) {
       const k = t.dataset.cfg as keyof MatchConfig;
-      this.hooks.setConfig({ [k]: k === "winCondition" ? t.value : Number(t.value) } as Partial<MatchConfig>);
+      const v = k === "winCondition" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : Number(t.value);
+      this.hooks.setConfig({ [k]: v } as Partial<MatchConfig>);
     } else if (t.dataset.prac) {
       const k = t.dataset.prac as keyof PracticeConfig;
       const v = k === "debug" ? (t as HTMLInputElement).checked : k === "difficulty" ? Number(t.value) : t.value;

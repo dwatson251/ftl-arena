@@ -7,7 +7,7 @@ export interface ExtractOptions {
   /** FTL install folder (holding ftl.dat) or the ftl.dat path itself. */
   ftl: string;
   out: string;
-  /** Also extract music (~200 MB). */
+  /** Extract music too (default on; the arena plays FTL's menu and battle tracks). */
   music?: boolean;
 }
 
@@ -23,7 +23,7 @@ export function extractFtl(opts: ExtractOptions): { files: number; bytes: number
   const manifest: string[] = [];
   for (const e of pkg.entries) {
     if (SKIP.some((r) => r.test(e.path))) continue;
-    if (!opts.music && e.path.startsWith("audio/music/")) continue;
+    if (opts.music === false && e.path.startsWith("audio/music/")) continue;
     const dest = join(opts.out, e.path);
     mkdirSync(dirname(dest), { recursive: true });
     const data = pkg.readEntry(e);

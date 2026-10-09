@@ -4,6 +4,7 @@ import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
 import type { MatchView } from "@ftl/sim";
 import { preload } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
+import { music } from "./audio.ts";
 import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar } from "./hangar.ts";
 import { Net } from "./net.ts";
@@ -135,6 +136,7 @@ function renderDebug(): void {
     return;
   }
   if (!el) {
+    debugBuiltOpen = null; // a fresh element needs its contents built
     el = document.createElement("div");
     el.id = "debug";
     el.className = "debug";
@@ -160,6 +162,8 @@ function renderDebug(): void {
       else if (a.op === "hull") dbg({ op: "hull", ship: who, value: Math.max(0, (lastView?.ships[who].hull ?? 0) - 5) });
       else if (a.op === "fire") dbg({ op: "fire", ship: who });
       else if (a.op === "damage") dbg({ op: "damage", ship: who });
+      else if (a.op === "ion") dbg({ op: "ion", ship: who });
+      else if (a.op === "hurt") dbg({ op: "hurt", ship: who });
       else if (a.op === "restart") dbg({ op: "restart" });
     });
     el.addEventListener("input", (e) => {
@@ -185,8 +189,8 @@ function renderDebug(): void {
         <div class="dlabel">Bot difficulty <b data-diffval></b></div>
         <input type="range" min="0" max="100" step="5" data-diff style="width:100%">
         <div class="note" data-skill></div>
-        <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them">−5 hull</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button></div>
-        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me">−5 hull</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button></div>
+        <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them">−5 hull</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button><button class="small" data-op="ion" data-who="them">ion</button><button class="small" data-op="hurt" data-who="them">hurt crew</button></div>
+        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me">−5 hull</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button></div>
         <div class="debug-log" data-log></div>`
       : `<button class="small" data-toggle title="Debug">⟨ DEBUG</button>`;
   }
@@ -239,6 +243,9 @@ function render(): void {
   }
   document.getElementById("debug")?.remove();
   if (lobby && db) {
+    // FTL's title theme while building ships.
+    const title = db.music.find((t) => t.name === "title")?.explore;
+    if (title) music(title);
     if (!hangar) {
       ui.innerHTML = "";
       hangar = new Hangar(db, () => token, {
@@ -293,6 +300,7 @@ function render(): void {
 /** Test hook: logical 1280×720 battle coordinates → page pixels (used by tools/bench browser scripts). */
 (window as unknown as { __arena: unknown }).__arena = {
   state: () => (battle ? battle.debugState() : null),
+  view: () => lastView,
   toScreen: (x: number, y: number) => (battle ? { x: battle.stage.x + x * battle.stage.scale.x, y: battle.stage.y + y * battle.stage.scale.y } : null),
 };
 

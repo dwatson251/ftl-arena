@@ -66,6 +66,13 @@ export function geometry(layout: ShipLayout): Geometry {
       const n = tiles.get(key(t.x + dx, t.y + dy));
       if (n && n.room === t.room) link(k, key(t.x + dx, t.y + dy), -1);
     }
+    // Diagonals inside a room, so crew cut across rooms instead of walking an L.
+    for (const [dx, dy] of [[1, 1], [1, -1]]) {
+      const n = tiles.get(key(t.x + dx, t.y + dy));
+      const a = tiles.get(key(t.x + dx, t.y));
+      const b = tiles.get(key(t.x, t.y + dy));
+      if (n && a && b && n.room === t.room && a.room === t.room && b.room === t.room) link(k, key(t.x + dx, t.y + dy), -2);
+    }
   }
   const doors: DoorEdge[] = [];
   const roomDoors = new Map<number, number[]>();
@@ -94,29 +101,41 @@ export function geometry(layout: ShipLayout): Geometry {
   return g;
 }
 
-/** Breadth-first tile path from a to b (both tile keys); returns keys after a, or null. */
+/** Shortest tile path from a to b (Dijkstra; diagonals inside rooms cost √2). Keys after a, or null. */
 export function findPath(g: Geometry, a: string, b: string): string[] | null {
   if (a === b) return [];
-  const prev = new Map<string, string>([[a, a]]);
-  const q = [a];
-  while (q.length) {
-    const cur = q.shift()!;
-    for (const { to } of g.adj.get(cur) ?? []) {
-      if (prev.has(to)) continue;
-      prev.set(to, cur);
-      if (to === b) {
-        const path = [b];
-        let p = cur;
-        while (p !== a) {
-          path.push(p);
-          p = prev.get(p)!;
-        }
-        return path.reverse();
+  const dist = new Map<string, number>([[a, 0]]);
+  const prev = new Map<string, string>();
+  const open = new Set([a]);
+  while (open.size) {
+    let cur = "";
+    let best = Infinity;
+    for (const k of open) {
+      const d = dist.get(k)!;
+      if (d < best) {
+        best = d;
+        cur = k;
       }
-      q.push(to);
+    }
+    open.delete(cur);
+    if (cur === b) break;
+    for (const { to, door } of g.adj.get(cur) ?? []) {
+      const nd = best + (door === -2 ? Math.SQRT2 : 1);
+      if (nd < (dist.get(to) ?? Infinity) - 1e-9) {
+        dist.set(to, nd);
+        prev.set(to, cur);
+        open.add(to);
+      }
     }
   }
-  return null;
+  if (!prev.has(b)) return null;
+  const path = [b];
+  let p = prev.get(b)!;
+  while (p !== a) {
+    path.push(p);
+    p = prev.get(p)!;
+  }
+  return path.reverse();
 }
 
 /** Room containing a grid-pixel point, or -1. */

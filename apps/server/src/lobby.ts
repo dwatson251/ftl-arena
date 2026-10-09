@@ -68,7 +68,7 @@ export class Lobby {
     if (this.phase !== "lobby") return "match already started";
     const ship = this.config.shipPool[0] ?? this.db.hangar[0];
     const loadout = baseLoadout(this.db, ship);
-    this.players.push({ id: c.id, name: c.name, ready: false, loadout, priced: priceLoadout(this.db, loadout, this.config.scrap, this.config.shipPool), connected: true });
+    this.players.push({ id: c.id, name: c.name, ready: false, loadout, priced: priceLoadout(this.db, loadout, this.config.scrap, this.config.shipPool, this.config.unlimited), connected: true });
     this.clients.set(c.id, c);
     c.lobby = this;
     if (this.practice && this.players.length === 1) this.addBot();
@@ -162,6 +162,18 @@ export class Lobby {
           pick.damage = Math.min(pick.level, pick.damage + 1);
         }
         break;
+      case "ion":
+        if (m) {
+          const s = m.state.ships[d.ship];
+          const sys = Object.values(s.systems).filter((x) => x && !["pilot", "sensors", "doors"].includes(x.id));
+          const pick = sys[(Math.random() * sys.length) | 0]!;
+          pick.ion = Math.min(pick.level, pick.ion + 2);
+          pick.ionTimer = 5;
+        }
+        break;
+      case "hurt":
+        if (m) for (const c of m.state.ships[d.ship].crew) if (!c.dead && c.dying === undefined) c.hp -= 45;
+        break;
       case "restart":
         if (this.loadouts) this.start();
         break;
@@ -211,7 +223,7 @@ export class Lobby {
       if (p.bot) continue;
       if (p.loadout && this.config.shipPool.length && !this.config.shipPool.includes(p.loadout.ship))
         p.loadout = baseLoadout(this.db, this.config.shipPool[0]);
-      p.priced = p.loadout ? priceLoadout(this.db, p.loadout, this.config.scrap, this.config.shipPool) : null;
+      p.priced = p.loadout ? priceLoadout(this.db, p.loadout, this.config.scrap, this.config.shipPool, this.config.unlimited) : null;
       p.ready = false;
     }
     this.rebuildBot();
@@ -225,7 +237,7 @@ export class Lobby {
     if (!p) return "not in this lobby";
     if (!this.db.ships[l.ship]) return "unknown ship";
     p.loadout = l;
-    p.priced = priceLoadout(this.db, l, this.config.scrap, this.config.shipPool);
+    p.priced = priceLoadout(this.db, l, this.config.scrap, this.config.shipPool, this.config.unlimited);
     p.ready = false;
     this.broadcast();
     return null;
@@ -354,6 +366,7 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig): MatchConfig {
     shipPool: (Array.isArray(c.shipPool) ? c.shipPool : []).filter((s) => db.hangar.includes(s)),
     timeLimit: clamp(Math.round(Number(c.timeLimit) || 0), 0, 3600),
     seed: Number(c.seed) | 0,
+    unlimited: !!c.unlimited,
   };
 }
 

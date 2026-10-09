@@ -38,6 +38,8 @@ export type DebugOp =
   | { op: "hull"; ship: 0 | 1; value: number }
   | { op: "fire"; ship: 0 | 1 }
   | { op: "damage"; ship: 0 | 1 }
+  | { op: "ion"; ship: 0 | 1 }
+  | { op: "hurt"; ship: 0 | 1 }
   | { op: "restart" };
 
 export interface DebugInfo {

@@ -116,6 +116,28 @@
   - Crew suffocate below 10 % O2. At the old 5 %, the crewed rooms never got low enough.
   - Fire spreads at 0.16/s per tile, and through closed doors at half the chance.
 
+## Round 4 polish
+- **Bomb launchers** (17 frames): 0-5 load, 5 is charged, 6-15 teleport the bomb, 16 is empty.
+  - The `bomb1` projectile strip is 4 spin frames, then 5 dissolve frames. Looping all 9 looked like the
+    bomb exploding.
+  - After firing, a weapon now plays frames chargedFrame+1 to the end (0.7 s for bombs).
+- **Breaches:** `effects/breach.png` has 7 growth stages, drawn as a state that recedes as the breach is
+  repaired. There's now at most one breach per room.
+- **Crew art:** `people/healing_strip11.png` is the medbay crosses. `<race>_death_right` plays over 0.9 s
+  before a crew member counts as dead, so wins wait for it.
+- **Venting:** gradual door sharing (0.8/s) plus an airlock pull through open doors (12 %/s, weaker with
+  distance). A single door evens out in about 4 s; an open Kestrel vents in about 12 s.
+- **Charge ceiling:** manning and chain boosts lower the charge target (`w.cd`), and the charge rate stays
+  1/s. The tray draws the lowered ceiling.
+- **Manning:** manned sensors and doors work one level higher (`manBonus`).
+- **Ion:** an ionised system is locked against power changes, and the HUD shows one countdown ring per
+  ion stack.
+- **Crew list names:** JustinFont8 at one size (about 8 px capitals, measured on the real crew list),
+  clipped at the box edge.
+- **Music:** `sounds.xml` `<music><track>` has explore/combat pairs. The title theme plays in the hangar;
+  battle tracks are random or picked in the hangar. The extractor now includes music by default
+  (`--no-music` to skip; 185 MB total).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

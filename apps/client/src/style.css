@@ -113,3 +113,6 @@ button.buy { display: inline-flex; align-items: center; min-width: 64px; justify
 .dragging .shop-drop { outline: 2px dashed #4a5262; outline-offset: 4px; }
 .hg-side .kv, .hg-summary .kv { min-height: 30px; }
 .hg-side select { max-width: 160px; }
+
+.warnbox { margin-top: 14px; padding: 10px; border: 2px solid var(--bad); background: #2a1616; }
+.warnbox .row { display: flex; gap: 8px; margin-top: 8px; }

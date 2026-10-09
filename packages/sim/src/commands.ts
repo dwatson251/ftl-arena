@@ -9,4 +9,6 @@ export type Command =
   | { c: "autofire"; slot: number; on: boolean }
   | { c: "moveCrew"; crew: number[]; room: number }
   | { c: "door"; door: number; open: boolean }
-  | { c: "doorsAll"; open: boolean };
+  | { c: "doorsAll"; open: boolean }
+  /** Swap two weapon slots (moves the weapons between mounts, keeping their charge). */
+  | { c: "swapWeapons"; a: number; b: number };

@@ -100,6 +100,11 @@ export class Bot {
   // ---------------------------------------------------------------- weapons
 
   private pickRoom(enemy: ShipState, prefer: SystemId[]): number {
+    // Easy bots sometimes aim at empty rooms (hull damage only), which gives the player room to breathe.
+    if (this.level < 0.35 && this.rng.chance(0.45 * (1 - this.level / 0.35))) {
+      const empty = enemy.rooms.filter((r) => !Object.values(enemy.systems).some((s) => s && s.room === r.id));
+      if (empty.length) return this.rng.pick(empty).id;
+    }
     if (!this.skills.smartTargets) return this.rng.pick(enemy.rooms).id;
     for (const id of prefer) {
       const s = enemy.systems[id];
@@ -195,7 +200,7 @@ export class Bot {
     const g = geometry(m.db.layouts[ship.layout]);
     const roomOf = (c: CrewState) => g.tiles.get(c.home)!.room;
     const busy = new Set<number>();
-    const alive = ship.crew.filter((c) => !c.dead);
+    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined);
     const send = (c: CrewState, room: number, why: string) => {
       busy.add(c.id);
       if (roomOf(c) === room) return;

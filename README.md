@@ -21,7 +21,7 @@ Before the match, the host picks the win condition:
 ## Quick start
 ```bash
 npm install
-npm run extract -- --ftl "/path/to/FTL Faster Than Light"   # needs FTL 1.6+ (ftl.dat); writes ./assets-local (gitignored)
+npm run extract -- --ftl "/path/to/FTL Faster Than Light"   # needs FTL 1.6+ (ftl.dat); writes ./assets-local (gitignored), incl. music (--no-music to skip)
 npm run server                                                  # authoritative server on :8787
 npm run client                                                  # Vite dev client on :5173 (proxies /ws and /assets)
 ```
@@ -68,7 +68,10 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 | System power | click the system's bars for +1, right-click for −1 |
 | Doors | click a door; `Z`/`X` open/close all. Opening again when every inner door is open opens the airlocks and vents the ship |
 | Stations | the two buttons under the crew list save positions and return crew to them |
-| Sound | `M` |
+| Sound / music | `M` / `N` |
+| Reorder weapons | drag a weapon box onto another slot (the guns swap mounts) |
+| Autofire | the AUTOFIRE button sets the default for new targets (yellow reticle); Shift-click a target to do the opposite |
+| Weapons system | click its icon to power the next weapon, right-click to unpower the last |
 
 ## The hangar
 Ship creation runs in steps: **Ship → Systems → Weapons → Crew → Launch**.

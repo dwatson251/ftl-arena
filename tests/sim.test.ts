@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placeholderDb } from "@ftl/data";
-import { baseLoadout, botCommands, DEFAULT_CONFIG, Match, priceLoadout, TICK_HZ, viewFor } from "@ftl/sim";
+import { baseLoadout, botCommands, DEFAULT_CONFIG, findPath, Match, priceLoadout, TICK_HZ, viewFor } from "@ftl/sim";
 
 const db = placeholderDb();
 const L = () => baseLoadout(db, "PH_SKIFF");
@@ -38,6 +38,10 @@ describe("win conditions", () => {
       m.state.ships[1].crew.forEach((c) => (m.state.ships[1].rooms[0].o2 = 0));
       for (const c of m.state.ships[1].crew) c.hp = -1;
       m.step();
+      // The death animation plays first; only then is the crew dead and the match over.
+      expect(m.state.winner).toBe(null);
+      expect(m.state.ships[1].crew.every((c) => c.dying !== undefined)).toBe(true);
+      for (let i = 0; i < 40; i++) m.step();
       expect(m.state.winner).toBe(0);
     }
   });
@@ -124,9 +128,13 @@ describe("oxygen, doors and fire", () => {
     for (let i = 0; i < 30 * 40; i++) m.step();
     expect(s.rooms.reduce((a, r) => a + r.o2, 0) / s.rooms.length).toBeLessThan(35); // one airlock, O2 system still running
     expect(s.crew.some((c) => c.hp < c.maxHp)).toBe(true);
-    m.push(0, { c: "doorsAll", open: false });
-    m.step();
-    expect(s.doors.every((o) => !o)).toBe(true);
+    // Close-all shuts everything (checked on a fresh match: this crew has suffocated and the match ended).
+    const m2 = mk();
+    const s2 = m2.state.ships[0];
+    s2.doors = s2.doors.map(() => true);
+    m2.push(0, { c: "doorsAll", open: false });
+    m2.step();
+    expect(s2.doors.every((o) => !o)).toBe(true);
   });
   it("fire spreads across a room", () => {
     const m = mk({ seed: 5 });
@@ -139,5 +147,57 @@ describe("oxygen, doors and fire", () => {
       most = Math.max(most, s.rooms.reduce((a, r) => a + Object.keys(r.fires).length, 0));
     }
     expect(most).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("arena rules round 4", () => {
+  it("god mode takes no damage at all", () => {
+    const m = mk();
+    m.god.add(1);
+    const s = m.state.ships[1];
+    const hull = s.hull;
+    for (let i = 0; i < 30 * 120; i++) {
+      for (const c of botCommands(m, 0)) m.push(0, c);
+      m.step();
+    }
+    expect(s.hull).toBe(hull);
+    expect(Object.values(s.systems).every((x) => !x || x.damage === 0)).toBe(true);
+    expect(s.crew.every((c) => c.hp === c.maxHp)).toBe(true);
+  });
+  it("an ionised system is locked against power changes", () => {
+    const m = mk();
+    const s = m.state.ships[0];
+    const sh = s.systems.shields!;
+    const before = sh.power;
+    sh.ion = 1;
+    sh.ionTimer = 5;
+    expect(m.apply(s, { c: "power", system: "shields", delta: -1 })).toBe(false);
+    expect(sh.power).toBe(before);
+  });
+  it("manning weapons lowers the charge ceiling instead of charging faster", () => {
+    const m = mk();
+    m.step();
+    const s = m.state.ships[0];
+    const w = s.weapons.find((x) => x.powered)!;
+    const cd = db.weapons[w.bp].cooldown;
+    expect(w.cd).toBeLessThan(cd);
+  });
+  it("crew cut diagonally across rooms", () => {
+    const m = mk();
+    const s = m.state.ships[0];
+    const g = m.geo(s);
+    const big = [...g.roomTiles.entries()].find(([, t]) => t.length >= 4)!;
+    const [a, , , d] = big[1];
+    const p = findPath(g, a, d)!;
+    expect(p.length).toBe(1);
+  });
+  it("only one breach per room", () => {
+    const m = mk({ seed: 9 });
+    const s = m.state.ships[1];
+    for (let i = 0; i < 30 * 200 && !m.over; i++) {
+      for (const c of botCommands(m, 0)) m.push(0, c);
+      m.step();
+      for (const r of s.rooms) expect(Object.keys(r.breaches).length).toBeLessThanOrEqual(1);
+    }
   });
 });

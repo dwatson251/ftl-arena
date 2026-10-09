@@ -1,5 +1,5 @@
 /**
- * ftl-arena extract --ftl "<FTL install>" [--out assets-local] [--music]
+ * ftl-arena extract --ftl "<FTL install>" [--out assets-local] [--no-music]
  * Unpacks your own FTL 1.6+ ftl.dat into a private, gitignored asset folder the arena loads.
  */
 import { resolve } from "node:path";
@@ -12,9 +12,9 @@ const get = (k: string) => {
 };
 const ftl = get("--ftl") ?? process.env.FTL_DIR;
 if (!ftl) {
-  console.error('usage: npm run extract -- --ftl "<FTL install folder>" [--out assets-local] [--music]');
+  console.error('usage: npm run extract -- --ftl "<FTL install folder>" [--out assets-local] [--no-music]');
   process.exit(2);
 }
 const out = resolve(get("--out") ?? "assets-local");
-const r = extractFtl({ ftl, out, music: args.includes("--music") });
+const r = extractFtl({ ftl, out, music: !args.includes("--no-music") });
 console.log(`extracted ${r.files} files (${(r.bytes / 1e6).toFixed(1)} MB) -> ${out}`);

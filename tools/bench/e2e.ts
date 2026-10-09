@@ -62,8 +62,11 @@ await a.waitForTimeout(800);
 await shot(a, "01-hangar-alice");
 await shot(b, "02-hangar-bob");
 console.log("alice errors:", await a.$$eval(".toast, .err", (els) => els.map((e) => e.textContent)));
-await a.click("button[data-ready]");
-await b.click("button[data-ready]");
+for (const x of [a, b]) {
+  await x.click(".hg-summary button[data-ready]");
+  await x.waitForTimeout(300);
+  await x.click(".hg-summary button[data-force]").catch(() => {});
+}
 await a.waitForFunction(() => !document.querySelector(".hg"), null, { timeout: 15000 });
 console.log("battle started");
 await a.waitForTimeout(1500);

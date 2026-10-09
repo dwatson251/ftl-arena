@@ -47,9 +47,11 @@ export const RULES = {
   /** Breach drain %/s per breached tile, scaled by 4/roomTiles (est). */
   breachDrain: 3.0,
   /** Airlock door open to space: %/s (est). */
-  ventDrain: 30,
+  ventDrain: 60,
+  /** %/s pulled from rooms joined to an open airlock, at one door away (halving-ish with distance) (est). */
+  ventPull: 12,
   /** Door O2 equalisation rate (fraction of the difference per second); fast enough that an open ship vents in ~15-20 s (est). */
-  doorFlow: 3.0,
+  doorFlow: 0.8,
   /** Below this O2 % crew suffocate at suffocateDps (est). */
   suffocateAt: 10,
   suffocateDps: 5,
@@ -74,6 +76,11 @@ export const RULES = {
   missilePrice: 6,
   reactorPrice: (level: number) => 30 + 5 * Math.max(0, Math.floor((level - 5) / 5)),
   reactorMax: 25,
+  /** Unrestricted hangar ("for fun"): every system to 20 bars, reactor to 60. */
+  unlimitedLevel: 20,
+  unlimitedReactor: 60,
+  /** Death animation length (5 frames). */
+  deathAnim: 0.9,
   maxCrew: 8,
   sellRefund: 0.5,
 };

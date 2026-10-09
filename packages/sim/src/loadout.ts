@@ -34,7 +34,7 @@ export interface Priced {
 }
 
 /** Systems the hull has a room for, with their starting level (0 = room present but not installed). */
-export function hullSystems(db: GameDB, shipId: string): { id: SystemId; base: number; max: number; room: number }[] {
+export function hullSystems(db: GameDB, shipId: string, unlimited = false): { id: SystemId; base: number; max: number; room: number }[] {
   const s = db.ships[shipId];
   const out: { id: SystemId; base: number; max: number; room: number }[] = [];
   const seenRoom = new Set<number>();
@@ -44,7 +44,7 @@ export function hullSystems(db: GameDB, shipId: string): { id: SystemId; base: n
     if (seenRoom.has(slot.room) && slot.id !== "medbay") continue;
     seenRoom.add(slot.room);
     const bp = db.systems[slot.id];
-    const max = bp ? bp.maxPower : 3;
+    const max = unlimited ? RULES.unlimitedLevel : bp ? bp.maxPower : 3;
     out.push({ id: slot.id, base: slot.start ? slot.power : 0, max, room: slot.room });
   }
   return out;
@@ -56,7 +56,8 @@ export function baseLoadout(db: GameDB, shipId: string): Loadout {
   for (const h of hullSystems(db, shipId)) systems[h.id] = h.base;
   const pool = db.names.length ? db.names : NAMES;
   const crew = s.crewRaces.filter((r) => RACES[r]).map((race, i) => ({ race, name: pool[(hashStr(shipId) + i * 7) % pool.length] }));
-  return { ship: shipId, systems, reactor: s.maxPower, weapons: s.weapons.filter((w) => db.weapons[w]), crew, missiles: s.missiles };
+  // Missiles start at 0: buy them in the hangar.
+  return { ship: shipId, systems, reactor: s.maxPower, weapons: s.weapons.filter((w) => db.weapons[w]), crew, missiles: 0 };
 }
 
 /** Races a player may hire: every race with a blueprint and known traits. */
@@ -80,14 +81,14 @@ export function buyableWeapons(db: GameDB): string[] {
     .map((w) => w.id);
 }
 
-export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string[] = []): Priced {
+export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string[] = [], unlimited = false): Priced {
   const errors: string[] = [];
   const lines: PriceLine[] = [];
   const ship = db.ships[l.ship];
   if (!ship) return { ok: false, total: 0, lines, errors: [`unknown ship ${l.ship}`] };
   if (!db.hangar.includes(l.ship) || (pool.length && !pool.includes(l.ship))) errors.push(`${l.ship} is not allowed`);
   const base = baseLoadout(db, l.ship);
-  for (const h of hullSystems(db, l.ship)) {
+  for (const h of hullSystems(db, l.ship, unlimited)) {
     const want = l.systems[h.id] ?? h.base;
     if (!Number.isInteger(want) || want < h.base) errors.push(`${h.id}: can't go below level ${h.base}`);
     if (want > h.max) errors.push(`${h.id}: max level is ${h.max}`);
@@ -99,15 +100,17 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
       cost += bp.cost;
       from = 1;
     }
-    for (let lv = from; lv < want; lv++) cost += bp.upgradeCost[lv - 1] ?? 0;
+    // Past FTL's table (unrestricted mode) each bar costs the last listed price.
+    for (let lv = from; lv < want; lv++) cost += bp.upgradeCost[lv - 1] ?? bp.upgradeCost[bp.upgradeCost.length - 1] ?? 100;
     lines.push({ item: `${h.id} ${h.base}→${want}`, scrap: cost });
   }
   for (const k of Object.keys(l.systems)) {
-    if (!hullSystems(db, l.ship).some((h) => h.id === k) && (l.systems[k as SystemId] ?? 0) > 0)
+    if (!hullSystems(db, l.ship, unlimited).some((h) => h.id === k) && (l.systems[k as SystemId] ?? 0) > 0)
       errors.push(`${k}: this hull has no room for it`);
   }
   if (!Number.isInteger(l.reactor) || l.reactor < base.reactor) errors.push(`reactor can't go below ${base.reactor}`);
-  if (l.reactor > RULES.reactorMax) errors.push(`reactor max is ${RULES.reactorMax}`);
+  const reactorMax = unlimited ? RULES.unlimitedReactor : RULES.reactorMax;
+  if (l.reactor > reactorMax) errors.push(`reactor max is ${reactorMax}`);
   let rc = 0;
   for (let lv = base.reactor; lv < l.reactor; lv++) rc += RULES.reactorPrice(lv);
   if (rc) lines.push({ item: `reactor ${base.reactor}→${l.reactor}`, scrap: rc });
@@ -160,12 +163,12 @@ const NAMES = [
   "Oren", "Pax", "Quill", "Rhea", "Soren", "Tamsin", "Uma", "Vale", "Wren", "Yara", "Zed",
 ];
 
-export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pickName: (n: string[]) => string): ShipState {
+export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pickName: (n: string[]) => string, unlimited = false): ShipState {
   const bp = db.ships[l.ship];
   const layout = db.layouts[bp.layout];
   const g = geometry(layout);
   const systems: ShipState["systems"] = {};
-  for (const h of hullSystems(db, l.ship)) {
+  for (const h of hullSystems(db, l.ship, unlimited || !!bp.enemy)) {
     const level = l.systems[h.id] ?? h.base;
     if (level <= 0) continue;
     const slot = bp.systems.find((s) => s.id === h.id)!;
@@ -173,6 +176,7 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     const station = slot.station >= 0 && h.id !== "medbay" ? tiles[slot.station] ?? tiles[0] ?? "" : "";
     systems[h.id] = {
       id: h.id, room: slot.room, level, power: 0, damage: 0, repair: 0, ion: 0, ionTimer: 0, station, fireDmg: 0, bonus: 0,
+      facing: station ? slot.facing ?? "up" : undefined,
     } satisfies SystemState;
   }
   const ship: ShipState = {
