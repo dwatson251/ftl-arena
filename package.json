@@ -1,0 +1,30 @@
+{
+  "name": "ftl-arena",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*", "tools/*"],
+  "scripts": {
+    "extract": "tsx packages/extract/src/cli.ts",
+    "server": "tsx apps/server/src/main.ts",
+    "client": "vite apps/client",
+    "dev": "concurrently -n server,client \"npm:server\" \"npm:client\"",
+    "bench": "tsx tools/bench/run.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.0",
+    "pixi.js": "^8.6.6",
+    "ws": "^8.18.0"
+  }
+}
