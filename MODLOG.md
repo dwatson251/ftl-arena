@@ -34,3 +34,25 @@
 ## Sim notes
 - Mirror bot-vs-bot matches snowballed toward whichever ship was processed first. The fix alternates
   processing order per tick. It now gives 7/13 over 20 seeds, which is within noise.
+
+## Client and server (verified 2026-10-09)
+- **Art placement:** on all 14 hulls, with the grid's top-left tile as the origin, the hull goes at
+  `<img x y>`, the floor at `<img>` + `<floor>`, and mounts relative to the hull image. Checked on the
+  contact sheet `tools/bench/hulls.ts`.
+- **Anim rows count from the bottom.** Checked against `human_base.png` (13 rows).
+- **Network:** 30.0 ticks/s, 15.1 snaps/s, about 6 KB per snap before deflate. Fog is enforced by the
+  server.
+- **Browser e2e:** two headless Chromium players, lobby → hangar → battle → end overlay. Runs covered crew
+  mode, a time limit, and a 4-minute hull-mode match. The trimmed clip is
+  `traces/showcase-alice-50s.webm`; traces aren't committed.
+- **Bugs found by e2e:**
+  - `null ?? "not in a lobby"` sent false errors;
+  - `<select data-ship>` has an empty dataset value;
+  - the DOM panel hid the Pixi preview;
+  - per-race crewCount entries weren't summed.
+- **Publish check:** `um publish check` on a `git archive` export passed, 56 files.
+
+## Next
+- Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
+- v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
+  augments.
