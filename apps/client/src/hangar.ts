@@ -222,7 +222,12 @@ export class Hangar {
           <option value="" ${pc.botShip === "" ? "selected" : ""}>Random player cruiser</option>
           <option value="@enemy" ${pc.botShip === "@enemy" ? "selected" : ""}>Random single-player enemy</option>
           <optgroup label="Player cruisers">${pool.map((id) => `<option value="${id}" ${pc.botShip === id ? "selected" : ""}>${h(this.db.ships[id].title)} (${h(this.db.ships[id].className)})</option>`).join("")}</optgroup>
-          ${this.db.enemies.length ? `<optgroup label="Single-player enemies">${this.db.enemies.map((id) => `<option value="${id}" ${pc.botShip === id ? "selected" : ""}>${h((/^BOSS_/.test(id) ? this.db.ships[id].title : this.db.ships[id].className) || id)}</option>`).join("")}</optgroup>` : ""}
+          ${(() => {
+            const opt = (id: string) => `<option value="${id}" ${pc.botShip === id ? "selected" : ""}>${h((/^BOSS_/.test(id) ? this.db.ships[id].title : this.db.ships[id].className) || id)}</option>`;
+            const group = (label: string, ids: string[]) => (ids.length ? `<optgroup label="${label}">${ids.map(opt).join("")}</optgroup>` : "");
+            const en = this.db.enemies;
+            return group("Single-player enemies", en.filter((id) => !this.db.ships[id].auto && !/^BOSS_/.test(id))) + group("Automated ships (no crew)", en.filter((id) => this.db.ships[id].auto)) + group("Rebel flagship (hard layout above 70)", en.filter((id) => /^BOSS_/.test(id)));
+          })()}
         </select></div>
         ${botShip ? `<div class="note">Bot flies: ${h(this.db.ships[botShip]?.className || this.db.ships[botShip]?.title || botShip)}${this.db.ships[botShip]?.enemy ? ` · hull ${lobby.players.find((p) => p.bot)?.loadout?.hull ?? ""}` : ""}</div>` : ""}
         <label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}

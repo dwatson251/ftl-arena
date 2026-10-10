@@ -210,3 +210,16 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Flagship | Holds sensors to level 2 | wiki |
 | Telepathy (Slug, Lifeform Scanner) | Live crew in unseen rooms show as silhouettes (race and action, no name or health); drones give off no life signs | wiki ("functions exactly like the slugs' ability") |
 | Slug | Also sees into every room touching its own, walls or not, on whichever ship it stands | wiki |
+
+## Round 16
+| Rule | Value | Source |
+|---|---|---|
+| Automated ships | Repair each damaged system at a third of a human's speed (37.5 s a bar), never in a room with fire or a breach (a fire also loses the progress) or intruders; undamaged systems count as manned (skill 0), even hacked | wiki (AI-Controlled Rebel Ships, The Rebel Flagship) |
+| Rebel flagship | When its crew are dead its AI takes over (it runs itself, as above); killing its crew doesn't win | wiki |
+| Flagship layout | Normal difficulty's (boss_N_easy): the weapon rooms are isolated, one crew member in each; above 70 bot difficulty, Hard's (corridors to the laser and missile rooms) | wiki / game data |
+| Flagship guns | Artillery N draws its weapon on mount N and fires from it | game data |
+| Flagship stages 1-2 | Beaten, it takes a few blasts and jumps away instead of breaking up | FTL |
+| Automated opponents | AUTO_BASIC and AUTO_ASSAULT, no crew, running themselves | game data |
+| Bot difficulty | Caps fitted weapons (1-4), shield layers (1-4) and engines by difficulty; everything is bought within the match scrap plus the difficulty's bonus (single-player hulls too) | user |
+| Sounds | Each weapon's own hit, shield and miss sounds; beams sizzle on contact; a weapon coming ready chimes (FTL's weaponReady) unless it's on autofire | game data |
+| Beams | Drawn as a continuous beam from beyond the target view, its tip sweeping the aimed line, FTL's contact flare at the tip, stopped at the bubble by shields it can't pierce; aiming shows the line following the mouse | FTL |

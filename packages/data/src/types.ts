@@ -45,6 +45,8 @@ export interface WeaponBP {
   chargeLevels: number;
   /** Chain weapons: each volley adds `amount` (cooldown seconds or damage), up to `count` times. */
   boost?: { type: "cooldown" | "damage"; amount: number; count: number };
+  /** Beam colour (r, g, b 0-255). */
+  color?: [number, number, number];
   /** Sound names (keys of GameDB.sounds) per event. */
   sounds?: { launch: string[]; hit: string[]; shield: string[]; miss: string[] };
 }
@@ -199,6 +201,8 @@ export interface ShipBP {
   className: string;
   /** Single-player enemy hull: vertical art under img/ships_glow, weapons from a pool. */
   enemy?: boolean;
+  /** An automated (drone) ship: no crew, it runs itself (FTL's AUTO_ ships). */
+  auto?: boolean;
   /** Folder under img/ holding <img>_base.png and gibs. */
   artDir: "ship" | "ships_glow";
   /** Enemy hulls: weapon blueprint pool and crew cap. */

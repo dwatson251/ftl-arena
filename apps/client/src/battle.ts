@@ -112,6 +112,7 @@ export class Battle {
   private hullMaskSprite: Sprite | null = null;
   /** Per-shot firing: projectile ids already launched, and the last shot time per `${ship}:${slot}`. */
   private launched = new Set<number>();
+  private beamSounded = new Set<number>();
   private shotAt = new Map<string, number>();
   onEndReady: () => void = () => {};
 
@@ -247,6 +248,8 @@ export class Battle {
     switch (e.e) {
       case "fire":
         this.firedAt.set(`${e.ship}:${e.slot}`, this.time);
+        // Artillery (the flagship's guns): their fire frames on the hull.
+        if (e.slot <= -2) this.rOf(e.ship).artilleryFired[-2 - e.slot] = this.animTime;
         // Projectile weapons sound per shot as each leaves the barrel (drawProjectiles); bombs and beams here.
         if (bpOf(e.ship, e.slot)?.type === "BOMB") play(this.db, ["bombTeleport"], e.ship === v.you ? 1 : 0.6);
         else if (bpOf(e.ship, e.slot)?.type === "BEAM") play(this.db, bpOf(e.ship, e.slot)?.sounds?.launch, e.ship === v.you ? 1 : 0.6);
@@ -258,22 +261,34 @@ export class Battle {
       case "fireStart":
         if (e.ship === v.you) play(this.db, ["fire"], 0.6);
         break;
-      case "hit":
+      case "hit": {
+        // Each weapon's own impact (missiles have their own explosions); beams sizzle as they sweep instead.
+        const bp = e.weapon ? this.db.weapons[e.weapon] : undefined;
+        if (bp?.type === "BEAM") break;
         this.boom(e.ship, e.px, e.py, e.damage > 0 ? 1 : 0.7);
-        play(this.db, ["hitHull2", "hitHull3", "smallExplosion"]);
+        play(this.db, bp?.sounds?.hit?.length ? bp.sounds.hit : ["hitHull2", "hitHull3", "smallExplosion"]);
         break;
-      case "shield":
+      }
+      case "shield": {
+        const bp = e.weapon ? this.db.weapons[e.weapon] : undefined;
         this.shieldHitAt[e.ship] = this.time;
         this.ripple(e.ship, e.px, e.py);
-        play(this.db, ["hitShield1", "hitShield2", "hitShield3"]);
+        play(this.db, bp?.sounds?.shield?.length ? bp.sounds.shield : ["hitShield1", "hitShield2", "hitShield3"]);
         break;
-      case "miss":
+      }
+      case "miss": {
+        const bp = e.weapon ? this.db.weapons[e.weapon] : undefined;
         this.missFly(e.ship, e.px, e.py);
         this.floatText(e.ship, e.px, e.py, "MISS", 0xdddddd);
-        play(this.db, ["miss"]);
+        play(this.db, bp?.sounds?.miss?.length ? bp.sounds.miss : ["miss"]);
         break;
+      }
       case "beam":
-        this.beam(e.ship, e.x1, e.y1, e.x2, e.y2, e.blocked);
+        // The beam itself is drawn as it sweeps (drawBeam); a beam stopped by shields flashes them.
+        if (e.blocked) {
+          this.shieldHitAt[e.ship] = this.time;
+          this.ripple(e.ship, e.x1, e.y1);
+        }
         break;
       case "intercept": {
         // A defense drone zaps an incoming shot just outside the defender's hull.
@@ -348,7 +363,11 @@ export class Battle {
       case "end": {
         const loser = e.winner === -1 ? -1 : 1 - e.winner;
         const destroyed = /destroyed/.test(e.reason) ? (loser === -1 ? [0, 1] : [loser]) : [];
-        for (const i of destroyed) this.explode(i);
+        // The Rebel flagship's first two stages don't break apart: after a few blasts it jumps away, as in FTL.
+        for (const i of destroyed) {
+          if (/^BOSS_[12](_HARD)?$/.test(this.view!.ships[i].bp)) this.jumpAway(i);
+          else this.explode(i);
+        }
         this.endReadyAt = this.time + (destroyed.length ? 4.2 : 1.2);
         setTimeout(() => this.onEndReady(), (this.endReadyAt - this.time) * 1000 + 50);
         break;
@@ -461,6 +480,37 @@ export class Battle {
     });
   }
 
+  /** When a ship started jumping away (the flagship between stages). */
+  private jumpAt = new Map<number, number>();
+  private jumpBase: { x: number; y: number; sy: number } | null = null;
+
+  private jumpAway(ship: number): void {
+    this.jumpAt.set(ship, this.time);
+    const b = this.rOf(ship).bounds();
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        if (!this.view) return;
+        this.boom(ship, b.x + b.w * (0.2 + 0.6 * hash01(i * 5 + 1)), b.y + b.h * (0.2 + 0.6 * hash01(i * 11 + 2)), 1.4 + hash01(i) * 0.8);
+        if (i % 2 === 0) play(this.db, ["explosion1", "explosion2", "explosion3"]);
+      }, i * 220);
+    }
+    setTimeout(() => this.view && play(this.db, ["jumpLeave"], 1), 1400);
+  }
+
+  /** The jump itself: the hull stretches and streaks out of the window, fading. */
+  private jumpFrame(): void {
+    for (const [ship, at] of this.jumpAt) {
+      const r = this.rOf(ship);
+      const t = this.time - at - 1.4;
+      if (t < 0) continue;
+      this.jumpBase ??= { x: r.root.position.x, y: r.root.position.y, sy: r.root.scale.y };
+      const k = Math.min(1, t / 0.8);
+      r.root.position.set(this.jumpBase.x, this.jumpBase.y - 900 * k * k);
+      r.root.scale.y = this.jumpBase.sy * (1 + 2.5 * k);
+      r.root.alpha = Math.max(0, 1 - k);
+    }
+  }
+
   private explode(ship: number): void {
     this.explodedAt.set(ship, this.time);
     const b = this.rOf(ship).bounds();
@@ -498,14 +548,15 @@ export class Battle {
     };
     this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.animTime, {
       hover: this.hoverOwn, weaponFrame: (s) => this.weaponFrameFor(ownV, v.you, s), shieldFlash: this.time - this.shieldHitAt[v.you],
-      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0,
+      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0, clock: this.time,
     });
     this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.animTime, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
       shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.systemsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
-      destinations: true, flashTiles: this.flashTilesEnemy,
+      destinations: true, flashTiles: this.flashTilesEnemy, clock: this.time,
     });
     this.crewSounds(v);
+    this.jumpFrame();
     this.drawTargets(ownV);
     this.drawProjectiles(v, k);
     this.drawDrones(v);
@@ -591,7 +642,15 @@ export class Battle {
         mk.text(`xn${i}`, String(i + 1), t.x1 + 8, t.y1 - 8, fstyle("JustinFont10", 0xff6050, { stroke: 0x101010 }), [0.5, 0.5], this.enemy.upright);
       }
     });
-    if (this.beamStart && this.armed !== null) g.circle(this.beamStart.x, this.beamStart.y, 6).fill({ color: 0xffd040 });
+    // Aiming a beam: after the first click its line follows the mouse, as long as the beam (no point markers).
+    if (this.beamStart && this.armed !== null) {
+      const L = this.db.weapons[own.weapons[this.armed]?.bp]?.length || 60;
+      const m = this.enemy.root.toLocal(this.stage.toGlobal(this.mouse));
+      const dx = m.x - this.beamStart.x;
+      const dy = m.y - this.beamStart.y;
+      const d = Math.hypot(dx, dy) || 1;
+      g.moveTo(this.beamStart.x, this.beamStart.y).lineTo(this.beamStart.x + (dx / d) * L, this.beamStart.y + (dy / d) * L).stroke({ color: 0xffd040, width: 3, alpha: 0.85 });
+    }
     mk.end();
     this.own.overlay.clear();
   }
@@ -629,7 +688,10 @@ export class Battle {
         this.drawShot(layer, this.db.weapons[p.weapon]?.image, from.x + (to.x - from.x) * kk, from.y + (to.y - from.y) * kk, Math.atan2(to.y - from.y, to.x - from.x), p.kind, 1);
         continue;
       }
-      if (p.kind === "BEAM") continue;
+      if (p.kind === "BEAM") {
+        this.drawBeam(v, p, dtSnap);
+        continue;
+      }
       if (p.delay - dtSnap > 0) continue;
       if ((p.kind === "BOARDER" || p.kind === "HACK") && !this.launched.has(p.id)) {
         this.launched.add(p.id);
@@ -686,8 +748,9 @@ export class Battle {
       const speed = p.kind === "MISSILES" ? 520 : p.kind === "BURST" ? 680 : 760;
       if (t * speed < 1100 && k2 < 0) {
         const slotBp = v.ships[p.from].weapons[p.slot]?.bp ?? p.weapon;
-        const local = p.slot >= 0 ? src.muzzlePoint(p.slot, slotBp) : src.gridCentre();
-        const rotated = p.slot >= 0 ? (src.layout.mounts[p.slot]?.rotate ?? true) : mine;
+        // Weapons leave their mount's barrel; the flagship's artillery its own guns; anything else the ship's middle.
+        const local = p.slot >= 0 ? src.muzzlePoint(p.slot, slotBp) : p.slot <= -2 ? src.artilleryMuzzle(-2 - p.slot) : src.gridCentre();
+        const rotated = p.slot >= 0 ? (src.layout.mounts[p.slot]?.rotate ?? true) : p.slot <= -2 ? false : mine;
         const muzzle = this.stage.toLocal(src.root.toGlobal(local));
         const ahead = this.stage.toLocal(src.root.toGlobal({ x: local.x + (rotated ? 10 : 0), y: local.y - (rotated ? 0 : 10) }));
         const d = Math.hypot(ahead.x - muzzle.x, ahead.y - muzzle.y) || 1;
@@ -708,6 +771,79 @@ export class Battle {
         this.lastInbound.set(mine ? 1 - v.you : v.you, heading);
         this.drawShot(mine ? this.projWin : this.projOwn, art, x, y, heading, p.kind, 1);
       }
+    }
+  }
+
+  /**
+   * A beam as FTL draws it: a continuous beam of the weapon's colour from beyond the edge of the target view,
+   * its tip sweeping along the aimed line while it fires, with FTL's contact flare where it touches. Shields it
+   * can't get through stop it at the bubble. On the firing ship, the beam leaves the gun and runs off screen.
+   */
+  private drawBeam(v: MatchView, p: MatchView["projectiles"][number], dtSnap: number): void {
+    if (p.target.kind !== "beam" || p.delay > 0) return;
+    const bp = this.db.weapons[p.weapon];
+    const mine = p.from === v.you;
+    const src = mine ? this.own : this.enemy;
+    const dst = mine ? this.enemy : this.own;
+    const T = v.ships[1 - p.from];
+    const k = Math.max(0, Math.min(1, (p.t + dtSnap) / (p.flight || 1)));
+    const t = p.target;
+    const L = bp?.length || 60;
+    const len = Math.hypot(t.x2 - t.x1, t.y2 - t.y1) || 1;
+    const tip = this.stage.toLocal(dst.root.toGlobal({ x: t.x1 + ((t.x2 - t.x1) / len) * L * k, y: t.y1 + ((t.y2 - t.y1) / len) * L * k }));
+    const spread = (hash01(p.id) - 0.5) * 0.9;
+    const ang = (mine ? Math.PI : 0) + spread;
+    const from = { x: tip.x + Math.cos(ang) * 700, y: tip.y + Math.sin(ang) * 700 - 120 };
+    // Stopped by shields (more layers than the beam's damage, less its piercing): end at the bubble.
+    const blocked = (T.superShield ?? 0) > 0 || (bp ? bp.damage - Math.max(0, T.shieldLayers - (bp.sp ?? 0)) <= 0 : false);
+    let end: { x: number; y: number } = tip;
+    if (blocked) {
+      // Walk in from the edge until the beam meets the bubble (tested in the target ship's own coordinates).
+      const e = dst.shieldEllipse();
+      for (let i = 0; i <= 60; i++) {
+        const q = { x: from.x + (tip.x - from.x) * (i / 60), y: from.y + (tip.y - from.y) * (i / 60) };
+        const l = dst.root.toLocal(this.stage.toGlobal(q));
+        if (((l.x - e.x) / e.a) ** 2 + ((l.y - e.y) / e.b) ** 2 < 1) {
+          end = q;
+          break;
+        }
+      }
+    }
+    const [r0, g0, b0] = bp?.color ?? [255, 40, 30];
+    const col = (r0 << 16) | (g0 << 8) | b0;
+    const flicker = 0.85 + 0.15 * Math.sin(this.time * 40 + p.id);
+    const layer = mine ? this.projWin : this.projOwn;
+    const g = new Graphics();
+    g.moveTo(from.x, from.y).lineTo(end.x, end.y).stroke({ color: col, width: 9 * flicker, alpha: 0.45 });
+    g.moveTo(from.x, from.y).lineTo(end.x, end.y).stroke({ color: col, width: 5, alpha: 0.9 });
+    g.moveTo(from.x, from.y).lineTo(end.x, end.y).stroke({ color: 0xffffff, width: 1.6, alpha: 0.9 });
+    layer.addChild(g);
+    const flare = animFrame(this.db, "beam_contact", 0);
+    if (flare) {
+      const s = new Sprite(flare);
+      s.anchor.set(0.5);
+      s.position.set(end.x, end.y);
+      s.scale.set(0.7 + 0.2 * flicker);
+      s.rotation = this.time * 3;
+      s.tint = blocked ? 0x9fd8ff : 0xffffff;
+      layer.addChild(s);
+    }
+    // On the firing ship: out of the barrel and off screen.
+    if (p.slot >= 0 || p.slot <= -2) {
+      const local = p.slot >= 0 ? src.muzzlePoint(p.slot, v.ships[p.from].weapons[p.slot]?.bp ?? p.weapon) : src.artilleryMuzzle(-2 - p.slot);
+      const rotated = p.slot >= 0 ? (src.layout.mounts[p.slot]?.rotate ?? true) : false;
+      const m0 = this.stage.toLocal(src.root.toGlobal(local));
+      const m1 = this.stage.toLocal(src.root.toGlobal({ x: local.x + (rotated ? 10 : 0), y: local.y - (rotated ? 0 : 10) }));
+      const d = Math.hypot(m1.x - m0.x, m1.y - m0.y) || 1;
+      const out = { x: m0.x + ((m1.x - m0.x) / d) * 1400, y: m0.y + ((m1.y - m0.y) / d) * 1400 };
+      const g2 = new Graphics();
+      g2.moveTo(m0.x, m0.y).lineTo(out.x, out.y).stroke({ color: col, width: 7 * flicker, alpha: 0.45 }).moveTo(m0.x, m0.y).lineTo(out.x, out.y).stroke({ color: 0xffffff, width: 1.6, alpha: 0.9 });
+      (mine ? this.projOwn : this.projWin).addChild(g2);
+    }
+    // The impact sizzle while it touches (FTL's beam sound is the launch; this is its hit on hull or shield).
+    if (!this.beamSounded.has(p.id)) {
+      this.beamSounded.add(p.id);
+      play(this.db, blocked ? ["hitShield1", "hitShield2", "hitShield3"] : bp?.sounds?.hit?.length ? bp.sounds.hit : ["hitHull1", "hitHull2"], mine ? 0.8 : 0.6);
     }
   }
 
@@ -943,6 +1079,12 @@ export class Battle {
       this.hammerAt = this.time;
       play(this.db, ["rockThud1", "rockThud2", "rockThud3"], 0.9);
     }
+    // A weapon coming ready chimes (FTL's weaponReady), unless it's on autofire and will just fire.
+    const prevW = this.prev?.ships[v.you].weapons;
+    if (prevW && !over) own.weapons.forEach((w, i) => {
+      const was = prevW[i];
+      if (was && was.bp === w.bp && was.volleys === 0 && w.volleys > 0 && !w.autofire) play(this.db, ["weaponReady"], 0.8);
+    });
     // A switched-off clone bay with someone in its queue groans (FTL's cloneBroken loop).
     const cbs = own.systems.clonebay;
     const queued = own.crew.some((c) => c.dead && c.clone !== undefined);
@@ -1667,7 +1809,7 @@ export class Battle {
         else g.rect(bx + 12.5, py + 0.5, 15, 5).stroke({ color: 0x8a8e8a, width: 1 });
       }
       const title = bp?.short ?? bp?.title ?? w.bp;
-      h.text(`wn${i}`, title, bx + 54, by + 3, fstyle("JustinFont10", w.powered ? (ready ? 0xb8ffb8 : 0xffffff) : 0x9aa09a, { align: "center", wrap: 66 }), [0.5, 0]);
+      h.text(`wn${i}`, title, bx + 54, by + 3, fstyle("JustinFont8", w.powered ? (ready ? 0xb8ffb8 : 0xffffff) : 0x9aa09a, { align: "center", wrap: 66 }), [0.5, 0]);
       if (bp?.chargeLevels && bp.chargeLevels > 1) h.text(`wcl${i}`, `${w.volleys}/${bp.chargeLevels}`, bx + 34, by + SLOT.h - 13, fstyle("JustinFont8", 0xffe070));
       // Slot number tag in the bottom-right corner.
       g.rect(bx + SLOT.w - 12, by + SLOT.h - 12, 11, 11).fill({ color: 0x0f1414 }).stroke({ color: edge, width: 1 });
@@ -1724,7 +1866,7 @@ export class Battle {
         else g.rect(bx + 5.5, py + 0.5, 15, 5).stroke({ color: 0x8a8e8a, width: 1 });
       }
       const short = bp.title.replace(/ Drone/, "").replace("Mark ", "").trim();
-      h.text(`dn${i}`, short.length > 14 ? `${short.slice(0, 13)}.` : short, bx + 54, by + 4, fstyle("JustinFont10", usableHere ? (d.powered ? 0xffffff : 0x9aa09a) : 0x707070), [0.5, 0]);
+      h.text(`dn${i}`, short.length > 14 ? `${short.slice(0, 13)}.` : short, bx + 54, by + 4, fstyle("JustinFont8", usableHere ? (d.powered ? 0xffffff : 0x9aa09a) : 0x707070), [0.5, 0]);
       const status = (d.rebuild ?? 0) > 0 ? `rebuilding ${Math.ceil(d.rebuild ?? 0)}s` : !usableHere ? "coming later" : d.deployed && !d.powered ? "offline" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
       if (status) h.text(`ds${i}`, status, bx + 26, by + SLOT.h - 12, fstyle("JustinFont8", d.deployed ? 0x9fe89f : 0xffd040));
       this.droneHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
@@ -1815,16 +1957,17 @@ export class Battle {
       const landed = this.time - (this.hackLandAt.get(s.idx) ?? -9);
       const fr = Math.min(4, Math.floor(landed / 0.1));
       if (strip) {
+        // The drone's head clamps to the hull with its legs out in space (turned to face whichever wall it's on).
         const sp = new Sprite(frame(strip, fr * 31, 0, 31, 49));
-        sp.anchor.set(0.5, 0.92);
+        sp.anchor.set(0.5, 0.1);
         sp.position.set(at.x, at.y);
-        sp.rotation = spot.rot + r.root.rotation;
+        sp.rotation = spot.rot + Math.PI + r.root.rotation;
         layer.addChild(sp);
         if (s.hack.pulse > 0) {
           const lt = texNow(Math.floor(this.animTime * 6) % 2 ? "ship/drones/drone_hack_light1.png" : "ship/drones/drone_hack_light2.png");
           if (lt) {
             const l = new Sprite(lt);
-            l.anchor.set(0.5, 0.92);
+            l.anchor.set(0.5, 0.1);
             l.position.set(at.x, at.y);
             l.rotation = sp.rotation;
             layer.addChild(l);

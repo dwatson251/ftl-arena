@@ -331,6 +331,11 @@ function render(): void {
   toScreen: (x: number, y: number) => (battle ? { x: battle.stage.x + x * battle.stage.scale.x, y: battle.stage.y + y * battle.stage.scale.y } : null),
   // Test helpers: send a command as this player; read HUD hit boxes.
   send: (cmd: unknown) => (battle as unknown as { send(c: unknown): void } | null)?.send(cmd),
+  /** The enemy ship's on-screen transform (jump-away checks). */
+  enemyRoot: () => {
+    const r = (battle as unknown as { enemy?: { root: { alpha: number; visible: boolean; position: { y: number }; scale: { y: number } } } } | null)?.enemy?.root;
+    return r ? { alpha: r.alpha, visible: r.visible, y: r.position.y, sy: r.scale.y } : null;
+  },
   ui: () => {
     // The system buttons drawn last frame (box, and whether they can be used).
     const b = battle as unknown as { btns: { box: unknown; act?: unknown; why?: string }[]; lay: unknown } | null;

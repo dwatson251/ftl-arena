@@ -267,6 +267,15 @@ export class Match {
     if (sys && !claimed.has(sys.station)) dest = sys.station;
     if (!dest) dest = tiles.find((t) => !claimed.has(t)) ?? "";
     if (!dest) return; // room full
+    // Mid-step between tiles they finish the step first; but someone breaking down a closed door drops it
+    // and replans from where they stand (the new way may lead through a different door).
+    const edge0 = c.path.length ? g.adj.get(c.tile)?.find((e) => e.to === c.path[0]) : undefined;
+    const atDoor = !!edge0 && edge0.door >= 0 && !this.doorOpen(ship, edge0.door) && c.x === unkey(c.tile)[0] && c.y === unkey(c.tile)[1];
+    if (atDoor) {
+      c.path = [];
+      c.bash = 0;
+      c.task = "idle";
+    }
     const from = c.path.length ? c.path[0] : c.tile;
     let p = findPath(g, from, dest);
     // Intruders join a siege: if a comrade is already shooting down a door into that room, go in that way.
@@ -526,7 +535,7 @@ export class Match {
       s.bonus = 0;
       s.manBonus = 0;
       if ((s.id === "sensors" || s.id === "doors") && s.station && usable(s) > 0) {
-        if (this.mannedBy(ship, s.id)) s.manBonus = 1;
+        if (this.manSkill(ship, s.id) !== undefined) s.manBonus = 1;
       }
       for (const c of ship.crew) {
         const p = raceOf(c.race).power;
@@ -547,8 +556,11 @@ export class Match {
     if (this.autonomous(ship)) {
       const g = this.geo(ship);
       for (const s of Object.values(ship.systems)) {
-        // Not while intruders are in that room wrecking it.
-        if (!s || s.damage <= 0 || ship.crew.some((c) => c.owner !== ship.idx && !c.dead && g.tiles.get(c.tile)?.room === s.room)) continue;
+        if (!s || s.damage <= 0) continue;
+        // FTL: no repairs in a room with fire or a breach (a fire also loses the progress), or with intruders in it.
+        const rs = ship.rooms.find((r) => r.id === s.room);
+        if (rs && Object.keys(rs.fires).length) s.repair = 0;
+        if (!rs || Object.keys(rs.fires).length || Object.keys(rs.breaches).length || ship.crew.some((c) => c.owner !== ship.idx && !c.dead && g.tiles.get(c.tile)?.room === s.room)) continue;
         s.repair += RULES.autoRepair * DT;
         if (s.repair >= 1) {
           s.repair = 0;
@@ -564,8 +576,8 @@ export class Match {
       ship.shieldCharge = 0;
     }
     if (ship.shieldLayers < max) {
-      const m = this.mannedBy(ship, "shields");
-      const bonus = (m ? RULES.shieldManBonus[this.skill(m, "shields")] : 0) + augCount(ship, "SHIELD_RECHARGE") * (this.db.augments?.SHIELD_RECHARGE?.value ?? 0.15);
+      const m = this.manSkill(ship, "shields");
+      const bonus = (m !== undefined ? RULES.shieldManBonus[m] : 0) + augCount(ship, "SHIELD_RECHARGE") * (this.db.augments?.SHIELD_RECHARGE?.value ?? 0.15);
       ship.shieldCharge += (DT / RULES.shieldRecharge) * (1 + bonus);
       if (ship.shieldCharge >= 1) {
         ship.shieldLayers++;
@@ -574,9 +586,25 @@ export class Match {
     } else ship.shieldCharge = 0;
   }
 
-  /** Autonomous mode, and none of the ship's own crew are alive aboard it: it runs itself. */
+  /**
+   * The ship runs itself: none of its own crew are alive aboard, and either the match is in autonomous mode or
+   * it's the Rebel flagship (FTL: "the AI took control of the ship" when its crew die).
+   */
   autonomous(ship: ShipState): boolean {
-    return this.state.config.winCondition === "auto" && !ship.crew.some((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined);
+    if (this.state.config.winCondition !== "auto" && !/^BOSS_/.test(ship.bp) && !this.db.ships[ship.bp]?.auto) return false;
+    return !ship.crew.some((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined);
+  }
+
+  /**
+   * The skill a system is manned with: its crew member's, or (an autonomous ship) 0 for every undamaged system,
+   * hacked or not, as FTL's automated ships treat them as manned. Undefined when unmanned.
+   */
+  manSkill(ship: ShipState, id: SystemId): number | undefined {
+    const m = this.mannedBy(ship, id);
+    const sk: Record<string, SkillId> = { pilot: "pilot", engines: "engines", shields: "shields", weapons: "weapons" };
+    if (m) return sk[id] ? this.skill(m, sk[id]) : 0;
+    const s = ship.systems[id];
+    return s && s.damage === 0 && s.station && this.autonomous(ship) ? 0 : undefined;
   }
 
   /** A system wrecked by something other than a weapon hit (boarders, fire) also costs the ship 1 hull (FTL). */
@@ -591,13 +619,11 @@ export class Match {
     const pilotSys = ship.systems.pilot;
     const pilotPower = this.eff(pilotSys);
     if (eng <= 0 || pilotPower <= 0) return 0;
-    const pilot = this.mannedBy(ship, "pilot");
+    const pilot = this.manSkill(ship, "pilot");
     let ev = RULES.engineEvasion[Math.min(8, eng)];
-    const em = this.mannedBy(ship, "engines");
-    if (em) ev += RULES.engineManBonus[this.skill(em, "engines")];
-    if (pilot) return ev + RULES.pilotManBonus[this.skill(pilot, "pilot")];
-    // An autonomous ship's helm flies itself, like FTL's drone ships (no manning bonus).
-    if (this.autonomous(ship)) return ev;
+    const em = this.manSkill(ship, "engines");
+    if (em !== undefined) ev += RULES.engineManBonus[em];
+    if (pilot !== undefined) return ev + RULES.pilotManBonus[pilot];
     return Math.floor(ev * RULES.autopilot[Math.min(3, pilotPower)]);
   }
 
@@ -615,8 +641,8 @@ export class Match {
     const w = ship.weapons[slot];
     const bp = this.wbp(w.bp);
     let cd = bp.cooldown;
-    const m = this.mannedBy(ship, "weapons");
-    if (m) cd *= 1 - RULES.weaponManBonus[this.skill(m, "weapons")];
+    const m = this.manSkill(ship, "weapons");
+    if (m !== undefined) cd *= 1 - RULES.weaponManBonus[m];
     cd *= Math.pow(1 - (this.db.augments?.AUTO_COOLDOWN?.value ?? 0.1), augCount(ship, "AUTO_COOLDOWN"));
     if (bp.boost?.type === "cooldown") cd = Math.max(1, cd - bp.boost.amount * w.boost);
     return cd;
@@ -755,13 +781,13 @@ export class Match {
     if (!bypass && (T.superShield ?? 0) > 0 && room >= 0 && (p.kind === "BOMB" || !this.rng.chance(T.evasion / 100))) {
       T.superShield = Math.max(0, (T.superShield ?? 0) - Math.max(1, bp.damage + bp.ion));
       src.stats.blocked++;
-      st.events.push({ e: "shield", ship: T.idx, px: p.px, py: p.py });
+      st.events.push({ e: "shield", ship: T.idx, px: p.px, py: p.py, weapon: p.weapon });
       return;
     }
     if (p.kind !== "BOMB") {
       if (room < 0 || this.rng.chance(T.evasion / 100)) {
         src.stats.misses++;
-        st.events.push({ e: "miss", ship: T.idx, px: p.px, py: p.py });
+        st.events.push({ e: "miss", ship: T.idx, px: p.px, py: p.py, weapon: p.weapon });
         this.gainXp(this.mannedBy(T, "pilot"), "pilot");
         this.gainXp(this.mannedBy(T, "engines"), "engines");
         return;
@@ -771,7 +797,7 @@ export class Match {
         T.shieldCharge = 0;
         if (bp.ion > 0 && T.systems.shields && !this.ionNegated(T)) this.addIon(T.systems.shields, bp.ion);
         src.stats.blocked++;
-        st.events.push({ e: "shield", ship: T.idx, px: p.px, py: p.py });
+        st.events.push({ e: "shield", ship: T.idx, px: p.px, py: p.py, weapon: p.weapon });
         this.gainXp(this.mannedBy(T, "shields"), "shields");
         return;
       }
@@ -790,7 +816,7 @@ export class Match {
     const y2 = t.y1 + (dy / len) * L;
     if ((T.superShield ?? 0) > 0) {
       T.superShield = Math.max(0, (T.superShield ?? 0) - Math.max(1, bp.damage));
-      st.events.push({ e: "beam", ship: T.idx, x1: t.x1, y1: t.y1, x2, y2, blocked: true });
+      st.events.push({ e: "beam", ship: T.idx, x1: t.x1, y1: t.y1, x2, y2, blocked: true, weapon: bp.id });
       src.stats.blocked++;
       return;
     }
@@ -798,7 +824,7 @@ export class Match {
     const layers = Math.max(0, T.shieldLayers - (bp.sp ?? 0));
     const dmg = bp.damage - layers;
     const blocked = dmg <= 0 && (bp.damage > 0 || layers > 0);
-    st.events.push({ e: "beam", ship: T.idx, x1: t.x1, y1: t.y1, x2, y2, blocked });
+    st.events.push({ e: "beam", ship: T.idx, x1: t.x1, y1: t.y1, x2, y2, blocked, weapon: bp.id });
     if (blocked) {
       src.stats.blocked++;
       return;
@@ -884,7 +910,7 @@ export class Match {
         st.events.push({ e: "breach", ship: T.idx, room });
       }
     }
-    st.events.push({ e: "hit", ship: T.idx, room, damage: hullDmg, px, py });
+    st.events.push({ e: "hit", ship: T.idx, room, damage: hullDmg, px, py, weapon: bp.id });
   }
 
   // ---------------------------------------------------------------- crew
@@ -1756,7 +1782,8 @@ export class Match {
     const lost = st.ships.map((s) => {
       if (s.hull <= 0) return "ship destroyed";
       // Autonomous ships fly on without crew: only destruction ends it.
-      if (st.config.winCondition !== "auto" && !this.crewOf(s.idx).some((c) => !c.dead) && !this.canStillClone(s)) return "crew lost";
+      // (Nor is the Rebel flagship: its AI takes over when the crew are dead.)
+      if (st.config.winCondition !== "auto" && !/^BOSS_/.test(s.bp) && !this.db.ships[s.bp]?.auto && !this.crewOf(s.idx).some((c) => !c.dead) && !this.canStillClone(s)) return "crew lost";
       return "";
     });
     if (lost[0] || lost[1]) {

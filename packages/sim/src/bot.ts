@@ -487,8 +487,13 @@ export function botLoadout(db: GameDB, shipId: string, scrap: number, level: num
   };
   const shop = buyableWeapons(db).map((id) => db.weapons[id]);
   const good = ["LASER_BURST_2", "LASER_BURST_3", "MISSILES_2_PLAYER", "LASER_HEAVY_1", "ION_1", "SHOTGUN_PLAYER", "PH_TRIPLE", "PH_TORPEDO", "PH_HEAVY", "PH_SCATTER"];
+  // Difficulty caps what it fits, scrap or not: an easy bot flies one or two weapons and a single shield layer;
+  // a hard one fills its mounts and runs four layers.
+  const maxWeapons = Math.max(1, Math.min(ship.weaponSlots, 1 + Math.round(3 * level)));
+  const maxShields = 2 + 2 * Math.round(3 * level);
+  const maxEngines = 2 + Math.round(4 * level);
   const buy = () => {
-    if (l.weapons.length >= ship.weaponSlots) return false;
+    if (l.weapons.length >= Math.min(ship.weaponSlots, maxWeapons)) return false;
     const pool = level >= 0.5 ? shop.filter((w) => good.includes(w.id)) : shop;
     const ok = tryApply((x) => void x.weapons.push(rng.pick(pool.length ? pool : shop).id));
     if (ok) {
@@ -498,15 +503,13 @@ export function botLoadout(db: GameDB, shipId: string, scrap: number, level: num
     }
     return ok;
   };
-  if (level >= 0.5) {
-    const plan = [sysTo("shields", 4), sysTo("weapons", weaponsPower(l)), buy, sysTo("engines", 4), buy, sysTo("shields", 6), sysTo("engines", 5), sysTo("pilot", 2), buy, sysTo("shields", 8), sysTo("engines", 6), sysTo("pilot", 3)];
-    for (const p of plan) p();
-  } else {
-    for (let i = 0; i < 6; i++) rng.chance(0.5) ? buy() : sysTo(rng.pick(["engines", "oxygen", "medbay", "shields", "weapons"] as SystemId[]), 8)();
-  }
+  const sh = (n: number) => sysTo("shields", Math.min(n, maxShields));
+  const en = (n: number) => sysTo("engines", Math.min(n, maxEngines));
+  const plan = [sh(4), sysTo("weapons", weaponsPower(l)), buy, en(4), buy, sh(6), en(5), sysTo("pilot", level >= 0.4 ? 2 : 1), buy, sh(8), en(6), sysTo("pilot", level >= 0.7 ? 3 : 1)];
+  for (const p of plan) p();
   feedReactor();
-  // Most FTL ships carry 5-6 crew (the flagship more), so the bot hires up to that and spends the rest elsewhere.
-  for (let i = 0; l.crew.length < BOT_CREW && i < 4; i++) {
+  // Most FTL ships carry 5-6 crew (the flagship more); easier bots hire fewer.
+  for (let i = 0; l.crew.length < Math.min(BOT_CREW, 3 + Math.round(2 * level)) && i < 4; i++) {
     const race = level >= 0.5 && db.crew.engi ? "engi" : "human";
     tryApply((x) => void x.crew.push({ race, name: randomCrewName(db, x.crew.map((c) => c.name), seed + i * 13) }));
   }
@@ -542,7 +545,7 @@ export function difficultyToBot(d: number): { level: number; scrapBonus: number 
  * fit its weapon bars and mounts; crew grow from amount toward max. `hullBonus` adds hull points, since
  * sector enemies have 7-14 hull against a player cruiser's 30.
  */
-export function enemyLoadout(db: GameDB, shipId: string, level: number, seed = 1, hullBonus = 0): Loadout {
+export function enemyLoadout(db: GameDB, shipId: string, level: number, seed = 1, hullBonus = 0, budget?: number): Loadout {
   const s = db.ships[shipId];
   const rng = new Rng(seed);
   const lerp = (a: number, b: number) => Math.round(a + (b - a) * Math.max(0, Math.min(1, level)) * 0.6);
@@ -568,13 +571,33 @@ export function enemyLoadout(db: GameDB, shipId: string, level: number, seed = 1
   if (!weapons.length && sorted.length) weapons.push(sorted[0].id);
   const n = s.id.startsWith("BOSS_") ? lerp(s.crewCount, s.crewMax ?? s.crewCount) : Math.min(ENEMY_CREW, lerp(s.crewCount, s.crewMax ?? s.crewCount));
   const race = s.crewRaces[0] ?? "human";
-  const crew = Array.from({ length: Math.max(1, n) }, (_, i) => ({ race: RACES[race] ? race : "human", name: randomCrewName(db, [], seed * 7 + i * 31) }));
+  // Automated ships fly with no crew at all.
+  const crew = Array.from({ length: s.auto ? 0 : Math.max(1, n) }, (_, i) => ({ race: RACES[race] ? race : "human", name: randomCrewName(db, [], seed * 7 + i * 31) }));
   const demand = (systems.shields ?? 0) + (systems.engines ?? 0) + Math.min(1, systems.oxygen ?? 0) + Math.min(1, systems.medbay ?? 0) + used;
-  return {
+  const out: Loadout = {
     ship: shipId, systems, reactor: Math.max(s.maxPower, demand), weapons, crew, missiles: Math.max(s.missiles, 8), hull: s.health + hullBonus,
     // Hull augments come with the ship: a Zoltan ship's super shield starts full.
     augments: (s.augments ?? []).filter((a) => db.augments?.[a]),
     drones: (s.drones ?? []).filter((d) => db.droneBPs?.[d]).slice(0, Math.max(s.droneSlots ?? 0, (s.drones ?? []).length)),
     droneParts: Math.max(s.droneParts ?? 0, (s.drones ?? []).length ? 6 : 0),
   };
+  // Within a scrap budget (the match's scrap plus the difficulty bonus): sell weapons and strip upgrades,
+  // cheapest-to-lose first, until what's fitted costs no more than that.
+  if (budget !== undefined && !/^BOSS_/.test(shipId)) {
+    const cost = (x: Loadout) => priceLoadout(db, x, Number.MAX_SAFE_INTEGER).total;
+    const strip: SystemId[] = ["oxygen", "medbay", "pilot", "engines", "shields", "weapons"];
+    const floor = baseLoadout(db, shipId).systems;
+    for (let n = 0; n < 60 && cost(out) > budget; n++) {
+      if (out.weapons.length > 1) {
+        out.weapons.pop();
+        continue;
+      }
+      const id = strip.find((x) => (out.systems[x] ?? 0) > Math.max(1, floor[x] ?? 0));
+      if (!id) break;
+      out.systems[id] = (out.systems[id] ?? 0) - 1;
+    }
+    const sy = out.systems;
+    out.reactor = Math.max(s.maxPower, (sy.shields ?? 0) + (sy.engines ?? 0) + Math.min(1, sy.oxygen ?? 0) + Math.min(1, sy.medbay ?? 0) + out.weapons.reduce((a, w) => a + (db.weapons[w]?.power ?? 1), 0));
+  }
+  return out;
 }

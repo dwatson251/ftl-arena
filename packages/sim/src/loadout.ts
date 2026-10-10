@@ -311,6 +311,15 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
       taken.add(st);
     }
   }
+  // The Rebel flagship keeps one crew member in each of its (isolated) weapon rooms, as in FTL.
+  if (/^BOSS_/.test(l.ship))
+    for (const id of ["artillery", "artillery2", "artillery3", "artillery4"] as SystemId[]) {
+      const t = systems[id] ? g.roomTiles.get(systems[id]!.room)?.[0] : undefined;
+      if (t && !taken.has(t)) {
+        spots.push(t);
+        taken.add(t);
+      }
+    }
   const blocked = blockedTiles(ship);
   for (const k of g.tiles.keys()) if (!taken.has(k) && !blocked.has(k)) spots.push(k);
   for (let i = 0; i < l.crew.length; i++) {

@@ -37,7 +37,10 @@ describe("win conditions", () => {
     expect(m.autonomous(s)).toBe(true);
     const sys = s.systems.shields!;
     sys.damage = 1;
-    for (let i = 0; i < 30 * 14; i++) m.step();
+    // A third of a human's speed (wiki): 37.5 s for the bar.
+    for (let i = 0; i < 30 * 30; i++) m.step();
+    expect(sys.damage).toBe(1);
+    for (let i = 0; i < 30 * 8; i++) m.step();
     expect(sys.damage).toBe(0);
     s.hull = 0;
     m.step();

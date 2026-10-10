@@ -67,6 +67,8 @@ export function parseWeapon(n: XNode, text: Record<string, string>): WeaponBP | 
     boost: boost
       ? { type: txt(boost, "type") === "damage" ? "damage" : "cooldown", amount: num(boost, "amount"), count: num(boost, "count") }
       : undefined,
+    // Beams: their <color> (FTL draws red without one).
+    ...(kid(n, "color") ? { color: [num(kid(n, "color")!, "r"), num(kid(n, "color")!, "g"), num(kid(n, "color")!, "b")] as [number, number, number] } : {}),
     sounds: {
       launch: kids(kid(n, "launchSounds"), "sound").map((x) => x.text.trim()),
       hit: kids(kid(n, "hitShipSounds"), "sound").map((x) => x.text.trim()),
@@ -312,15 +314,16 @@ export function buildDbFromFtl(read: FileSource, imageSize?: (path: string) => {
   // Single-player enemies (autoBlueprints): weapons come from a named pool, crew from amount..max.
   for (const n of enemyNodes) {
     const id = n.attrs.name;
-    // The Rebel flagship's three stages are in; other bosses, the DLC re-tunes of the same hulls and
-    // crewless Auto ships (they need the AI-ship rules) are skipped.
+    // The Rebel flagship's three stages and the automated (crewless) ships are in; other bosses and the DLC
+    // re-tunes of the same hulls are skipped.
     const flagship = FLAGSHIP.test(id);
-    if (db.ships[id] || (!flagship && /BOSS|FLAGSHIP|DRONE_|_PEACE|_DLC$|^AUTO_/.test(id))) continue;
+    if (db.ships[id] || (!flagship && /BOSS|FLAGSHIP|DRONE_|_PEACE|_DLC$/.test(id))) continue;
     const wl = kid(n, "weaponList");
     const pool = (wl?.attrs.load ? lists[wl.attrs.load] : undefined) ?? kids(wl, "weapon").map((w) => w.attrs.name);
     const s = parseShip(n, text);
     const crew = kids(n, "crewCount")[0];
     s.enemy = true;
+    if (/^AUTO_/.test(id)) s.auto = true;
     s.weaponPool = (pool ?? []).filter((w) => db.weapons[w]);
     s.crewMax = Number(crew?.attrs.max ?? s.crewCount) || s.crewCount;
     s.weaponSlots = 4;
@@ -329,6 +332,18 @@ export function buildDbFromFtl(read: FileSource, imageSize?: (path: string) => {
       s.title = `${s.className || "Rebel Flagship"} (stage ${id.slice(-1)})`;
       s.crewCount = s.crewMax = RULES_FLAGSHIP_CREW;
       s.crewRaces = Array.from({ length: RULES_FLAGSHIP_CREW }, () => "human");
+      // Its normal-difficulty layout (boss_N_easy): the weapon rooms stand apart from the main ship, reached
+      // only by teleporting. The plain boss_N is Hard mode's, with corridors joining the laser and missile rooms.
+      if (read(`data/${s.layout}_easy.txt`)) {
+        // Hard mode's layout stays available as BOSS_N_HARD (picked by high bot difficulty).
+        const hardLayout = s.layout;
+        const ht = read(`data/${hardLayout}.txt`);
+        if (ht) {
+          db.layouts[hardLayout] ??= parseLayout(hardLayout, ht, read(`data/${hardLayout}.xml`));
+          db.ships[`${id}_HARD`] = { ...s, id: `${id}_HARD`, layout: hardLayout, title: `${s.title} (hard)` };
+        }
+        s.layout = `${s.layout}_easy`;
+      }
     } else if (!s.weaponPool.length && !s.weapons.length) continue;
     const t = read(`data/${s.layout}.txt`);
     if (!t) continue;

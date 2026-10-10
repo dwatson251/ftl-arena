@@ -59,6 +59,8 @@ export interface ShipDrawOpts {
   engines?: number;
   /** Cloaked: the ship fades into FTL's translucent cloak look. */
   cloaked?: boolean;
+  /** Wall-clock time: doors keep opening and closing on it while the match is paused (the rest freezes). */
+  clock?: number;
 }
 
 export class ShipRenderer {
@@ -322,12 +324,13 @@ export class ShipRenderer {
       const open = v.doors[i] || (v.doorPass?.[i] ?? 0) > 0;
       // Doors of a room locked by a hacking drone carry FTL's lock.
       const locked = v.lockedRoom !== undefined && (dr.roomA === v.lockedRoom || dr.roomB === v.lockedRoom);
+      const now = o.clock ?? time;
       const a = (this.doorAnim[i] ??= { open, t: -9 });
       if (a.open !== open) {
         a.open = open;
-        a.t = time;
+        a.t = now;
       }
-      const k = Math.min(1, (time - a.t) / 0.18);
+      const k = Math.min(1, (now - a.t) / 0.18);
       const f = Math.round((open ? k : 1 - k) * 4);
       const hot = o.hover.door === i;
       if (doorTex) {
@@ -394,6 +397,26 @@ export class ShipRenderer {
           const hgt = Math.floor(28 * kk / 2) * 2;
           g2.rect(bx + 1, by + 29 - hgt, 4, hgt).fill({ color: w.volleys > 0 ? 0xfff040 : 0xffc020 });
         }
+      });
+    }
+    // Flagship artillery on its mounts.
+    if (L.img.w > 0 && this.hasArt()) {
+      this.artilleryIds(v).forEach((id, i) => {
+        const s = v.systems[id as keyof typeof v.systems]!;
+        const bp = this.db.weapons[s.weapon!];
+        const anim = bp && this.db.weaponAnims[bp.weaponArt];
+        const m = L.mounts[i];
+        this.lastArtillery[i] = s.weapon!;
+        if (!m || !bp || !anim) return;
+        const since = time - (this.artilleryFired[i] ?? -9);
+        const cd = bp.cooldown || 1;
+        const k = Math.min(1, (s.charge ?? 0) / cd);
+        const fr = since >= 0 && since < 0.35 ? Math.min(anim.frames - 1, anim.chargedFrame + 1 + Math.floor((since / 0.35) * (anim.frames - anim.chargedFrame - 1))) : Math.floor(Math.min(0.999, k) * anim.chargedFrame);
+        const f = weaponFrame(this.db, bp.weaponArt, fr);
+        if (!f) return;
+        wi.sprite(`ar${i}`, f, L.img.x + m.x, L.img.y + m.y, {
+          anchor: [anim.mountPoint.x / f.width, anim.mountPoint.y / f.height], scale: [m.mirror ? -1 : 1, 1], rotation: m.rotate ? Math.PI / 2 : 0,
+        });
       });
     }
     wi.end();
@@ -649,6 +672,41 @@ export class ShipRenderer {
       }
     }
     gi.end();
+  }
+
+  /**
+   * The Rebel flagship's guns are artillery systems: artillery N stands on weapon mount N and draws its weapon's
+   * art there (charging frames, then the fire frames when it shoots).
+   */
+  private artilleryIds(v: ShipView): string[] {
+    return ["artillery", "artillery2", "artillery3", "artillery4"].filter((id) => v.systems[id as keyof typeof v.systems]?.weapon);
+  }
+
+  artilleryMuzzle(i: number): { x: number; y: number } {
+    const L = this.layout;
+    const m = L.mounts[i];
+    if (!m || !this.hasArt()) return this.gridCentre();
+    const id = this.lastArtillery[i];
+    const anim = id ? this.db.weaponAnims[this.db.weapons[id]?.weaponArt ?? ""] : undefined;
+    const base = { x: L.img.x + m.x, y: L.img.y + m.y };
+    if (!anim) return base;
+    let dx = anim.firePoint.x - anim.mountPoint.x;
+    let dy = anim.firePoint.y - anim.mountPoint.y;
+    if (m.mirror) dx = -dx;
+    if (m.rotate) [dx, dy] = [-dy, dx];
+    return { x: base.x + dx, y: base.y + dy };
+  }
+
+  private lastArtillery: string[] = [];
+  /** When each artillery gun last fired (renderer time), for its fire frames. */
+  artilleryFired: number[] = [];
+
+  /** The shield bubble in grid pixels: centre and radii (the art when loaded, else the hull's box). */
+  shieldEllipse(): { x: number; y: number; a: number; b: number } {
+    const s = this.shieldArt;
+    if (s) return { x: s.position.x, y: s.position.y, a: Math.abs(s.width) / 2, b: Math.abs(s.height) / 2 };
+    const b = this.bounds();
+    return { x: b.x + b.w / 2, y: b.y + b.h / 2, a: b.w / 2 + 10, b: b.h / 2 + 10 };
   }
 
   mountPoint(i: number): { x: number; y: number } {

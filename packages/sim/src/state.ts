@@ -244,10 +244,11 @@ export interface Projectile {
 
 export type MatchEvent =
   | { e: "fire"; ship: 0 | 1; slot: number }
-  | { e: "miss"; ship: 0 | 1; px: number; py: number }
-  | { e: "shield"; ship: 0 | 1; px: number; py: number }
-  | { e: "hit"; ship: 0 | 1; room: number; damage: number; px: number; py: number }
-  | { e: "beam"; ship: 0 | 1; x1: number; y1: number; x2: number; y2: number; blocked: boolean }
+  /** `weapon`: the blueprint that fired it (its own hit / shield / miss sounds). */
+  | { e: "miss"; ship: 0 | 1; px: number; py: number; weapon?: string }
+  | { e: "shield"; ship: 0 | 1; px: number; py: number; weapon?: string }
+  | { e: "hit"; ship: 0 | 1; room: number; damage: number; px: number; py: number; weapon?: string }
+  | { e: "beam"; ship: 0 | 1; x1: number; y1: number; x2: number; y2: number; blocked: boolean; weapon?: string }
   | { e: "fireStart" | "breach"; ship: 0 | 1; room: number }
   | { e: "death"; ship: 0 | 1; crew: number }
   | { e: "clone"; ship: 0 | 1; crew: number }

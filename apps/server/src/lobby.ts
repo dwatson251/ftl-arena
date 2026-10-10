@@ -95,8 +95,10 @@ export class Lobby {
       // A single-player enemy hull: its own systems/weapon pool, scaled by difficulty, plus bonus hull.
       // A random enemy is an ordinary single-player ship; the flagship is picked on purpose.
       const ordinary = this.db.enemies.filter((e) => !/^BOSS_/.test(e));
-      const ship = pc.botShip === "@enemy" ? ordinary[seed % ordinary.length] : pc.botShip;
-      p.loadout = enemyLoadout(this.db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14));
+      const pick = pc.botShip === "@enemy" ? ordinary[seed % ordinary.length] : pc.botShip;
+      // Above 70 difficulty the flagship flies Hard mode's layout (corridors to its laser and missile rooms).
+      const ship = pc.difficulty > 70 && this.db.ships[`${pick}_HARD`] ? `${pick}_HARD` : pick;
+      p.loadout = enemyLoadout(this.db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14), Math.round(this.config.scrap * (1 + scrapBonus)));
       p.priced = { ok: true, total: 0, lines: [], errors: [] };
     } else {
       const ship = pc.botShip && pool.includes(pc.botShip) ? pc.botShip : pool[seed % pool.length];

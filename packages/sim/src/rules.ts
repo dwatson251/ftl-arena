@@ -152,9 +152,9 @@ export const RULES = {
   /** The Rebel flagship's crew (its blueprints don't list one; est). */
   flagshipCrew: 8,
   maxCrew: 8,
-  /** Autonomous mode: a crewless ship repairs each damaged system at this many bars per second (est, one
-   * untrained crew member's pace). */
-  autoRepair: 0.08,
+  /** Autonomous ships repair each damaged system at a third of an untrained human's speed (wiki: "1/3 the speed
+   * of a human", whose 12.5 s a bar makes this 37.5 s). */
+  autoRepair: 1 / 37.5,
   /** Pausing defaults (experimental, not FTL): a tactical timeout every 60 s for 10 s, warned 5 s ahead; a
    * 60 s pause clock each, regaining 5 s per minute of play. */
   tacticalEvery: 60,
