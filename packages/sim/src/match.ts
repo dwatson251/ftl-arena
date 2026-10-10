@@ -1622,7 +1622,7 @@ export class Match {
     const st = this.state;
     const lost = st.ships.map((s) => {
       if (st.config.winCondition === "hull" && s.hull <= 0) return "ship destroyed";
-      if (!this.crewOf(s.idx).some((c) => !c.dead)) return "crew lost";
+      if (!this.crewOf(s.idx).some((c) => !c.dead) && !this.canStillClone(s)) return "crew lost";
       return "";
     });
     if (lost[0] || lost[1]) {
@@ -1637,6 +1637,17 @@ export class Match {
       st.endReason = "time limit";
     }
     if (st.winner !== null) st.events.push({ e: "end", winner: st.winner, reason: st.endReason });
+  }
+
+  /**
+   * With everyone dead, a clone bay that still has someone in its queue keeps the player in the game, unless
+   * it's been destroyed: with no crew left to repair it, that's the end (Backup DNA or not). Ion and hacking
+   * wear off and power can still be given, so those only pause it (without Backup DNA the queue dies anyway).
+   */
+  private canStillClone(s: ShipState): boolean {
+    const cb = s.systems.clonebay;
+    if (!cb || cb.damage >= cb.level) return false;
+    return s.crew.some((c) => c.dead && c.clone !== undefined && c.drone === undefined);
   }
 
   /** Stable hash of the whole state, for determinism checks. */

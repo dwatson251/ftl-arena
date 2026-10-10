@@ -76,6 +76,26 @@ describe("clone bay", () => {
       if (dna) expect(victim.hp).toBe(victim.maxHp);
     }
   });
+  it("with every crew member dead, the match goes on while the clone bay can bring one back; destroyed, it's over", () => {
+    for (const destroy of [false, true]) {
+      const db = dbWithAugs();
+      const base = baseLoadout(db, "PH_SKIFF");
+      const lo = { ...base, systems: { ...base.systems, medbay: 0, clonebay: 1 }, augments: ["BACKUP_DNA"] };
+      const m = new Match(db, { ...DEFAULT_CONFIG, winCondition: "crew" }, [lo, base], ["a", "b"]);
+      const s = m.state.ships[0];
+      const cb = s.systems.clonebay!;
+      m.step();
+      if (cb.power === 0) cb.power = 1;
+      for (const c of s.crew) c.hp = 0;
+      for (let i = 0; i < 40; i++) m.step();
+      expect(s.crew.every((c) => c.dead)).toBe(true);
+      expect(m.state.winner).toBe(null);
+      if (destroy) cb.damage = cb.level;
+      for (let i = 0; i < 30 * (RULES.cloneTime[1] + 1) && m.state.winner === null; i++) m.step();
+      expect(m.state.winner).toBe(destroy ? 1 : null);
+      if (!destroy) expect(s.crew.some((c) => !c.dead)).toBe(true);
+    }
+  });
   it("clones one at a time, in the order they died, and never onto the bay's equipment tile", () => {
     const db = dbWithAugs();
     const base = baseLoadout(db, "PH_SKIFF");
