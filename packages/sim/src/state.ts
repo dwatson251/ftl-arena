@@ -118,12 +118,30 @@ export interface ShipState {
   evasion: number;
   /** Augment ids (stackable ones may repeat). */
   augments?: string[];
+  drones?: DroneState[];
+  droneParts?: number;
   /** Stats for the end screen. */
   stats: { shotsFired: number; hits: number; misses: number; blocked: number; damageDealt: number };
 }
 
+export interface DroneState {
+  slot: number;
+  bp: string;
+  /** Powered drones deploy (using a drone part); unpowering loses the deployed drone. */
+  powered: boolean;
+  deployed: boolean;
+  /** Orbit angle (radians) for drawing. */
+  angle: number;
+  /** Seconds until the next shot/repair. */
+  cd: number;
+  /** Ship repair drones: hull points left before it expires. */
+  repairLeft?: number;
+}
+
 export interface Projectile {
   id: number;
+  /** Fired by drone slot n (drawn from the drone, not a weapon mount). */
+  drone?: number;
   from: 0 | 1;
   weapon: string;
   slot: number;
@@ -148,6 +166,9 @@ export type MatchEvent =
   | { e: "fireStart" | "breach"; ship: 0 | 1; room: number }
   | { e: "death"; ship: 0 | 1; crew: number }
   | { e: "clone"; ship: 0 | 1; crew: number }
+  /** A defense drone shot down a projectile (ship = the defender) / an anti-drone killed a drone. */
+  | { e: "intercept"; ship: 0 | 1; projectile: number; drone: number }
+  | { e: "droneLost"; ship: 0 | 1; drone: number }
   | { e: "end"; winner: 0 | 1 | -1; reason: string };
 
 export interface MatchState {

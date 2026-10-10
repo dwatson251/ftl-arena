@@ -2,14 +2,14 @@
  * The authoritative simulation. Pure: no clocks, no I/O. `step()` advances one tick (1/30 s); commands are
  * applied at the start of the tick they're queued for. Same seed + same commands = same state.
  */
-import type { GameDB, SystemId, WeaponBP } from "@ftl/data";
+import { SPACE_DRONES, type GameDB, type SystemId, type WeaponBP } from "@ftl/data";
 import type { Command } from "./commands.ts";
-import { findPath, geometry, key, roomAt, unkey, type Geometry } from "./geometry.ts";
+import { findPath, geometry, key, roomAt, roomCentre, unkey, type Geometry } from "./geometry.ts";
 import { augCount, autoPower, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
 import { Rng } from "./rng.ts";
 import { DT, raceOf, RULES, TICK_HZ, TILE, type SkillId } from "./rules.ts";
 import type {
-  CrewState, MatchConfig, MatchEvent, MatchState, Projectile, ShipState, SystemState, WeaponTarget,
+  CrewState, DroneState, MatchConfig, MatchEvent, MatchState, Projectile, ShipState, SystemState, WeaponTarget,
 } from "./state.ts";
 
 const MANNABLE: SystemId[] = ["pilot", "engines", "shields", "weapons", "sensors", "doors"];
@@ -78,6 +78,7 @@ export class Match {
     const order = st.tick % 2 ? [st.ships[1], st.ships[0]] : st.ships;
     for (const s of order) this.systemsTick(s);
     for (const s of order) this.weaponsTick(s);
+    for (const s of order) this.dronesTick(s);
     this.projectilesTick(order[0].idx);
     for (const s of order) this.crewTick(s);
     for (const s of order) this.environmentTick(s);
@@ -148,6 +149,29 @@ export class Match {
         }
         return true;
       }
+      case "dronePower": {
+        const d = ship.drones?.[cmd.slot];
+        const ds = ship.systems.drones;
+        const bp = d && this.db.droneBPs?.[d.bp];
+        if (!d || !ds || !bp || ds.ion > 0) return false;
+        if (!cmd.on) {
+          if (!d.powered) return false;
+          d.powered = false;
+          d.deployed = false;
+          ds.power = Math.max(0, ds.power - bp.power);
+          return true;
+        }
+        if (d.powered || !SPACE_DRONES.includes(bp.type)) return false;
+        const need = this.droneLoad(ship) + bp.power;
+        if (need > usable(ds)) return false;
+        const extra = need - ds.power - (ds.bonus ?? 0);
+        if (extra > 0) {
+          if (reactorUsed(ship) + extra > ship.reactor) return false;
+          ds.power += extra;
+        }
+        d.powered = true;
+        return true;
+      }
       case "swapWeapons": {
         const { a, b } = cmd;
         if (a === b || !ship.weapons[a] || !ship.weapons[b]) return false;
@@ -214,6 +238,101 @@ export class Match {
 
   private weaponLoad(ship: ShipState): number {
     return ship.weapons.filter((w) => w.powered).reduce((a, w) => a + this.wbp(w.bp).power, 0);
+  }
+
+  private droneLoad(ship: ShipState): number {
+    return (ship.drones ?? []).filter((d) => d.powered).reduce((a, d) => a + (this.db.droneBPs?.[d.bp]?.power ?? 1), 0);
+  }
+
+  /** Losing drone power recalls drones from the last slot back (the deployed drone is lost). */
+  private clampDrones(ship: ShipState): void {
+    const cap = this.eff(ship.systems.drones);
+    const ds = ship.drones ?? [];
+    for (let i = ds.length - 1; i >= 0 && this.droneLoad(ship) > cap; i--) {
+      if (!ds[i].powered) continue;
+      ds[i].powered = false;
+      if (ds[i].deployed) this.state.events.push({ e: "droneLost", ship: ship.idx, drone: i });
+      ds[i].deployed = false;
+    }
+  }
+
+  private dronesTick(ship: ShipState): void {
+    const st = this.state;
+    this.clampDrones(ship);
+    const enemy = st.ships[1 - ship.idx];
+    const scrambled = augCount(enemy, "DEFENSE_SCRAMBLER") > 0;
+    const boost = augCount(ship, "DRONE_SPEED") ? 1 + (this.db.augments?.DRONE_SPEED?.value ?? 0.25) : 1;
+    for (const d of ship.drones ?? []) {
+      const bp = this.db.droneBPs?.[d.bp];
+      if (!bp || !d.powered) continue;
+      if (!d.deployed) {
+        // Launching uses a drone part.
+        if ((ship.droneParts ?? 0) <= 0) continue;
+        ship.droneParts = (ship.droneParts ?? 0) - 1;
+        d.deployed = true;
+        d.cd = 1.2;
+        d.repairLeft = bp.type === "SHIP_REPAIR" ? RULES.shipRepairAmount : undefined;
+      }
+      d.angle += DT * (0.25 + bp.speed * 0.02) * boost;
+      d.cd -= DT * boost;
+      if (d.cd > 0) continue;
+      if (bp.type === "COMBAT") {
+        d.cd = (RULES.combatFire * 15) / Math.max(1, bp.speed);
+        this.droneShot(ship, enemy, d, bp.weapon);
+      } else if (bp.type === "DEFENSE") {
+        d.cd = bp.cooldown;
+        if (scrambled) continue;
+        if (bp.antiDrone) {
+          // Anti-drone: knocks out one enemy space drone.
+          const target = (enemy.drones ?? []).find((x) => x.deployed);
+          if (target) {
+            target.deployed = false;
+            st.events.push({ e: "droneLost", ship: enemy.idx, drone: target.slot });
+          } else d.cd = 0.5;
+          continue;
+        }
+        const lasersToo = bp.id !== "DEFENSE_1";
+        const incoming = st.projectiles
+          .filter((p) => p.from === enemy.idx && p.delay <= 0 && p.flight - p.t > RULES.interceptMin && (p.kind === "MISSILES" || (lasersToo && (p.kind === "LASER" || p.kind === "BURST"))))
+          .sort((a, b) => a.flight - a.t - (b.flight - b.t))[0];
+        if (incoming) {
+          st.projectiles = st.projectiles.filter((p) => p !== incoming);
+          st.events.push({ e: "intercept", ship: ship.idx, projectile: incoming.id, drone: d.slot });
+        } else d.cd = 0.1;
+      } else if (bp.type === "SHIP_REPAIR") {
+        d.cd = RULES.shipRepairEvery;
+        if (ship.hull < ship.maxHull && (d.repairLeft ?? 0) > 0) {
+          ship.hull++;
+          d.repairLeft = (d.repairLeft ?? 0) - 1;
+          if ((d.repairLeft ?? 0) <= 0) d.deployed = false; // spent; repowering launches another
+        }
+      }
+    }
+  }
+
+  /** A combat drone fires its weapon at a random room (lasers/ions) or sweeps a beam. */
+  private droneShot(ship: ShipState, enemy: ShipState, d: DroneState, weapon: string): void {
+    const st = this.state;
+    const bp = this.wbp(weapon);
+    if (!bp) return;
+    const g = this.geo(enemy);
+    const room = this.rng.pick(enemy.rooms).id;
+    let target: WeaponTarget = { kind: "room", room };
+    let px = 0;
+    let py = 0;
+    if (bp.type === "BEAM") {
+      const c = roomCentre(g, room);
+      const a = this.rng.next() * Math.PI * 2;
+      target = { kind: "beam", x1: c.x, y1: c.y, x2: c.x + Math.cos(a) * 100, y2: c.y + Math.sin(a) * 100 };
+    } else {
+      const [tx, ty] = unkey(this.rng.pick(g.roomTiles.get(room)!));
+      px = (tx + 0.5) * TILE;
+      py = (ty + 0.5) * TILE;
+    }
+    st.projectiles.push({
+      id: st.nextId++, drone: d.slot, from: ship.idx, weapon, slot: -1, kind: bp.type, delay: 0, t: 0,
+      flight: bp.type === "BEAM" ? RULES.beamSweep : RULES.droneFlight, target, px, py, damageBonus: 0,
+    });
   }
 
   private clampWeapons(ship: ShipState): void {

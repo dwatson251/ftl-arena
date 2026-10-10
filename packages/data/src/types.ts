@@ -52,7 +52,28 @@ export type SystemId =
   | "drones" | "teleporter" | "cloaking" | "battery" | "mind" | "hacking" | "clonebay" | "artillery";
 
 /** Systems the arena simulates. Others are parsed but not installable yet. */
-export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "medbay", "clonebay", "pilot", "sensors", "doors"];
+export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "drones", "medbay", "clonebay", "pilot", "sensors", "doors"];
+
+export type DroneType = "COMBAT" | "DEFENSE" | "SHIP_REPAIR" | "REPAIR" | "BATTLE" | "BOARDER" | "HACKING" | "SHIELD";
+/** Drone types the arena flies (space drones). The rest need boarding/hacking (later). */
+export const SPACE_DRONES: DroneType[] = ["COMBAT", "DEFENSE", "SHIP_REPAIR"];
+
+export interface DroneBP {
+  id: string;
+  title: string;
+  type: DroneType;
+  power: number;
+  cost: number;
+  /** Seconds between shots (defense / anti-drone); combat drones use `speed`. */
+  cooldown: number;
+  /** FTL's speed field (combat drones: higher = fires more often). */
+  speed: number;
+  weapon: string;
+  image: string;
+  rarity: number;
+  /** Anti-drone drones target drones instead of projectiles. */
+  antiDrone?: boolean;
+}
 
 export interface AugmentBP {
   id: string;
@@ -176,6 +197,10 @@ export interface ShipBP {
   crewRace: string;
   /** Starting augments (free). */
   augments: string[];
+  droneSlots: number;
+  /** Starting drones and drone parts. */
+  drones: string[];
+  droneParts: number;
   /** One race per starting crew member, in blueprint order. */
   crewRaces: string[];
 }
@@ -226,6 +251,7 @@ export interface GameDB {
   /** Crew name pool (names.xml). */
   names: string[];
   augments: Record<string, AugmentBP>;
+  droneBPs: Record<string, DroneBP>;
   /** Single-player enemy hulls the practice bot can fly. */
   enemies: string[];
   /** Base hulls offered in the hangar, in order. */

@@ -138,6 +138,29 @@
   battle tracks are random or picked in the hangar. The extractor now includes music by default
   (`--no-music` to skip; 185 MB total).
 
+## Round 5: augments, clone bay, drones
+- **Sheet-name collisions in `animations.xml`:** `bomb_fire` and `bomb_breach` are each defined twice
+  (the 17-frame launcher, then the 9-frame projectile). FTL resolves a sheet name at the point it's
+  declared, so each anim/weaponAnim now keeps the `sheetDef` that existed when it was parsed. This
+  fixed the bomb launcher art in the hangar and battle.
+- **Station defaults:** `data/rooms.xml` `<roomLayout name=X><computerGlow x y dir>` gives the default
+  station and facing for each interior image. Blueprints without a `<slot>` use the tile containing the
+  computer point. On the Kestrel, shields, engines and weapons were all wrong before.
+- **Burst Laser II strip:** frames 0 off, 1-4 red (charging), 5 green (ready), 6-8 recoil, 9-11 return.
+  Each shot of a burst now replays 6 to 11, and the gun stays at frame 5 until the last shot leaves.
+- **Asset serving through Vite's proxy:** hundreds of parallel HEAD requests got ERR_ABORTED.
+  - The server streamed bodies to HEAD requests. Now it sends headers only.
+  - The client loads with one GET per asset, so there's no HEAD probe at all.
+- **Augments:** `augBlueprint` has `<value>`. Effects are implemented in the sim, with each one's arena
+  meaning in `AUGMENT_EFFECTS` (rules.ts). Ids without an entry are kept, but have no effect in the arena.
+- **Drones:**
+  - `droneBlueprint` gives the type, power, cost, cooldown (ms), speed and weapon. Hulls have
+    `<droneSlots>` and `<droneList drones="parts">`.
+  - Combat drones fire every 3.2 x 15 / speed seconds (est).
+  - Defense drones: DEFENSE_1 shoots missiles only, DEFENSE_2 also lasers and flak. ANTI_DRONE shoots
+    drones.
+  - SHIP_REPAIR heals 5 hull, then expires.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

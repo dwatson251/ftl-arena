@@ -16,6 +16,9 @@ export interface Loadout {
   hull?: number;
   /** Augment ids, up to 3 (FTL's limit); stackable augments may repeat. */
   augments?: string[];
+  /** Drone ids (up to the hull's drone slots) and drone parts. */
+  drones?: string[];
+  droneParts?: number;
 }
 
 export const MAX_AUGMENTS = 3;
@@ -63,7 +66,20 @@ export function baseLoadout(db: GameDB, shipId: string): Loadout {
   const pool = db.names.length ? db.names : NAMES;
   const crew = s.crewRaces.filter((r) => RACES[r]).map((race, i) => ({ race, name: pool[(hashStr(shipId) + i * 7) % pool.length] }));
   // Missiles start at 0: buy them in the hangar.
-  return { ship: shipId, systems, reactor: s.maxPower, weapons: s.weapons.filter((w) => db.weapons[w]), crew, missiles: 0, augments: [...(s.augments ?? [])].filter((a) => db.augments?.[a]) };
+  return {
+    ship: shipId, systems, reactor: s.maxPower, weapons: s.weapons.filter((w) => db.weapons[w]), crew, missiles: 0,
+    augments: [...(s.augments ?? [])].filter((a) => db.augments?.[a]), drones: (s.drones ?? []).filter((d) => db.droneBPs?.[d]),
+    droneParts: s.droneParts ?? 0,
+  };
+}
+
+/** Drones a player may buy: anything sold in stores (rarity > 0) and every hull's starting drone. */
+export function buyableDrones(db: GameDB): string[] {
+  const starters = new Set(db.hangar.flatMap((h) => db.ships[h].drones ?? []));
+  return Object.values(db.droneBPs ?? {})
+    .filter((d) => d.cost > 0 && (d.rarity > 0 || starters.has(d.id)))
+    .sort((a, b) => a.type.localeCompare(b.type) || a.cost - b.cost)
+    .map((d) => d.id);
 }
 
 /** Races a player may hire: every race with a blueprint and known traits. */
@@ -162,6 +178,29 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   }
   if (!Number.isInteger(l.missiles) || l.missiles < 0 || l.missiles > 99) errors.push("missiles must be 0-99");
   if (l.missiles > base.missiles) lines.push({ item: `${l.missiles - base.missiles} missiles`, scrap: (l.missiles - base.missiles) * RULES.missilePrice });
+  // Drones: like weapons (starting ones free, sold for half), plus drone parts.
+  const dr = l.drones ?? [];
+  if (dr.length > (ship.droneSlots ?? 0)) errors.push(`only ${ship.droneSlots ?? 0} drone slots`);
+  if (dr.length && !(l.systems.drones ?? 0)) errors.push("drones need the drone control system");
+  const leftD = [...(base.drones ?? [])];
+  const buyD = new Set(buyableDrones(db));
+  for (const d of dr) {
+    const i = leftD.indexOf(d);
+    if (i >= 0) {
+      leftD.splice(i, 1);
+      continue;
+    }
+    const bp = db.droneBPs?.[d];
+    if (!bp || !buyD.has(d)) errors.push(`drone ${d} is not for sale`);
+    else lines.push({ item: `buy ${bp.title}`, scrap: bp.cost });
+  }
+  for (const d of leftD) {
+    const bp = db.droneBPs?.[d];
+    if (bp) lines.push({ item: `sell ${bp.title}`, scrap: -Math.floor(bp.cost * RULES.sellRefund) });
+  }
+  const parts = l.droneParts ?? 0;
+  if (!Number.isInteger(parts) || parts < 0 || parts > 99) errors.push("drone parts must be 0-99");
+  if (parts > (base.droneParts ?? 0)) lines.push({ item: `${parts - (base.droneParts ?? 0)} drone parts`, scrap: (parts - (base.droneParts ?? 0)) * RULES.dronePartPrice });
   const augs = l.augments ?? [];
   if (augs.length > MAX_AUGMENTS) errors.push(`at most ${MAX_AUGMENTS} augments`);
   const freeAugs = [...(base.augments ?? [])];
@@ -210,6 +249,8 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     weapons: l.weapons.map((w, slot) => ({ slot, bp: w, powered: false, charge: 0, volleys: 0, target: null, autofire: false, boost: 0 })),
     missiles: l.missiles, shieldLayers: 0, shieldCharge: 0, evasion: 0,
     augments: (l.augments ?? []).filter((a) => db.augments?.[a]),
+    drones: (l.drones ?? []).filter((d) => db.droneBPs?.[d]).map((bp, slot) => ({ slot, bp, powered: false, deployed: false, angle: slot * 2.1, cd: 1 })),
+    droneParts: l.droneParts ?? 0,
     superShield: (l.augments ?? []).includes("ENERGY_SHIELD") ? RULES.zoltanShield : 0,
     stats: { shotsFired: 0, hits: 0, misses: 0, blocked: 0, damageDealt: 0 },
   };

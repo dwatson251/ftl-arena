@@ -93,6 +93,14 @@ export const RULES = {
   slugGel: 5,
   nanoMedbay: 1.6,
   shardChance: 0.1,
+  /** Drones (est): parts price, combat drone fire interval = combatFire x 15 / speed, ship repair cadence. */
+  dronePartPrice: 8,
+  combatFire: 3.2,
+  droneFlight: 0.55,
+  shipRepairEvery: 2.5,
+  shipRepairAmount: 5,
+  /** Defense drones only shoot at projectiles with at least this much flight left (s). */
+  interceptMin: 0.15,
   maxCrew: 8,
   sellRefund: 0.5,
 };

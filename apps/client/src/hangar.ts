@@ -6,12 +6,12 @@ import type { GameDB, SystemId } from "@ftl/data";
 import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
-  AUGMENT_EFFECTS, baseLoadout, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
+  AUGMENT_EFFECTS, baseLoadout, buyableDrones, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
   type MatchConfig,
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-const STEPS = ["Ship", "Systems", "Weapons", "Crew", "Augments", "Launch"] as const;
+const STEPS = ["Ship", "Systems", "Weapons", "Drones", "Crew", "Augments", "Launch"] as const;
 type Step = (typeof STEPS)[number];
 
 export interface HangarHooks {
@@ -170,7 +170,7 @@ export class Hangar {
     const priced = priceLoadout(db, l, cfg.scrap, cfg.shipPool, cfg.unlimited);
     const me = lobby.players.find((p) => p.id === this.me());
     const scrollTop = this.el.querySelector(".hg-main")?.scrollTop ?? 0;
-    const body = { Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
+    const body = { Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
     this.el.innerHTML = `
       <div class="hg">
         <div class="hg-steps">${STEPS.map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""}" data-step="${s}"><b>${i + 1}</b> ${s}</button>`).join("")}
@@ -238,6 +238,7 @@ export class Hangar {
       <div class="note">${h(sys)}</div>
       <h2 style="margin-top:10px">Weapons</h2>${l.weapons.map((w) => `<div class="note">• ${h(db.weapons[w]?.title ?? w)}</div>`).join("") || `<div class="note">none</div>`}
       <h2 style="margin-top:10px">Crew (${l.crew.length})</h2>${l.crew.map((c) => `<div class="note">• ${h(c.name)} <span style="opacity:.7">${h(db.crew[c.race]?.title ?? c.race)}</span></div>`).join("")}
+      <h2 style="margin-top:10px">Drones</h2>${(l.drones ?? []).map((d) => `<div class="note">• ${h(db.droneBPs[d]?.title ?? d)}</div>`).join("") || `<div class="note">none</div>`}<div class="note">${l.droneParts ?? 0} drone parts</div>
       <h2 style="margin-top:10px">Augments</h2>${(l.augments ?? []).map((a) => `<div class="note">• ${h(db.augments[a]?.title ?? a)}</div>`).join("") || `<div class="note">none</div>`}
       <h2 style="margin-top:10px">Bill</h2>
       ${priced.lines.map((x) => `<div class="kv note"><span>${h(x.item)}</span><span>${x.scrap}</span></div>`).join("") || `<div class="note">Nothing bought yet.</div>`}
@@ -348,7 +349,7 @@ export class Hangar {
     return `<h2>3 · Weapons</h2>
       <div class="wslots-sticky"><div class="wslots">${slots}</div>
       <div class="note">Drag weapons onto a slot (or click a price). Drag an equipped weapon to another slot to reorder, or back to the store to sell it for half price.</div></div>
-      <div class="shop-drop">${shop}</div>${this.nav("Systems", "Crew")}`;
+      <div class="shop-drop">${shop}</div>${this.nav("Systems", "Drones")}`;
   }
 
   private stats(id: string): string {
@@ -391,7 +392,51 @@ export class Hangar {
       .join("");
     return `<h2>4 · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
       <div class="note">Starting crew are free. Rename anyone; dismissing gives no refund. Crew fight fires, repair and man stations: manned helm and engines add evasion, manned weapons charge faster, manned shields recharge faster.</div>
-      ${crew}<h3>Hire</h3><div class="race-grid">${hire}</div>${this.nav("Weapons", "Augments")}`;
+      ${crew}<h3>Hire</h3><div class="race-grid">${hire}</div>${this.nav("Drones", "Augments")}`;
+  }
+
+  private droneArt(id: string): string {
+    const bp = this.db.droneBPs[id];
+    if (!bp?.image || !this.hasArt()) return `<div class="ph-weapon">D</div>`;
+    return `<img class="drone-art" src="/assets/img/ship/drones/${h(bp.image)}_base.png" onerror="this.style.visibility='hidden'">`;
+  }
+
+  private stepDrones(l: Loadout): string {
+    const db = this.db;
+    const ship = db.ships[l.ship];
+    const slots = ship.droneSlots ?? 0;
+    const has = (l.systems.drones ?? 0) > 0;
+    const fitted = Array.from({ length: slots }, (_, i) => {
+      const id = (l.drones ?? [])[i];
+      if (!id) return `<div class="wslot empty">drone slot ${i + 1}</div>`;
+      const d = db.droneBPs[id];
+      return `<div class="wslot">${this.droneArt(id)}<div><b>${i + 1}. ${h(d?.title ?? id)}</b><div class="note">${d ? this.droneStats(id) : ""}</div></div><button class="small" data-undrone="${i}" title="Sell / remove">✕</button></div>`;
+    }).join("");
+    const full = (l.drones ?? []).length >= slots;
+    const cards = buyableDrones(db)
+      .map((id) => {
+        const d = db.droneBPs[id];
+        const ok = ["COMBAT", "DEFENSE", "SHIP_REPAIR"].includes(d.type);
+        return `<div class="wcard ${ok ? "" : "inert"}">${this.droneArt(id)}<div class="wcard-body"><b>${h(d.title)}</b><div class="note">${this.droneStats(id)}</div>
+          ${ok ? "" : `<div class="note noeffect">Interior drone: needs boarding (a later update), won't launch yet.</div>`}</div>
+          <button class="small buy" data-drone="${id}" ${full || !slots ? "disabled" : ""}>${this.scrapIcon()}${d.cost}</button></div>`;
+      })
+      .join("");
+    const base = baseLoadout(db, l.ship);
+    return `<h2>4 · Drones</h2>
+      ${slots ? "" : `<p class="note">This hull has no drone slots.</p>`}
+      ${slots && !has ? `<p class="err">Install the drone control system (Systems step) to use drones.</p>` : ""}
+      <div class="wslots-sticky"><div class="wslots">${fitted}</div>
+      <div class="sys-row"><span class="sysicon ph">⚙</span><span class="sys-name">drone parts</span><span><b>${l.droneParts ?? 0}</b></span>
+        <button class="small" data-parts="-1" ${(l.droneParts ?? 0) <= 0 ? "disabled" : ""}>−</button>
+        <button class="small" data-parts="1">+</button><span class="note">${RULES.dronePartPrice} each; each launch uses one (hull came with ${base.droneParts ?? 0})</span></div></div>
+      <div class="race-grid">${cards}</div>${this.nav("Weapons", "Crew")}`;
+  }
+
+  private droneStats(id: string): string {
+    const d = this.db.droneBPs[id];
+    const what = { COMBAT: "attacks the enemy", DEFENSE: d.antiDrone ? "shoots enemy drones" : d.id === "DEFENSE_1" ? "shoots down missiles" : "shoots down missiles and lasers", SHIP_REPAIR: "repairs hull", REPAIR: "repairs systems", BATTLE: "fights boarders", BOARDER: "boards the enemy", HACKING: "hacks", SHIELD: "shields" }[d.type] ?? d.type;
+    return `${d.power} pwr · ${what}`;
   }
 
   private stepAugments(l: Loadout): string {
@@ -465,6 +510,9 @@ export class Hangar {
     else if (d.hire && l.crew.length < RULES.maxCrew) l.crew.push({ race: d.hire, name: randomCrewName(this.db, l.crew.map((c) => c.name), Date.now() & 0xffff) });
     else if (d.fire) l.crew.splice(Number(d.fire), 1);
     else if (d.aug) l.augments = [...(l.augments ?? []), d.aug];
+    else if (d.drone && (l.drones ?? []).length < (ship.droneSlots ?? 0)) l.drones = [...(l.drones ?? []), d.drone];
+    else if (d.undrone) l.drones = (l.drones ?? []).filter((_, i) => i !== Number(d.undrone));
+    else if (d.parts) l.droneParts = Math.max(0, (l.droneParts ?? 0) + Number(d.parts));
     else if (d.unaug) l.augments = (l.augments ?? []).filter((_, i) => i !== Number(d.unaug));
     else if (d.reroll) l.crew[Number(d.reroll)].name = randomCrewName(this.db, l.crew.map((c) => c.name), (Date.now() * 7) & 0xffff);
     else if (d.ready) {
@@ -482,7 +530,7 @@ export class Hangar {
     }
     else if ("leave" in d) return this.hooks.leave();
     else return;
-    const down = !!(d.sell || d.fire || d.unaug || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
+    const down = !!(d.sell || d.fire || d.unaug || d.undrone || (d.parts && Number(d.parts) < 0) || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
     this.sfx(down ? "powerDownSystem" : "powerUpSystem");
     this.change(l);
   }

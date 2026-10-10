@@ -1,4 +1,7 @@
-# Design: clone bay, drones and hacking (next round)
+# Design: clone bay, drones and hacking
+
+> **Status:** clone bay and space drones (combat, defense, anti-drone, ship repair) are done.
+> Interior drones, the hacking drone and hacking itself are still to come.
 
 These are the three systems still missing from the arena. All three need the same groundwork first:
 **a second kind of thing that moves through space** (drones) and **crew that can die and come back**
@@ -23,9 +26,8 @@ Clone bay"), priced like an install.
   - If the bay is destroyed, the queue keeps its progress. That's FTL's rule, checked in the parity pass.
 - On completion the crew member respawns in the clone bay room with full HP, minus the skill-XP penalty
   for the bay's level.
-- Win conditions: "crew lost" now means no living crew and no crew that can still clone, i.e. the queue
-  is empty or the bay can't run. This is the main rules change. The crew-kill mode becomes harder against
-  clone-bay ships, as in FTL.
+- Win conditions (as built): losing every crew member still ends the match. As far as I recall FTL, a
+  total wipe is a loss even with a clone bay; check in the parity pass.
 - Out of combat, FTL's clone bay also heals a little each jump. The arena has no jumps, so that's skipped.
 
 **Client:**

@@ -74,11 +74,15 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 | Weapons system | click its icon to power the next weapon, right-click to unpower the last |
 
 ## The hangar
-Ship creation runs in steps: **Ship → Systems → Weapons → Crew → Launch**.
+Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew → Augments → Launch**.
 1. **Ship:** pick a hull from FTL's ship-select thumbnails.
 2. **Systems:** buy system levels, reactor bars and missiles.
 3. **Weapons:** buy weapons from a store that shows each weapon's art and stats.
-4. **Crew:** hire named crew of any race (Human, Engi, Mantis, Rockman, Slug, Zoltan, Crystal, Lanius), each
+4. **Drones:** fit drones and buy drone parts. Combat, defense and ship-repair drones fly; interior
+   drones are listed but wait for boarding.
+5. **Augments:** up to 3, with FTL's prices. Each card says what it does in the arena; augments that only
+   matter in the campaign (FTL jumps, the map, scrap) are kept and marked as having no effect.
+6. **Crew:** hire named crew of any race (Human, Engi, Mantis, Rockman, Slug, Zoltan, Crystal, Lanius), each
    at its blueprint price. Rename them or roll a name from FTL's name list.
 
 ## What's in v1
@@ -113,8 +117,14 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Crew → Launch*
 - **Shots:** they leave one view, vanish, and enter the other view a moment later. Missed shots fly past.
 - **Destroyed ships** break into their gibs before the result screen.
 
-Planned for v2: drones, cloaking, teleporter/boarding and crew combat, hacking, mind control, battery,
-clone bay and augments.
+- **Clone bay:** dead crew are cloned back while it's powered. Backup DNA keeps the queue through power
+  loss. Losing every crew member still ends the match.
+- **Drones:** combat drones orbit and fire at the enemy; defense drones shoot down missiles (Defense II
+  also lasers); anti-drone drones knock out drones; ship-repair drones patch the hull. Launching uses a
+  drone part, and unpowering a drone loses it.
+
+Planned next: cloaking, teleporter/boarding with crew combat (and interior drones), hacking, mind control,
+battery.
 
 ## Layout
 | Path | What |

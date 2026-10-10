@@ -121,3 +121,5 @@ button.buy { display: inline-flex; align-items: center; min-width: 64px; justify
 .wcard.aug.inert { opacity: 0.7; }
 .note.effect { color: #9fe89f; }
 .note.noeffect { color: #8a8e98; font-style: italic; }
+
+.drone-art { width: 40px; height: 40px; object-fit: contain; flex: none; }

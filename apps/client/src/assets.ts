@@ -99,6 +99,8 @@ export async function preload(db: GameDB): Promise<boolean> {
     for (const g of db.layouts[s.layout]?.gibs ?? []) files.add(`${s.artDir}/${s.img}_gib${g.n}.png`);
   }
   for (let i = 1; i <= 4; i++) files.add(`misc/crosshairs_placed${i}.png`), files.add(`misc/crosshairs_placed${i}_yellow.png`);
+  for (const d of Object.values(db.droneBPs ?? {})) if (d.image) for (const v of ["base", "on"]) files.add(`ship/drones/${d.image}_${v}.png`);
+  files.add("statusUI/top_drones_on.png");
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
   // Art is "available" as soon as one known image loads; everything else keeps loading in the background

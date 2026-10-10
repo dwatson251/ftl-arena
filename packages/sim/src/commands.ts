@@ -11,4 +11,6 @@ export type Command =
   | { c: "door"; door: number; open: boolean }
   | { c: "doorsAll"; open: boolean }
   /** Swap two weapon slots (moves the weapons between mounts, keeping their charge). */
-  | { c: "swapWeapons"; a: number; b: number };
+  | { c: "swapWeapons"; a: number; b: number }
+  /** Power a drone slot on (deploys it, using a drone part) or off (the deployed drone is lost). */
+  | { c: "dronePower"; slot: number; on: boolean };

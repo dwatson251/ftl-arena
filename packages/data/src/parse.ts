@@ -1,7 +1,7 @@
 /** Builds a GameDB from FTL's own data files (blueprints.xml, ship layouts, animations, text). */
 import { kid, kids, num, parseXml, txt, walk, type XNode } from "./xml.ts";
 import type {
-  WeaponMount, Anim, AnimSheet, CrewBP, GameDB, ShipBP, ShipLayout, ShipSystemSlot, SystemBP, SystemId, WeaponAnim, WeaponBP,
+  DroneBP, WeaponMount, Anim, AnimSheet, CrewBP, GameDB, ShipBP, ShipLayout, ShipSystemSlot, SystemBP, SystemId, WeaponAnim, WeaponBP,
   WeaponType,
 } from "./types.ts";
 
@@ -134,6 +134,9 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     crewCount: crews.length ? crews.reduce((a, c) => a + (Number(c.attrs.amount) || 0), 0) : 3,
     crewRace: crews[0]?.attrs.class ?? "human",
     augments: kids(n, "aug").map((a) => a.attrs.name).filter(Boolean),
+    droneSlots: num(n, "droneSlots", 0),
+    drones: kids(kid(n, "droneList"), "drone").map((d) => d.attrs.name).filter(Boolean),
+    droneParts: Number(kid(n, "droneList")?.attrs.drones ?? 0) || 0,
     crewRaces: crews.length
       ? crews.flatMap((c) => Array.from({ length: Number(c.attrs.amount) || 0 }, () => c.attrs.class || "human"))
       : ["human", "human", "human"],
@@ -228,7 +231,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   const text = { ...parseText(read("data/text_blueprints.xml") ?? ""), ...parseText(read("data/text_misc.xml") ?? "") };
   const db: GameDB = {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
-    anims: {}, sounds: {}, names: [], hangar: [], enemies: [], music: [], augments: {},
+    anims: {}, sounds: {}, names: [], hangar: [], enemies: [], music: [], augments: {}, droneBPs: {},
   };
   const lists: Record<string, string[]> = {};
   const enemyNodes: XNode[] = [];
@@ -252,6 +255,13 @@ export function buildDbFromFtl(read: FileSource): GameDB {
           id: n.attrs.name, title: title(n, "title", text), desc: title(n, "desc", text) || text[`aug_${n.attrs.name}_desc`] || "",
           cost: num(n, "cost"), value: parseFloat(txt(n, "value") ?? "0") || 0, stackable: txt(n, "stackable") === "true",
           rarity: num(n, "rarity"),
+        };
+      } else if (n.tag === "droneBlueprint" && n.attrs.name) {
+        const type = (txt(n, "type") ?? "") as DroneBP["type"];
+        db.droneBPs[n.attrs.name] = {
+          id: n.attrs.name, title: title(n, "title", text) || n.attrs.name, type, power: num(n, "power", 1), cost: num(n, "cost"),
+          cooldown: num(n, "cooldown", 1000) / 1000, speed: num(n, "speed", 10), weapon: txt(n, "weaponBlueprint") ?? "",
+          image: txt(n, "droneImage") ?? "", rarity: num(n, "rarity"), antiDrone: n.attrs.name === "ANTI_DRONE",
         };
       } else if (n.tag === "blueprintList" && n.attrs.name) lists[n.attrs.name] = kids(n, "name").map((x) => x.text.trim());
       else if (n.tag === "shipBlueprint" && n.attrs.name && n.attrs.layout && f.includes("Blueprints")) enemyNodes.push(n);

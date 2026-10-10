@@ -119,6 +119,18 @@ export class Bot {
     ship.weapons.forEach((w, slot) => {
       if (!w.powered) out.push({ c: "weaponPower", slot, on: true });
     });
+    (ship.drones ?? []).forEach((d, slot) => {
+      if (d.powered || (ship.droneParts ?? 0) <= 0) return;
+      // Free a reactor bar for the drone if needed: the medbay first (nobody hurt), then the engines.
+      const used = Object.values(ship.systems).reduce((a, x) => a + (x && !["pilot", "sensors", "doors"].includes(x.id) ? x.power : 0), 0);
+      const need = m.db.droneBPs?.[d.bp]?.power ?? 1;
+      if (used + need > ship.reactor) {
+        const hurt = ship.crew.some((c) => !c.dead && c.hp < c.maxHp * 0.6);
+        const from = !hurt && (ship.systems.medbay?.power ?? 0) > 0 ? "medbay" : (ship.systems.engines?.power ?? 0) > 1 ? "engines" : null;
+        for (let i = 0; from && i < need; i++) out.push({ c: "power", system: from, delta: -1 });
+      }
+      out.push({ c: "dronePower", slot, on: true });
+    });
     const lasers = ship.weapons.filter((w) => {
       const bp = m.wbp(w.bp);
       return w.powered && (bp.type === "LASER" || bp.type === "BURST");

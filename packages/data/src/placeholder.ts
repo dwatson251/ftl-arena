@@ -90,7 +90,7 @@ export function placeholderDb(): GameDB {
     ships: {
       PH_SKIFF: {
         id: "PH_SKIFF", title: "Arena Skiff", className: "Practice Skiff · Type A", artDir: "ship", layout: "ph_skiff", img: "", weaponSlots: 4, weapons: ["PH_TORPEDO", "PH_TRIPLE"],
-        missiles: 8, health: 30, maxPower: 8, crewCount: 3, crewRace: "human", crewRaces: ["human", "human", "human"], augments: [],
+        missiles: 8, health: 30, maxPower: 8, crewCount: 3, crewRace: "human", crewRaces: ["human", "human", "human"], augments: [], droneSlots: 0, drones: [], droneParts: 0,
         systems: [
           { id: "pilot", room: 0, power: 1, start: true, station: 1 },
           { id: "shields", room: 1, power: 2, start: true, station: 0 },
@@ -105,6 +105,6 @@ export function placeholderDb(): GameDB {
       },
     },
     layouts: { ph_skiff: skiff },
-    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, names: [], enemies: [], music: [], augments: {}, hangar: ["PH_SKIFF"],
+    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, names: [], enemies: [], music: [], augments: {}, droneBPs: {}, hangar: ["PH_SKIFF"],
   };
 }

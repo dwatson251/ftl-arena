@@ -22,7 +22,7 @@ const OWN = { cx: 467, cy: 346, w: 700, h: 470, clipX: 868 };
 /** FTL's hostiles window (box_hostiles2) and the part of it the enemy ship is fitted into. */
 const WIN = { x: 870, y: 45, w: 410, h: 555 };
 const WIN_SHIP = { x: WIN.x + 18, y: WIN.y + 104, w: 366, h: 372 };
-const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "oxygen", "weapons"];
+const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "weapons", "drones"];
 const SUB_SYS: SystemId[] = ["pilot", "sensors", "doors"];
 /** Bottom-left system icons: s_<sys>_*1.png (64 px) top-left corners, 36 px apart. */
 const SYS_X0 = 58;
@@ -248,6 +248,27 @@ export class Battle {
       case "beam":
         this.beam(e.ship, e.x1, e.y1, e.x2, e.y2, e.blocked);
         break;
+      case "intercept": {
+        // A defense drone zaps an incoming shot just outside the defender's hull.
+        const from = this.dronePos(e.ship, e.drone);
+        if (from) {
+          const g = new Graphics();
+          const dir = e.ship === v.you ? 1 : -1;
+          const to = { x: from.x + dir * 70, y: from.y - 20 };
+          this.addFx(e.ship === v.you ? this.fxOwn : this.fxWin, g, 0.35, (kk) => g.clear().moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: 0x9fe8ff, width: 3, alpha: 1 - kk }));
+          const c = new Graphics().circle(0, 0, 10).fill({ color: 0xffd060 });
+          c.position.set(to.x, to.y);
+          this.addFx(e.ship === v.you ? this.fxOwn : this.fxWin, c, 0.4, (kk) => {
+            c.scale.set(1 + kk * 1.5);
+            c.alpha = 1 - kk;
+          });
+        }
+        play(this.db, ["lightLaser1", "smallExplosion"], 0.6);
+        break;
+      }
+      case "droneLost":
+        if (e.ship === v.you) this.say("Drone destroyed", 0xff8a70);
+        break;
       case "death":
         play(this.db, ["death1", "death2"], e.ship === v.you ? 1 : 0.5);
         break;
@@ -393,6 +414,7 @@ export class Battle {
     });
     this.drawTargets(ownV);
     this.drawProjectiles(v, k);
+    this.drawDrones(v);
     for (const f of [...this.fx]) {
       f.update?.(Math.min(1, (this.time - f.born) / (f.until - f.born)));
       if (this.time >= f.until) {
@@ -485,6 +507,16 @@ export class Battle {
       if (p.kind === "BEAM") continue;
       if (p.delay - dtSnap > 0) continue;
       const mine = p.from === v.you;
+      if (p.drone !== undefined) {
+        // Drone shots: straight from the drone (which is already in the target's view) to the room.
+        const from = this.dronePos(p.from, p.drone);
+        const dst2 = mine ? this.enemy : this.own;
+        if (!from) continue;
+        const to = this.stage.toLocal(dst2.root.toGlobal({ x: p.px, y: p.py }));
+        const kk = Math.min(1, (p.t + dtSnap) / p.flight);
+        this.drawShot(mine ? this.projWin : this.projOwn, this.db.weapons[p.weapon]?.image, from.x + (to.x - from.x) * kk, from.y + (to.y - from.y) * kk, Math.atan2(to.y - from.y, to.x - from.x), p.kind, 1);
+        continue;
+      }
       const src = mine ? this.own : this.enemy;
       const dst = mine ? this.enemy : this.own;
       const t = p.t + Math.max(0, dtSnap - Math.max(0, p.delay));
@@ -591,6 +623,7 @@ export class Battle {
     this.systemsBar(own);
     this.subsystems(own);
     this.weaponsTray(own);
+    this.droneTray(own);
     for (const id of [...MAIN_SYS, ...SUB_SYS]) {
       const sys = own.systems[id];
       if (!sys) continue;
@@ -728,6 +761,12 @@ export class Battle {
     const mt = texNow(s.missiles > 0 ? "statusUI/top_missiles_on.png" : "statusUI/top_missiles_on_red.png");
     if (mt) h.sprite("msl", mt, 122, 43);
     h.text("mslT", String(s.missiles), 174, 45, fstyle("num_font", s.missiles > 0 ? 0xffffff : 0xff6050), [0.5, 0]);
+    // Drone parts (FTL's drones box, measured at 258,43), when the ship can use drones.
+    if (s.systems.drones || (s.drones ?? []).length) {
+      const dt = texNow("statusUI/top_drones_on.png");
+      if (dt) h.sprite("drn", dt, 258, 43);
+      h.text("drnT", String(s.droneParts ?? 0), 310, 45, fstyle("num_font", (s.droneParts ?? 0) > 0 ? 0xffffff : 0xff6050), [0.5, 0]);
+    }
     // Evasion and oxygen
     const o2 = Math.round(s.rooms.reduce((a, r) => a + r.o2, 0) / s.rooms.length);
     const evRed = s.evasion === 0;
@@ -1051,6 +1090,84 @@ export class Battle {
     void soundOn;
   }
 
+  private droneHit: { slot: number; box: Box }[] = [];
+
+  /** Drone tray to the right of the weapons: one box per drone slot; click to launch, right-click to recall. */
+  private droneTray(s: ShipView): void {
+    const h = this.hud;
+    this.droneHit = [];
+    const slots = this.db.ships[s.bp]?.droneSlots ?? 0;
+    if (!slots || !s.systems.drones) return;
+    const n = Math.max(2, Math.min(4, slots));
+    const x0 = 660;
+    const boxT = texNow(`box_weapons_bottom${n}.png`);
+    const g = h.gfx("dtray");
+    if (boxT) h.sprite("dbox", boxT, x0, TRAY.y);
+    else g.roundRect(x0 + 6, TRAY.y + 6, 20 + n * SLOT.dx, 64, 4).fill({ color: 0x1a1f22, alpha: 0.9 }).stroke({ color: 0xe8ece8, width: 2 });
+    this.label("dlabT", "DRONES", x0 + 18, 667);
+    for (let i = 0; i < n; i++) {
+      const bx = x0 + 17 + i * SLOT.dx;
+      const by = SLOT.y;
+      const d = (s.drones ?? [])[i];
+      const bp = d && this.db.droneBPs[d.bp];
+      if (!d || !bp || i >= slots) {
+        g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).stroke({ color: 0x8a8e8a, width: 2 });
+        continue;
+      }
+      const usableHere = ["COMBAT", "DEFENSE", "SHIP_REPAIR"].includes(bp.type);
+      const edge = d.deployed ? 0x78ff78 : d.powered ? 0xffd040 : 0x8a8e8a;
+      g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).fill({ color: d.deployed ? 0x1d3a1f : 0x0f1414, alpha: 0.9 }).stroke({ color: edge, width: 2 });
+      for (let p = 0; p < bp.power; p++) {
+        const py = by + SLOT.h - 11 - p * 8;
+        if (d.powered) g.rect(bx + 5, py, 16, 6).fill({ color: 0x78ff78 });
+        else g.rect(bx + 5.5, py + 0.5, 15, 5).stroke({ color: 0x8a8e8a, width: 1 });
+      }
+      const short = bp.title.replace(/ Drone/, "").replace("Mark ", "").trim();
+      h.text(`dn${i}`, short.length > 14 ? `${short.slice(0, 13)}.` : short, bx + 54, by + 4, fstyle("JustinFont10", usableHere ? (d.powered ? 0xffffff : 0x9aa09a) : 0x707070), [0.5, 0]);
+      const status = !usableHere ? "boarding only" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
+      if (status) h.text(`ds${i}`, status, bx + 26, by + SLOT.h - 12, fstyle("JustinFont8", d.deployed ? 0x9fe89f : 0xffd040));
+      this.droneHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
+    }
+  }
+
+  /** Where a deployed drone is on screen: combat drones orbit the enemy, the rest orbit their own ship. */
+  private dronePos(owner: 0 | 1, slot: number): { x: number; y: number } | null {
+    const v = this.view;
+    if (!v) return null;
+    const d = v.ships[owner].drones?.[slot];
+    const bp = d && this.db.droneBPs[d.bp];
+    if (!d || !bp || !d.deployed) return null;
+    const aroundEnemy = bp.type === "COMBAT";
+    const r = (owner === v.you) !== aroundEnemy ? this.own : this.enemy;
+    const b = r.bounds();
+    const c = r.gridCentre();
+    const lx = c.x + Math.cos(d.angle) * (b.w / 2 + 30);
+    const ly = c.y + Math.sin(d.angle) * (b.h / 2 + 24);
+    return this.stage.toLocal(r.root.toGlobal({ x: lx, y: ly }));
+  }
+
+  private drawDrones(v: MatchView): void {
+    const layerFor = (owner: 0 | 1, type: string) => ((owner === v.you) !== (type === "COMBAT") ? this.projOwn : this.projWin);
+    for (const owner of [0, 1] as const) {
+      for (const d of v.ships[owner].drones ?? []) {
+        const bp = this.db.droneBPs[d.bp];
+        if (!bp || !d.deployed) continue;
+        const p = this.dronePos(owner, d.slot);
+        if (!p) continue;
+        const t = texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_base.png`);
+        const layer = layerFor(owner, bp.type);
+        if (t) {
+          const sp = new Sprite(t);
+          sp.anchor.set(0.5);
+          sp.position.set(p.x, p.y);
+          sp.scale.set(0.8);
+          if (owner !== v.you) sp.tint = 0xffd0d0;
+          layer.addChild(sp);
+        } else layer.addChild(new Graphics().circle(p.x, p.y, 7).fill({ color: owner === v.you ? 0x6ab4ff : 0xff6a5a }).stroke({ color: 0xffffff, width: 1.5 }));
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- input
 
   private onDown(e: FederatedPointerEvent): void {
@@ -1082,6 +1199,29 @@ export class Battle {
       if (right) return this.clickWeapon(w.slot, true);
       // Left button: a click (power/arm) unless it turns into a drag onto another slot.
       this.weaponDrag = { slot: w.slot, x: p.x, y: p.y, moved: false };
+      return;
+    }
+    for (const dh of this.droneHit) {
+      if (!inBox(p, dh.box)) continue;
+      const d = own.drones?.[dh.slot];
+      const bp = d && this.db.droneBPs[d.bp];
+      if (!d || !bp) return;
+      if (right) {
+        if (d.powered) {
+          this.send({ c: "dronePower", slot: dh.slot, on: false });
+          play(this.db, ["powerDownSystem"]);
+        }
+        return;
+      }
+      if (d.powered) return;
+      if (!["COMBAT", "DEFENSE", "SHIP_REPAIR"].includes(bp.type)) return this.fail("Interior drones need boarding (coming later)");
+      const ds = own.systems.drones;
+      if (!ds || ds.ion > 0) return this.fail(ds ? "Drones are locked by ion damage" : "No drone system");
+      const load = (own.drones ?? []).filter((q) => q.powered).reduce((a, q) => a + (this.db.droneBPs[q.bp]?.power ?? 1), 0);
+      if (load + bp.power > usable(ds)) return this.fail("Not enough drone system power");
+      if ((own.droneParts ?? 0) <= 0) return this.fail("No drone parts left");
+      play(this.db, ["powerUpSystem", "droneLaunch"]);
+      this.send({ c: "dronePower", slot: dh.slot, on: true });
       return;
     }
     for (const b of this.stationBtns) {
@@ -1166,6 +1306,21 @@ export class Battle {
       const powered = own.weapons.map((w, i) => (w.powered ? i : -1)).filter((i) => i >= 0);
       if (!powered.length) return this.fail("No weapons are powered");
       return this.clickWeapon(powered[powered.length - 1], true);
+    }
+    if (id === "drones") {
+      // Like weapons: the next drone in slot order launches; right-click recalls the last powered one.
+      const ds = own.drones ?? [];
+      if (delta > 0) {
+        const i = ds.findIndex((d) => !d.powered && ["COMBAT", "DEFENSE", "SHIP_REPAIR"].includes(this.db.droneBPs[d.bp]?.type ?? ""));
+        if (i < 0) return this.fail("No drone ready to launch");
+        const hit = this.droneHit.find((x) => x.slot === i);
+        if (hit) return this.onDown({ global: this.stage.toGlobal({ x: hit.box.x + 5, y: hit.box.y + 5 }), button: 0, shiftKey: false } as unknown as FederatedPointerEvent);
+        return;
+      }
+      const powered = ds.map((d, i) => (d.powered ? i : -1)).filter((i) => i >= 0);
+      if (!powered.length) return void play(this.db, ["powerUpFail"]);
+      play(this.db, ["powerDownSystem"]);
+      return this.send({ c: "dronePower", slot: powered[powered.length - 1], on: false });
     }
     if (delta > 0 && used >= own.reactor) return this.fail("Not enough available power");
     if (delta > 0 && s.power >= usable(s)) return this.fail(s.damage > 0 ? "System is damaged" : "System is at full power");
