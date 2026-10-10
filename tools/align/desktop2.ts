@@ -1,4 +1,4 @@
-/** Two copies of the desktop app: A hosts, B types A's address and joins A's match; both ready → battle. */
+/** Two copies of the desktop app on the LAN tab: A creates, B joins by code alone; both ready → battle. */
 import { _electron as electron } from "playwright";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -14,11 +14,8 @@ const open = async (data: string) => {
 const A = await open(dataA);
 const B = await open(dataB);
 console.log("A at", A.win.url(), "B at", B.win.url());
-// B joins A's server by address.
-await B.win.fill("#server", `localhost:${portA}`);
-await B.win.click("#connect");
-await B.win.waitForSelector("#create:not([disabled])", { timeout: 20000 });
-console.log("B status:", await B.win.$eval(".menu", (m) => m.textContent?.match(/Connected to [^.]+/)?.[0] ?? "?"));
+// LAN tab: A creates, B joins with the code alone (found on the network).
+for (const w of [A.win, B.win]) await w.click('[data-mode="lan"]');
 await A.win.fill("#name", "Host");
 await A.win.click("#create");
 await A.win.waitForSelector(".hg-step");

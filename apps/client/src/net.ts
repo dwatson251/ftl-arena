@@ -8,6 +8,8 @@ export class Net {
   private handlers = new Set<Handler>();
   private queue: ClientMsg[] = [];
   connected = false;
+  /** The server has said welcome on this connection. */
+  welcomed = false;
   onStatus: (s: string) => void = () => {};
 
   constructor(public url: string, public name: string) {}
@@ -16,6 +18,7 @@ export class Net {
   setUrl(url: string): void {
     if (url === this.url && this.connected) return;
     this.url = url;
+    this.welcomed = false;
     try {
       sessionStorage.removeItem("ftl-arena-token");
     } catch {}
@@ -45,6 +48,7 @@ export class Net {
     ws.onmessage = (ev) => {
       const m = decode<ServerMsg>(String(ev.data));
       if (m.t === "welcome") {
+        this.welcomed = true;
         try {
           sessionStorage.setItem("ftl-arena-token", m.token);
         } catch {}
@@ -55,9 +59,32 @@ export class Net {
       // A connection that's been replaced (setUrl) doesn't retry.
       if (this.ws !== ws) return;
       this.connected = false;
+      this.welcomed = false;
       this.onStatus("disconnected - retrying");
       setTimeout(() => this.ws === ws && this.connect(), 1500);
     };
+  }
+
+  /**
+   * Be connected (and welcomed) to `url`: right away if already, else switch and wait. Fails after `ms` when
+   * nobody answers there, leaving the connection on `fallback` so the menu still works.
+   */
+  connectTo(url: string, ms = 6000, fallback?: string): Promise<void> {
+    if (url === this.url && this.welcomed) return Promise.resolve();
+    this.setUrl(url);
+    return new Promise((resolve, reject) => {
+      const off = this.on((m) => {
+        if (m.t !== "welcome") return;
+        clearTimeout(t);
+        off();
+        resolve();
+      });
+      const t = setTimeout(() => {
+        off();
+        if (fallback !== undefined) this.setUrl(fallback);
+        reject(new Error("no answer"));
+      }, ms);
+    });
   }
 
   send(m: ClientMsg): void {

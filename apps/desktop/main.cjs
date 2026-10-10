@@ -9,8 +9,6 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron")
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const https = require("node:https");
-const upnp = require("./upnp.cjs");
 
 // A separate data folder can be forced (two copies side by side, testing).
 if (process.env.FTL_ARENA_DATA) app.setPath("userData", process.env.FTL_ARENA_DATA);
@@ -45,7 +43,8 @@ async function startGame() {
     let lastErr;
     for (let port = s.port; port < s.port + 10 && !server; port++) {
       try {
-        server = await lib().startServer({ port, assets: ASSETS(), client: CLIENT, log: (m) => console.log(m) });
+        // UPnP on: the first "Create match" asks the router to open the port for friends on the internet.
+        server = await lib().startServer({ port, assets: ASSETS(), client: CLIENT, upnp: true, log: (m) => console.log(m) });
       } catch (e) {
         lastErr = e;
       }
@@ -70,15 +69,6 @@ function createWindow() {
   });
   if (setUp()) void startGame();
   else win.loadFile(path.join(__dirname, "setup.html"));
-}
-
-function hostWindow() {
-  const w = new BrowserWindow({
-    width: 560, height: 620, title: "Host a match", parent: win ?? undefined,
-    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false },
-  });
-  w.setMenu(null);
-  w.loadFile(path.join(__dirname, "netinfo.html"));
 }
 
 // ---------------------------------------------------------------- setup: find FTL, unpack it
@@ -138,40 +128,6 @@ ipcMain.handle("extract", async (e, folder) => {
   }
 });
 
-// ---------------------------------------------------------------- hosting: addresses, UPnP, port
-
-ipcMain.handle("net-info", () => ({
-  port: server?.port ?? settings().port,
-  local: Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a.address),
-}));
-ipcMain.handle("public-ip", () =>
-  new Promise((resolve) => {
-    https.get("https://api.ipify.org", (r) => {
-      let b = "";
-      r.on("data", (d) => (b += d));
-      r.on("end", () => resolve(b.trim()));
-    }).on("error", () => resolve(""));
-  }),
-);
-ipcMain.handle("upnp", async () => {
-  try {
-    const r = await upnp.forward(server?.port ?? settings().port);
-    return { ok: true, ...r };
-  } catch (err) {
-    return { ok: false, error: String(err?.message ?? err) };
-  }
-});
-ipcMain.handle("set-port", async (_e, port) => {
-  const p = Math.max(1024, Math.min(65535, Number(port) | 0));
-  saveSettings({ ...settings(), port: p });
-  if (server) {
-    await server.close();
-    server = null;
-  }
-  await startGame();
-  return server?.port ?? p;
-});
-
 // ---------------------------------------------------------------- app
 
 function menu() {
@@ -179,7 +135,6 @@ function menu() {
     {
       label: "FTL Arena",
       submenu: [
-        { label: "Host a match (your address, port forwarding)…", click: hostWindow },
         { label: "Re-run setup (choose the FTL folder again)…", click: () => win?.loadFile(path.join(__dirname, "setup.html")) },
         { label: "Open data folder", click: () => void shell.openPath(DATA()) },
         { type: "separator" },
@@ -204,5 +159,6 @@ app.on("before-quit", (e) => {
   e.preventDefault();
   const s = server;
   server = null;
-  Promise.allSettled([upnp.unforward(), s.close()]).then(() => app.quit());
+  // (Closing the server also takes down its UPnP port forward.)
+  s.close().finally(() => app.quit());
 });

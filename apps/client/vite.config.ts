@@ -15,7 +15,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    proxy: { "/ws": { target: server.replace(/^http/, "ws"), ws: true }, "/assets": server },
+    proxy: { "/ws": { target: server.replace(/^http/, "ws"), ws: true }, "/assets": server, "/api": server },
   },
   // main.ts awaits Pixi at the top level, which needs an ES2022 target.
   // Built code goes under /app/: /assets/ is the player's extracted FTL files.

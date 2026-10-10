@@ -21,6 +21,8 @@ export interface HangarHooks {
   setPractice(p: Partial<PracticeConfig>): void;
   ready(r: boolean): void;
   leave(): void;
+  /** For the host: the addresses friends use to join, and a hint (null until known; none for practice). */
+  share?(): { addresses: string[]; note: string } | null;
 }
 
 export class Hangar {
@@ -202,7 +204,7 @@ export class Hangar {
     const botShip = lobby.players.find((p) => p.bot)?.loadout?.ship;
     const pool = cfg.shipPool.length ? cfg.shipPool : this.db.hangar;
     return `
-      <h2>Lobby</h2><div class="code">${lobby.code}</div><div class="players">${players}</div>
+      <h2>Lobby</h2><div class="code">${lobby.code}</div>${this.sharePanel(lobby)}<div class="players">${players}</div>
       <h2 style="margin-top:14px">Rules ${host ? "" : "(host sets these)"}</h2>
       <div class="kv"><span>Win</span><select data-cfg="winCondition" ${host ? "" : "disabled"}>
         <option value="hull" ${cfg.winCondition === "hull" ? "selected" : ""}>Destroy the ship</option>
@@ -294,6 +296,14 @@ export class Hangar {
         <div class="note">Space pauses everyone and spends your clock; Space again resumes. ${practice ? "0 = unlimited, like FTL." : ""}</div>`;
     return `<div class="kv"><span>Pausing <span class="note">(experimental)</span></span><select data-cfg="pause" ${dis}>
         ${sel("off", "Off")}${sel("tactical", "Tactical timeouts")}${sel("clock", "Pause clock")}</select></div>${more}`;
+  }
+
+  /** Host of a real match: what friends type to join (server address + this code), with copy buttons. */
+  private sharePanel(lobby: LobbyState): string {
+    const s = this.hooks.share?.();
+    if (!s || lobby.practice || lobby.players.length >= 2) return "";
+    const rows = s.addresses.map((a) => `<div class="kv"><code class="share-addr">${h(a)}</code><button class="small" data-copy="${h(a)}">Copy</button></div>`).join("");
+    return `<div class="share"><div class="note">Friends join with the address and code ${h(lobby.code)}:</div>${rows}<div class="note">${h(s.note)}</div></div>`;
   }
 
   private confirming = false;
@@ -558,6 +568,11 @@ export class Hangar {
       this.step = d.step as Step;
       this.sfx("hoverBeep");
       return this.render();
+    }
+    if (d.copy) {
+      void navigator.clipboard?.writeText(d.copy).catch(() => {});
+      this.sfx("hoverBeep");
+      return;
     }
     if ("ship" in d && d.ship) {
       if (d.ship !== l.ship) {

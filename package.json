@@ -20,6 +20,7 @@
     "desktop:build": "node tools/build-desktop.mjs",
     "desktop:dev": "node tools/build-desktop.mjs --run",
     "desktop:win": "node tools/build-desktop.mjs --win",
+    "server:dist": "node tools/build-server.mjs",
     "desktop:mac": "node tools/build-desktop.mjs --mac"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "concurrently": "^9.1.0",
     "electron": "^33.4.11",
     "playwright": "^1.49.1",
+    "postject": "^1.0.0-alpha.6",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",

@@ -42,7 +42,9 @@ function wsFor(addr: string): string {
   const hostPort = a.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   return `ws://${hostPort.includes(":") ? hostPort : `${hostPort}:8787`}/ws`;
 }
-let wsUrl = wsFor(serverAddr);
+// The first connection is always to this page's own server (its game data feeds the loading screen); the address
+// in the menu is only used when you create or join.
+let wsUrl = wsFor("");
 let netStatus = "connecting";
 let name = "";
 try {
@@ -297,6 +299,15 @@ function render(): void {
         setPractice: (p) => net.send({ t: "practice", practice: p }),
         ready: (r) => net.send({ t: "ready", ready: r }),
         leave: () => net.send({ t: "leave" }),
+        // Whoever is host (the creator, or a friend who took over) sees how to invite someone.
+        share: () => {
+          if (!share && lobby?.host === token) {
+            // (Not from inside this render: shareFor re-renders.)
+            share = { addresses: [], note: "Finding the address to share…" };
+            queueMicrotask(() => void shareFor(matchAddr));
+          }
+          return share;
+        },
       }, () => hasArt);
       ui.appendChild(hangar.el);
     }
@@ -307,52 +318,152 @@ function render(): void {
   }
   hangar?.el.remove();
   hangar = null;
+  share = null;
+  const lan = mode === "lan";
+  const tab = (m: "lan" | "online", label: string) => `<button class="tab ${mode === m ? "on" : ""}" data-mode="${m}">${label}</button>`;
   ui.innerHTML = `<div class="screen"><div class="menu">
     <h1>FTL ARENA</h1>
-    <div class="note">1v1 real-time FTL combat. ${db ? (db.source === "ftl" ? (hasArt ? "Using your own FTL data and art." : "Using FTL data from the server; no local art found, drawing placeholders.") : "No FTL data on the server: placeholder ships. Run <code>npm run extract</code>.") : "Connecting…"}</div>
+    <div class="note">1v1 real-time FTL combat${db?.source === "ftl" && !hasArt ? " (no local art found: drawing placeholders)" : ""}.</div>
     <div class="row"><input id="name" placeholder="Captain name" maxlength="24" value="${esc(name)}"></div>
-    <div class="row"><button class="primary" id="create" ${db ? "" : "disabled"}>Create match</button>
-      <button id="practice" ${db ? "" : "disabled"}>Practice vs bot</button></div>
-    <div class="row"><input id="code" placeholder="CODE" maxlength="4" style="text-transform:uppercase;max-width:110px"><button id="join" ${db ? "" : "disabled"}>Join</button></div>
+    <div class="tabs">${tab("lan", "LAN")}${tab("online", "Online")}</div>
+    <div class="tab-body">
+    ${lan
+      ? `<div class="note">Same network (home Wi-Fi, LAN party). Create a match and tell your friend the code; they only need the code.</div>`
+      : `<label class="note" for="server">Server address</label>
+    <div class="row"><input id="server" placeholder="IP:port (blank = host on this computer)" value="${esc(serverAddr)}"></div>
+    <div class="note">For a dedicated server, or a friend hosting over the internet. Leave it blank to host here yourself.</div>`}
+    <div class="row"><button class="primary" id="create" ${busy ? "disabled" : ""}>Create match</button>
+      <button id="practice" ${busy ? "disabled" : ""}>Practice vs bot</button></div>
+    <h2 style="margin-top:14px">Join a match</h2>
+    <div class="row"><input id="code" placeholder="CODE" maxlength="4" value="${esc(joinCode)}" style="text-transform:uppercase;max-width:110px"><button class="primary" id="join" ${busy ? "disabled" : ""}>Join</button></div>
+    <div class="note">${lan ? "Enter the host's code: the game finds their match on your network." : "Enter the server address above and the match code."}</div>
+    </div>
+    <div class="note">${esc(busyNote)}</div>
     <div class="err">${esc(error)}</div>
-    <h2 style="margin-top:18px">Server</h2>
-    <div class="row"><input id="server" placeholder="This computer (or host's IP:port, e.g. 81.2.3.4:8787)" value="${esc(serverAddr)}"><button id="connect">Connect</button></div>
-    <div class="note">${netStatus === "connected" ? `Connected to ${esc(serverAddr || "this computer")}.` : `Can't reach ${esc(serverAddr || "this computer")} yet (${esc(netStatus)}): check the address, and that the host's port is open.`}</div>
   </div></div>`;
-  const serverEl = ui.querySelector<HTMLInputElement>("#server")!;
-  const connect = () => {
-    serverAddr = serverEl.value.trim();
-    try {
-      localStorage.setItem("ftl-arena-server", serverAddr);
-    } catch {}
-    wsUrl = wsFor(serverAddr);
-    db = null;
-    net.setUrl(wsUrl);
-    render();
-  };
-  ui.querySelector("#connect")!.addEventListener("click", connect);
-  serverEl.addEventListener("keydown", (e) => e.key === "Enter" && connect());
-  const nameEl = ui.querySelector<HTMLInputElement>("#name")!;
-  const saveName = () => {
-    name = nameEl.value.trim() || "Captain";
+  const val = (id: string) => ui.querySelector<HTMLInputElement>(id)?.value.trim();
+  const keep = () => {
+    name = val("#name") || "Captain";
+    if (!lan) serverAddr = val("#server") ?? "";
+    joinCode = (val("#code") ?? "").toUpperCase();
     try {
       localStorage.setItem("ftl-arena-name", name);
+      localStorage.setItem("ftl-arena-server", serverAddr);
     } catch {}
-    net.name = name;
-    net.send({ t: "hello", v: 1, name, token });
   };
-  ui.querySelector("#create")!.addEventListener("click", () => {
-    saveName();
-    net.send({ t: "create" });
-  });
-  ui.querySelector("#practice")!.addEventListener("click", () => {
-    saveName();
-    net.send({ t: "create", practice: true });
-  });
-  ui.querySelector("#join")!.addEventListener("click", () => {
-    saveName();
-    net.send({ t: "join", code: ui.querySelector<HTMLInputElement>("#code")!.value.trim().toUpperCase() });
-  });
+  for (const id of ["#name", "#server", "#code"]) ui.querySelector(id)?.addEventListener("input", keep);
+  ui.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
+    b.addEventListener("click", () => {
+      mode = b.dataset.mode as "lan" | "online";
+      error = "";
+      try {
+        localStorage.setItem("ftl-arena-mode", mode);
+      } catch {}
+      render();
+    }),
+  );
+  const go = (kind: "create" | "practice" | "join") => () => void act(kind);
+  ui.querySelector("#create")!.addEventListener("click", go("create"));
+  ui.querySelector("#practice")!.addEventListener("click", go("practice"));
+  ui.querySelector("#join")!.addEventListener("click", go("join"));
+  ui.querySelector("#code")!.addEventListener("keydown", (e) => (e as KeyboardEvent).key === "Enter" && void act("join"));
+}
+
+/** LAN: find matches by code on the local network; Online: a typed server address (or host here). */
+let mode: "lan" | "online" = "lan";
+try {
+  mode = localStorage.getItem("ftl-arena-mode") === "online" ? "online" : "lan";
+} catch {}
+let busy = false;
+let busyNote = "";
+let joinCode = "";
+/** What to tell friends once a match is created: the addresses they type, plus a hint. */
+let share: { addresses: string[]; note: string } | null = null;
+/** The server address the current match is on ("" = this computer), for the share panel. */
+let matchAddr = "";
+
+/**
+ * One click does it: work out the server (LAN: this computer to create, or whoever answers for the code;
+ * Online: the typed address, blank meaning this computer), reach it, then create, practise or join there.
+ * A server that doesn't answer, or a code that isn't there, just shows why; nothing locks up.
+ */
+async function act(kind: "create" | "practice" | "join"): Promise<void> {
+  if (busy) return;
+  if (kind === "join" && !/^[A-Z]{4}$/.test(joinCode)) {
+    error = "Enter the 4-letter match code to join.";
+    return render();
+  }
+  if (kind === "join" && mode === "online" && !serverAddr) {
+    error = "Enter the server address (IP:port) to join online, or use the LAN tab for a game on your network.";
+    return render();
+  }
+  busy = true;
+  error = "";
+  let addr = mode === "online" && kind !== "practice" ? serverAddr : "";
+  const fail = (msg: string) => {
+    busy = false;
+    busyNote = "";
+    error = msg;
+    render();
+  };
+  if (kind === "join" && mode === "lan") {
+    busyNote = `Looking for match ${joinCode} on your network…`;
+    render();
+    let found: { address: string; port: number; host: string }[] = [];
+    try {
+      found = await (await fetch(`/api/lan?code=${joinCode}`)).json();
+    } catch {}
+    if (found.length === 0) return fail(`No match ${joinCode} found on your network. Check the code, and that the host is on the same network (and allowed FTL Arena through their firewall). Or use Online with their address.`);
+    if (found.length > 1) return fail(`${found.length} matches on your network use code ${joinCode}: ask the host for their address and use Online.`);
+    addr = `${found[0].address}:${found[0].port}`;
+  }
+  const where = addr || "this computer";
+  busyNote = `Connecting to ${where}…`;
+  render();
+  try {
+    net.name = name;
+    await net.connectTo(wsFor(addr), 6000, wsFor(""));
+  } catch {
+    return fail(`Couldn't reach ${where}. Check the address (IP:port, e.g. 81.2.3.4:8787) and that the server is running with its port open.`);
+  }
+  busy = false;
+  busyNote = "";
+  matchAddr = addr;
+  net.send({ t: "hello", v: 1, name, token });
+  if (kind === "join") net.send({ t: "join", code: joinCode });
+  else net.send({ t: "create", practice: kind === "practice" });
+  share = null;
+  render();
+}
+
+/** The addresses friends use: the server's (a dedicated server), or this computer's own (LAN, and public online). */
+async function shareFor(addr: string): Promise<void> {
+  if (mode === "lan") {
+    share = { addresses: [], note: "Friends on your network: choose LAN and enter this code." };
+    render();
+    if (addr) return;
+  }
+  if (addr) {
+    share = { addresses: [addr], note: "The server this match is on. Friends choose Online, enter it and the code." };
+    return render();
+  }
+  try {
+    const r = (await (await fetch(mode === "online" ? "/api/share?online=1" : "/api/share")).json()) as { port: number; lan: string[]; public: string; upnp: string };
+    if (mode === "lan") {
+      share = { addresses: [], note: `Friends on your network: choose LAN and enter this code. (Or Online with ${r.lan.map((a) => `${a}:${r.port}`).join(" / ") || "your address"}.)` };
+      return render();
+    }
+    const list = [...(r.public ? [`${r.public}:${r.port}`] : []), ...r.lan.map((a) => `${a}:${r.port}`)];
+    const note = r.public
+      ? r.upnp === "ok"
+        ? "Friends choose Online and enter the first address (your router's port was opened automatically); the others work on the same network."
+        : `Friends choose Online and enter the first address; your router must forward TCP port ${r.port} to this computer${r.upnp.startsWith("failed") ? " (automatic forwarding didn't work)" : ""}. The others work on the same network.`
+      : "Friends on the same network can use these addresses.";
+    share = { addresses: list, note };
+  } catch {
+    share = { addresses: [], note: "Couldn't work out this computer's address." };
+  }
+  render();
 }
 
 /** Test hook: logical 1280×720 battle coordinates → page pixels (used by tools/bench browser scripts). */

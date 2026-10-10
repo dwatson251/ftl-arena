@@ -1,0 +1,64 @@
+import { describe, expect, it } from "vitest";
+import { loadDb } from "@ftl/extract";
+import { Lobby, type Client } from "../apps/server/src/lobby.ts";
+import { existsSync } from "node:fs";
+
+const db = loadDb(existsSync("assets-local/manifest.json") ? "assets-local" : undefined);
+const client = (id: string): Client & { got: any[] } => {
+  const c: any = { id, name: id, lobby: null, got: [] };
+  c.send = (m: any) => c.got.push(m);
+  return c;
+};
+const lobby = () => new Lobby("TEST", "A", db, {}, false);
+
+describe("captains leaving", () => {
+  it("in the hangar: the friend becomes host and the old host can come back", () => {
+    const l = lobby();
+    const a = client("A"), b = client("B");
+    l.join(a);
+    l.join(b);
+    l.leave(a, true);
+    expect(l.host).toBe("B");
+    expect(l.players.map((p) => p.id)).toEqual(["B"]);
+    expect(l.join(a)).toBeNull();
+    expect(l.players.map((p) => p.id)).toEqual(["B", "A"]);
+  });
+
+  it("after a battle: the seat frees up and someone new can join (back in the hangar)", () => {
+    const l = lobby();
+    const a = client("A"), b = client("B");
+    l.join(a);
+    l.join(b);
+    l.phase = "over";
+    l.leave(a, true);
+    expect(l.host).toBe("B");
+    expect(l.players.length).toBe(1);
+    const c = client("C");
+    expect(l.join(c)).toBeNull();
+    expect(l.phase).toBe("lobby");
+    expect(l.players.map((p) => p.id)).toEqual(["B", "C"]);
+  });
+
+  it("mid-battle Leave: forfeits, frees the seat, and the friend is host", () => {
+    const l = lobby();
+    const a = client("A"), b = client("B");
+    l.join(a);
+    l.join(b);
+    (l as any).start();
+    expect(l.phase).toBe("battle");
+    l.leave(a, true);
+    expect(l.phase).toBe("over");
+    expect(l.host).toBe("B");
+    expect(l.seated("A")).toBe(false);
+  });
+
+  it("a dropped connection keeps the seat", () => {
+    const l = lobby();
+    const a = client("A"), b = client("B");
+    l.join(a);
+    l.join(b);
+    l.phase = "battle";
+    l.leave(a, false);
+    expect(l.seated("A")).toBe(true);
+  });
+});

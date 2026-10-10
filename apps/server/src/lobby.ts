@@ -37,7 +37,7 @@ export class Lobby {
   private reveal = false;
   private loadouts: [Loadout, Loadout] | null = null;
 
-  constructor(public code: string, public host: string, public db: GameDB, cfg: Partial<MatchConfig>, public practice: boolean) {
+  constructor(public code: string, public host: string, public db: GameDB, cfg: Partial<MatchConfig>, public practice: boolean, private log: (s: string) => void = () => {}) {
     // Practice pauses freely, as FTL's single player does (an unlimited pause clock).
     const pauseDefaults: Partial<MatchConfig> = practice ? { pause: "clock", pauseBank: 0 } : {};
     this.config = sanitizeConfig(db, { ...DEFAULT_CONFIG, seed: (Math.random() * 2 ** 31) | 0, ...pauseDefaults, ...cfg }, practice);
@@ -66,8 +66,10 @@ export class Lobby {
       this.broadcast();
       return null;
     }
-    if (this.players.length >= 2) return "lobby is full";
-    if (this.phase !== "lobby") return "match already started";
+    if (this.players.length >= 2) return "that match is full";
+    // A finished match with a free seat (the other captain left): back to the hangar for a new one.
+    if (this.phase === "over") this.rematchReset();
+    if (this.phase !== "lobby") return "that match has already started";
     const ship = this.config.shipPool[0] ?? this.db.hangar[0];
     const loadout = baseLoadout(this.db, ship);
     this.players.push({ id: c.id, name: c.name, ready: false, loadout, priced: priceLoadout(this.db, loadout, this.config.scrap, this.config.shipPool, this.config.unlimited), connected: true });
@@ -237,16 +239,32 @@ export class Lobby {
     if (this.phase === "battle" && !hard) {
       // Disconnected mid-battle: hold the seat for a grace period, then forfeit.
       p.connected = false;
-      this.dropTimers.set(c.id, setTimeout(() => this.forfeit(p.id, "opponent disconnected"), GRACE_MS));
-    } else if (this.phase === "battle") {
-      this.forfeit(p.id, "opponent left");
+      this.dropTimers.set(c.id, setTimeout(() => {
+        this.forfeit(p.id, "opponent disconnected");
+        this.drop(p);
+        this.broadcast();
+      }, GRACE_MS));
     } else {
-      this.players = this.players.filter((q) => q !== p);
-      if (this.host === c.id && this.players[0]) this.host = this.players[0].id;
-      for (const q of this.players) q.ready = q.bot ?? false;
-      if (this.phase === "countdown") this.phase = "lobby";
+      // Left for good (or between battles): free the seat, and the other captain takes over as host.
+      if (this.phase === "battle") this.forfeit(p.id, "opponent left");
+      this.drop(p);
     }
     this.broadcast();
+  }
+
+  /** Remove a player's seat; the remaining captain becomes host and nobody stays ready. */
+  private drop(p: LobbyPlayer): void {
+    this.players = this.players.filter((q) => q !== p);
+    this.clients.delete(p.id);
+    if (this.host === p.id && this.players.some((q) => !q.bot)) this.host = this.players.find((q) => !q.bot)!.id;
+    for (const q of this.players) q.ready = q.bot ?? false;
+    if (this.phase === "countdown") this.phase = "lobby";
+    this.log(`${p.name} left${this.players.length ? `; ${this.players.find((q) => q.id === this.host)?.name ?? "?"} is host` : ""}`);
+  }
+
+  /** Does this session hold a seat here (so a reconnect goes straight back in)? */
+  seated(id: string): boolean {
+    return this.players.some((p) => p.id === id && !p.bot);
   }
 
   private forfeit(id: string, reason: string): void {
@@ -318,6 +336,10 @@ export class Lobby {
   rematch(c: Client): void {
     if (this.phase !== "over") return;
     if (!this.players.some((p) => p.id === c.id)) return;
+    this.rematchReset();
+  }
+
+  private rematchReset(): void {
     this.phase = "lobby";
     this.match = null;
     this.config = { ...this.config, seed: (Math.random() * 2 ** 31) | 0 };
@@ -346,6 +368,7 @@ export class Lobby {
     this.phase = "battle";
     this.pending = [[], []];
     this.players.forEach((p, i) => this.clients.get(p.id)?.send({ t: "start", you: i as 0 | 1 }));
+    this.log(`battle: ${a.name} (${a.loadout?.ship}) vs ${b.name} (${b.loadout?.ship})`);
     this.sendSnaps();
   }
 
@@ -381,6 +404,8 @@ export class Lobby {
     }
     if (m.over) {
       this.phase = "over";
+      const w = m.state.winner;
+      this.log(`over: ${w === -1 ? "draw" : `${this.players[w ?? 0]?.name} won`} (${m.state.endReason})`);
       this.sendSnaps();
       this.broadcast();
     }

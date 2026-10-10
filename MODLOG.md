@@ -249,6 +249,20 @@
   - The packaged zip has no FTL data, and `um publish check` passes apart from Chromium's own
     `resources.pak` warning.
 
+## Menu redo, LAN discovery, dedicated server
+- **The bug:** the first playtest failed. Pressing Connect for a new address cleared the game data, which
+  disabled every button until a welcome arrived, and an unreachable address never sent one.
+- **The fix:** one-step actions (`Net.connectTo` waits for the welcome, or times out and falls back to the
+  page's own server).
+- **LAN:** a UDP responder on 47878 (`reuseAddr`, so several servers can share one machine). Joiners
+  broadcast "find CODE" with a nonce, and only holders reply. Answers heard over both loopback and LAN are
+  deduplicated by server id.
+- **Dedicated server:** Node SEA via `postject`. The Windows executable is the official `node.exe` of the
+  same version, so it builds on Linux. The entry can't use top-level await, because SEA runs a CJS bundle.
+- **Host-leave bugs:**
+  - leaving mid-battle or after one kept a ghost seat ("full" or "already started" for anyone else);
+  - reconnecting with a session token lost a held battle seat.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

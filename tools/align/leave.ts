@@ -1,0 +1,36 @@
+/** Host leaves the hangar: the friend takes over as host (with the share panel); the old host rejoins by code. */
+import { chromium } from "playwright";
+const URL = process.env.ARENA_URL ?? "http://localhost:5173";
+const addr = process.argv[2] ?? "localhost:8790";
+const b = await chromium.launch();
+const page = async (name: string) => {
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+  p.setDefaultTimeout(15000);
+  p.on("pageerror", (e) => console.log(name, "pageerror:", e.message));
+  await p.goto(URL);
+  await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
+  await p.click('[data-mode="online"]');
+  await p.fill("#name", name);
+  await p.fill("#server", addr);
+  return p;
+};
+const host = await page("Host");
+const friend = await page("Friend");
+await host.click("#create");
+await host.waitForSelector(".hg-step");
+const code = (await host.$eval(".code", (e) => e.textContent ?? "")).trim();
+await friend.fill("#code", code);
+await friend.click("#join");
+await friend.waitForSelector(".hg-step");
+await host.click("text=Leave lobby");
+await host.waitForSelector("#create");
+await friend.waitForTimeout(800);
+console.log("friend sees players:", JSON.stringify(await friend.$$eval(".players > *", (es) => es.map((e) => e.textContent?.trim()))), "share:", JSON.stringify(await friend.$$eval(".share-addr", (es) => es.map((e) => e.textContent))));
+await friend.screenshot({ path: "traces/flows/5-friend-is-host.png" });
+await host.fill("#code", code);
+await host.click("#join");
+await host.waitForSelector(".hg-step", { timeout: 8000 }).catch(() => {});
+await host.waitForTimeout(600);
+console.log("old host rejoined:", await host.$(".hg-step").then((x) => !!x), JSON.stringify(await host.$eval(".menu .err", (e) => e.textContent).catch(() => "")));
+console.log("friend now sees:", JSON.stringify(await friend.$$eval(".players > *", (es) => es.map((e) => e.textContent?.trim()))));
+await b.close();
