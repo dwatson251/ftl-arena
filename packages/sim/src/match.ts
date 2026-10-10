@@ -5,7 +5,7 @@
 import type { GameDB, SystemId, WeaponBP } from "@ftl/data";
 import type { Command } from "./commands.ts";
 import { findPath, geometry, key, roomAt, unkey, type Geometry } from "./geometry.ts";
-import { autoPower, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
+import { augCount, autoPower, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
 import { Rng } from "./rng.ts";
 import { DT, raceOf, RULES, TICK_HZ, TILE, type SkillId } from "./rules.ts";
 import type {
@@ -23,6 +23,14 @@ export class Match {
 
   constructor(public db: GameDB, config: MatchConfig, loadouts: [Loadout, Loadout], players: [string, string]) {
     this.rng = new Rng(config.seed);
+    // Crystal Vengeance shards fly as a 1-damage, 1-pierce laser.
+    if (!db.weapons.__SHARD) {
+      db.weapons.__SHARD = {
+        id: "__SHARD", title: "Crystal shard", type: "LASER", damage: 1, shots: 1, sp: 1, fireChance: 0, breachChance: 0, stunChance: 0,
+        ion: 0, sysDamage: 0, persDamage: 0, hullBust: false, cooldown: 1, power: 0, cost: 0, missiles: 0, length: 0, radius: 0, speed: 0,
+        stun: 0, image: "crystal_1", weaponArt: "", rarity: 0, chargeLevels: 1,
+      };
+    }
     const used = new Set<string>();
     const pick = (n: string[]) => {
       const free = n.filter((x) => !used.has(x));
@@ -266,7 +274,7 @@ export class Match {
     }
     if (ship.shieldLayers < max) {
       const m = this.mannedBy(ship, "shields");
-      const bonus = m ? RULES.shieldManBonus[this.skill(m, "shields")] : 0;
+      const bonus = (m ? RULES.shieldManBonus[this.skill(m, "shields")] : 0) + augCount(ship, "SHIELD_RECHARGE") * (this.db.augments?.SHIELD_RECHARGE?.value ?? 0.15);
       ship.shieldCharge += (DT / RULES.shieldRecharge) * (1 + bonus);
       if (ship.shieldCharge >= 1) {
         ship.shieldLayers++;
@@ -305,6 +313,7 @@ export class Match {
     let cd = bp.cooldown;
     const m = this.mannedBy(ship, "weapons");
     if (m) cd *= 1 - RULES.weaponManBonus[this.skill(m, "weapons")];
+    cd *= Math.pow(1 - (this.db.augments?.AUTO_COOLDOWN?.value ?? 0.1), augCount(ship, "AUTO_COOLDOWN"));
     if (bp.boost?.type === "cooldown") cd = Math.max(1, cd - bp.boost.amount * w.boost);
     return cd;
   }
@@ -344,7 +353,8 @@ export class Match {
     const target = w.target!;
     const enemy = st.ships[1 - ship.idx];
     const g = this.geo(enemy);
-    ship.missiles -= bp.missiles;
+    // Explosive Replicator: missile weapons have a chance not to use a missile.
+    if (!(bp.missiles > 0 && augCount(ship, "EXPLOSIVE_REPLICATOR") && this.rng.chance(this.db.augments?.EXPLOSIVE_REPLICATOR?.value ?? 0.5))) ship.missiles -= bp.missiles;
     const shots = bp.type === "BEAM" ? 1 : bp.shots * w.volleys;
     const dmgBonus = bp.boost?.type === "damage" ? bp.boost.amount * w.boost : 0;
     for (let i = 0; i < shots; i++) {
@@ -409,6 +419,13 @@ export class Match {
     if (p.kind === "BEAM" && p.target.kind === "beam") return this.resolveBeam(src, T, g, bp, p.target);
     if (p.target.kind !== "room") return;
     const room = p.kind === "BURST" ? roomAt(g, p.px, p.py) : p.target.room;
+    // Zoltan Shield absorbs anything that would reach the ship (bombs included) until it's used up.
+    if ((T.superShield ?? 0) > 0 && room >= 0 && (p.kind === "BOMB" || !this.rng.chance(T.evasion / 100))) {
+      T.superShield = Math.max(0, (T.superShield ?? 0) - Math.max(1, bp.damage + bp.ion));
+      src.stats.blocked++;
+      st.events.push({ e: "shield", ship: T.idx, px: p.px, py: p.py });
+      return;
+    }
     if (p.kind !== "BOMB") {
       if (room < 0 || this.rng.chance(T.evasion / 100)) {
         src.stats.misses++;
@@ -420,7 +437,7 @@ export class Match {
       if (T.shieldLayers > bp.sp) {
         T.shieldLayers--;
         T.shieldCharge = 0;
-        if (bp.ion > 0 && T.systems.shields) this.addIon(T.systems.shields, bp.ion);
+        if (bp.ion > 0 && T.systems.shields && !this.ionNegated(T)) this.addIon(T.systems.shields, bp.ion);
         src.stats.blocked++;
         st.events.push({ e: "shield", ship: T.idx, px: p.px, py: p.py });
         this.gainXp(this.mannedBy(T, "shields"), "shields");
@@ -439,6 +456,12 @@ export class Match {
     const L = bp.length || 60;
     const x2 = t.x1 + (dx / len) * L;
     const y2 = t.y1 + (dy / len) * L;
+    if ((T.superShield ?? 0) > 0) {
+      T.superShield = Math.max(0, (T.superShield ?? 0) - Math.max(1, bp.damage));
+      st.events.push({ e: "beam", ship: T.idx, x1: t.x1, y1: t.y1, x2, y2, blocked: true });
+      src.stats.blocked++;
+      return;
+    }
     const dmg = bp.damage - T.shieldLayers;
     const blocked = dmg <= 0 && (bp.damage > 0 || T.shieldLayers > 0);
     st.events.push({ e: "beam", ship: T.idx, x1: t.x1, y1: t.y1, x2, y2, blocked });
@@ -456,6 +479,12 @@ export class Match {
     for (const r of rooms) this.hitRoom(src, T, g, bp, r, Math.max(0, dmg), t.x1, t.y1, false);
   }
 
+  /** Reverse Ion Field: each copy is a chance to negate ion damage entirely. */
+  private ionNegated(T: ShipState): boolean {
+    const n = augCount(T, "ION_ARMOR");
+    return n > 0 && this.rng.chance(1 - Math.pow(1 - (this.db.augments?.ION_ARMOR?.value ?? 0.5), n));
+  }
+
   private addIon(s: SystemState, n: number): void {
     s.ion = Math.min(s.level, s.ion + n);
     s.ionTimer = RULES.ionDuration;
@@ -471,19 +500,32 @@ export class Match {
     }
     let hullDmg = bp.type === "BOMB" ? 0 : dmg;
     if (bp.hullBust && !sys) hullDmg *= 2;
+    // Rock Plating: a chance to negate hull damage (systems are still hit).
+    if (hullDmg > 0 && augCount(T, "ROCK_ARMOR") && this.rng.chance(this.db.augments?.ROCK_ARMOR?.value ?? 0.15)) hullDmg = 0;
     if (hullDmg > 0) {
       const floor = st.config.winCondition === "crew" ? 1 : 0;
       const before = T.hull;
       T.hull = Math.max(floor, T.hull - hullDmg);
       src.stats.damageDealt += before - T.hull;
+      // Crystal Vengeance: a chance for a shard to break off and fly back at the attacker.
+      if (augCount(T, "CRYSTAL_SHARDS") && this.rng.chance(this.db.augments?.CRYSTAL_SHARDS?.value ?? RULES.shardChance)) {
+        const back = st.ships[src.idx];
+        const r = this.rng.pick(back.rooms).id;
+        st.projectiles.push({
+          id: st.nextId++, from: T.idx, weapon: "__SHARD", slot: -1, kind: "LASER", delay: 0, t: 0, flight: RULES.flight.LASER,
+          target: { kind: "room", room: r }, px: 0, py: 0, damageBonus: 0,
+        });
+      }
     }
     if (sys) {
       const sd = dmg + bp.sysDamage;
-      if (sd > 0) {
+      // Titanium System Casing: a chance to negate system damage.
+      const casing = augCount(T, "SYSTEM_CASING") && this.rng.chance(this.db.augments?.SYSTEM_CASING?.value ?? 0.15);
+      if (sd > 0 && !casing) {
         sys.damage = Math.min(sys.level, sys.damage + sd);
         sys.repair = 0;
       }
-      if (bp.ion > 0) this.addIon(sys, bp.ion);
+      if (bp.ion > 0 && !this.ionNegated(T)) this.addIon(sys, bp.ion);
     }
     const pers = (dmg + bp.persDamage) * RULES.crewDamagePerPoint;
     const roomTiles = new Set(g.roomTiles.get(room));
@@ -519,7 +561,17 @@ export class Match {
     const medbay = ship.systems.medbay;
     const heal = RULES.medbayHeal[Math.min(3, this.eff(medbay))];
     const god = this.god.has(ship.idx);
+    const cb = ship.systems.clonebay;
+    const dna = augCount(ship, "BACKUP_DNA") > 0;
     for (const c of ship.crew) {
+      if (c.dead && c.clone !== undefined) {
+        // Clone bay: progress while powered; without power the queue is lost unless Backup DNA keeps it.
+        const p = this.eff(cb);
+        if (p > 0) c.clone += DT / RULES.cloneTime[Math.min(3, p)];
+        else if (!dna) c.clone = undefined;
+        if (c.clone !== undefined && c.clone >= 1 && cb) this.respawn(ship, g, c, cb.room);
+        continue;
+      }
       if (c.dead) continue;
       if (c.dying !== undefined) {
         // The death animation plays out before the crew member counts as dead.
@@ -527,6 +579,7 @@ export class Match {
         if (c.dying <= 0) {
           c.dead = true;
           c.dying = undefined;
+          if (cb && cb.level > 0) c.clone = 0;
           this.state.events.push({ e: "death", ship: ship.idx, crew: c.id });
         }
         continue;
@@ -536,7 +589,11 @@ export class Match {
       // Hazards
       const tr = raceOf(c.race);
       if (c.tile in rs.fires && !tr.fireImmune) c.hp -= RULES.fireCrewDps * DT;
-      if (rs.o2 < RULES.suffocateAt) c.hp -= RULES.suffocateDps * tr.suffocation * DT;
+      // Emergency Respirators halve suffocation damage.
+      const masks = augCount(ship, "O2_MASKS") ? (this.db.augments?.O2_MASKS?.value ?? 0.5) : 1;
+      if (rs.o2 < RULES.suffocateAt) c.hp -= RULES.suffocateDps * tr.suffocation * masks * DT;
+      // Engi Med-bot Dispersal: slow healing anywhere outside the medbay.
+      if (augCount(ship, "NANO_MEDBAY") && !(medbay && medbay.room === room) && c.hp < c.maxHp) c.hp = Math.min(c.maxHp, c.hp + RULES.nanoMedbay * DT);
       if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - tr.drainO2 * DT);
       if (god) c.hp = c.maxHp;
       if (medbay && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
@@ -558,7 +615,7 @@ export class Match {
         const ddx = nx - c.x;
         const ddy = ny - c.y;
         const d = Math.hypot(ddx, ddy);
-        const stepLen = RULES.crewSpeed * tr.speed * DT;
+        const stepLen = RULES.crewSpeed * tr.speed * (augCount(ship, "CREW_STIMS") ? 1 + (this.db.augments?.CREW_STIMS?.value ?? 0.25) : 1) * DT;
         if (d <= stepLen) {
           c.x = nx;
           c.y = ny;
@@ -598,6 +655,15 @@ export class Match {
     }
   }
 
+  private respawn(ship: ShipState, g: Geometry, c: CrewState, room: number): void {
+    const taken = new Set(ship.crew.filter((q) => !q.dead && q !== c).map((q) => q.tile));
+    const tiles = g.roomTiles.get(room) ?? [];
+    const tile = tiles.find((t) => !taken.has(t)) ?? tiles[0];
+    const [x, y] = unkey(tile);
+    Object.assign(c, { dead: false, clone: undefined, dying: undefined, hp: c.maxHp, tile, home: tile, x, y, path: [], task: "idle", stun: 0 });
+    this.state.events.push({ e: "clone", ship: ship.idx, crew: c.id });
+  }
+
   // ---------------------------------------------------------------- fire, breaches, oxygen
 
   private environmentTick(ship: ShipState): void {
@@ -611,6 +677,11 @@ export class Match {
       const nb = Object.keys(rs.breaches).length;
       if (nb) rs.o2 -= RULES.breachDrain * nb * (4 / tiles.length) * DT;
       const fireTiles = Object.keys(rs.fires);
+      // Fire Suppression puts fires out on its own; Slug Repair Gel seals breaches.
+      if (augCount(ship, "FIRE_EXTINGUISHERS"))
+        for (const t of fireTiles) if ((rs.fires[t] -= RULES.fireSuppression * DT) <= 0) delete rs.fires[t];
+      if (augCount(ship, "SLUG_GEL"))
+        for (const t of Object.keys(rs.breaches)) if ((rs.breaches[t] -= RULES.slugGel * DT) <= 0) delete rs.breaches[t];
       rs.o2 -= RULES.fireO2Use * fireTiles.length * DT;
       // Fire: starve, spread, burn the room's system.
       for (const t of fireTiles) {
@@ -625,7 +696,10 @@ export class Match {
           // Fire crosses doors too; a closed door halves the chance.
           const opts = g.adj.get(t) ?? [];
           const e = opts.length ? this.rng.pick(opts) : null;
-          if (e && (e.door < 0 || ship.doors[e.door] || this.rng.chance(0.5))) {
+          // Crossing a door: halved when it's closed, and less likely with every door level (super doors at 4).
+          const dl = Math.min(4, this.eff(ship.systems.doors));
+          const doorK = e && e.door >= 0 ? (ship.doors[e.door] ? 1 : RULES.fireDoorClosed) * Math.max(0.05, 1 - RULES.fireDoorPerLevel * dl) : 1;
+          if (e && this.rng.chance(doorK)) {
             const to = e.to;
             const tr = byId.get(g.tiles.get(to)!.room)!;
             if (!(to in tr.fires) && tr.o2 >= RULES.fireMinO2) {

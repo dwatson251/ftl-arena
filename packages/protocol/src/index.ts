@@ -35,10 +35,11 @@ export type DebugOp =
   | { op: "god"; on: boolean }
   | { op: "autopilot"; on: boolean; level?: number }
   | { op: "difficulty"; value: number }
-  | { op: "hull"; ship: 0 | 1; value: number }
+  | { op: "hull"; ship: 0 | 1; value?: number; delta?: number }
   | { op: "fire"; ship: 0 | 1 }
   | { op: "damage"; ship: 0 | 1 }
   | { op: "ion"; ship: 0 | 1 }
+  | { op: "breach"; ship: 0 | 1 }
   | { op: "hurt"; ship: 0 | 1 }
   | { op: "restart" };
 

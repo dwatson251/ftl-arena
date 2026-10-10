@@ -2,7 +2,7 @@ import { Application } from "pixi.js";
 import type { GameDB } from "@ftl/data";
 import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
 import type { MatchView } from "@ftl/sim";
-import { preload } from "./assets.ts";
+import { artReady, preload } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
 import { music } from "./audio.ts";
 import { Battle, LOGICAL } from "./battle.ts";
@@ -36,6 +36,7 @@ let error = "";
 let hasArt = false;
 
 const net = new Net(wsUrl, name || "Captain");
+artReady.push(() => render());
 net.on(onMsg);
 
 function onMsg(m: ServerMsg): void {
@@ -159,7 +160,8 @@ function renderDebug(): void {
       else if (a.op === "reveal") dbg({ op: "reveal", on: !debugInfo?.reveal });
       else if (a.op === "god") dbg({ op: "god", on: !debugInfo?.god });
       else if (a.op === "autopilot") dbg({ op: "autopilot", on: !debugInfo?.autopilot, level: 1 });
-      else if (a.op === "hull") dbg({ op: "hull", ship: who, value: Math.max(0, (lastView?.ships[who].hull ?? 0) - 5) });
+      else if (a.op === "hull") dbg({ op: "hull", ship: who, delta: Number(a.delta ?? -5) });
+      else if (a.op === "breach") dbg({ op: "breach", ship: who });
       else if (a.op === "fire") dbg({ op: "fire", ship: who });
       else if (a.op === "damage") dbg({ op: "damage", ship: who });
       else if (a.op === "ion") dbg({ op: "ion", ship: who });
@@ -189,8 +191,8 @@ function renderDebug(): void {
         <div class="dlabel">Bot difficulty <b data-diffval></b></div>
         <input type="range" min="0" max="100" step="5" data-diff style="width:100%">
         <div class="note" data-skill></div>
-        <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them">−5 hull</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button><button class="small" data-op="ion" data-who="them">ion</button><button class="small" data-op="hurt" data-who="them">hurt crew</button></div>
-        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me">−5 hull</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button></div>
+        <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="them" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="them">breach</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button><button class="small" data-op="ion" data-who="them">ion</button><button class="small" data-op="hurt" data-who="them">hurt crew</button></div>
+        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="me" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="me">breach</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button></div>
         <div class="debug-log" data-log></div>`
       : `<button class="small" data-toggle title="Debug">⟨ DEBUG</button>`;
   }

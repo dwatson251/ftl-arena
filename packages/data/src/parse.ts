@@ -100,7 +100,8 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     if (!SYSTEM_IDS.has(s.tag)) continue;
     const slotNum = kid(kid(s, "slot"), "number");
     const dir = kid(kid(s, "slot"), "direction")?.text.trim();
-    const station = slotNum ? Number(slotNum.text.trim()) : MANNED.has(s.tag) ? 0 : -1;
+    // -2 = a manned system with no <slot>: resolved later from rooms.xml (the interior's computer).
+    const station = slotNum ? Number(slotNum.text.trim()) : MANNED.has(s.tag) ? -2 : -1;
     systems.push({
       id: s.tag as SystemId,
       room: Number(s.attrs.room),
@@ -132,6 +133,7 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     maxPower: Number(kid(n, "maxPower")?.attrs.amount ?? 8),
     crewCount: crews.length ? crews.reduce((a, c) => a + (Number(c.attrs.amount) || 0), 0) : 3,
     crewRace: crews[0]?.attrs.class ?? "human",
+    augments: kids(n, "aug").map((a) => a.attrs.name).filter(Boolean),
     crewRaces: crews.length
       ? crews.flatMap((c) => Array.from({ length: Number(c.attrs.amount) || 0 }, () => c.attrs.class || "human"))
       : ["human", "human", "human"],
@@ -197,14 +199,14 @@ export function parseAnimations(xml: string, db: Pick<GameDB, "animSheets" | "we
       const fp = kid(n, "firePoint");
       const mp = kid(n, "mountPoint");
       db.weaponAnims[n.attrs.name] = {
-        sheet: txt(n, "sheet") ?? "", frames: +(d?.attrs.length ?? 1), chargedFrame: num(n, "chargedFrame"),
+        sheet: txt(n, "sheet") ?? "", sheetDef: db.animSheets[txt(n, "sheet") ?? ""], frames: +(d?.attrs.length ?? 1), chargedFrame: num(n, "chargedFrame"),
         fireFrame: num(n, "fireFrame"), firePoint: { x: +(fp?.attrs.x ?? 0), y: +(fp?.attrs.y ?? 0) },
         mountPoint: { x: +(mp?.attrs.x ?? 0), y: +(mp?.attrs.y ?? 0) },
       } satisfies WeaponAnim;
     } else if (n.tag === "anim") {
       const d = kid(n, "desc");
       db.anims[n.attrs.name] = {
-        sheet: txt(n, "sheet") ?? "", frames: +(d?.attrs.length ?? 1), x: +(d?.attrs.x ?? 0), y: +(d?.attrs.y ?? 0),
+        sheet: txt(n, "sheet") ?? "", sheetDef: db.animSheets[txt(n, "sheet") ?? ""], frames: +(d?.attrs.length ?? 1), x: +(d?.attrs.x ?? 0), y: +(d?.attrs.y ?? 0),
         time: num(n, "time", 1),
       } satisfies Anim;
     }
@@ -226,7 +228,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   const text = { ...parseText(read("data/text_blueprints.xml") ?? ""), ...parseText(read("data/text_misc.xml") ?? "") };
   const db: GameDB = {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
-    anims: {}, sounds: {}, names: [], hangar: [], enemies: [], music: [],
+    anims: {}, sounds: {}, names: [], hangar: [], enemies: [], music: [], augments: {},
   };
   const lists: Record<string, string[]> = {};
   const enemyNodes: XNode[] = [];
@@ -245,6 +247,12 @@ export function buildDbFromFtl(read: FileSource): GameDB {
       } else if (n.tag === "crewBlueprint") db.crew[n.attrs.name] = parseCrew(n, text);
       else if (n.tag === "shipBlueprint" && n.attrs.name?.startsWith("PLAYER_SHIP_")) {
         db.ships[n.attrs.name] = parseShip(n, text);
+      } else if (n.tag === "augBlueprint" && n.attrs.name && kid(n, "title")?.attrs.id) {
+        db.augments[n.attrs.name] = {
+          id: n.attrs.name, title: title(n, "title", text), desc: title(n, "desc", text) || text[`aug_${n.attrs.name}_desc`] || "",
+          cost: num(n, "cost"), value: parseFloat(txt(n, "value") ?? "0") || 0, stackable: txt(n, "stackable") === "true",
+          rarity: num(n, "rarity"),
+        };
       } else if (n.tag === "blueprintList" && n.attrs.name) lists[n.attrs.name] = kids(n, "name").map((x) => x.text.trim());
       else if (n.tag === "shipBlueprint" && n.attrs.name && n.attrs.layout && f.includes("Blueprints")) enemyNodes.push(n);
     }
@@ -276,6 +284,30 @@ export function buildDbFromFtl(read: FileSource): GameDB {
     db.layouts[s.layout] ??= parseLayout(s.layout, t, read(`data/${s.layout}.xml`));
     db.ships[id] = s;
     db.enemies.push(id);
+  }
+  // Default stations: rooms.xml gives each interior image's computer position and facing.
+  const roomXml = read("data/rooms.xml");
+  const computers: Record<string, { x: number; y: number; dir: string }> = {};
+  if (roomXml)
+    for (const r of walk(parseXml(roomXml), "roomLayout")) {
+      const cg = kid(r, "computerGlow");
+      if (cg) computers[r.attrs.name] = { x: Number(cg.attrs.x) || 0, y: Number(cg.attrs.y) || 0, dir: (cg.attrs.dir ?? "UP").toLowerCase() };
+    }
+  for (const s of Object.values(db.ships)) {
+    const L = db.layouts[s.layout];
+    for (const sys of s.systems) {
+      const pc = sys.img ? computers[sys.img.replace(/^room_/, "")] : undefined;
+      // A <slot> without a <direction>: face the interior's computer.
+      if (sys.station >= 0 && !sys.facing && pc && sys.id !== "medbay") sys.facing = pc.dir as ShipSystemSlot["facing"];
+      if (sys.station !== -2) continue;
+      const room = L?.rooms.find((r) => r.id === sys.room);
+      if (room && pc) {
+        const tx = Math.max(0, Math.min(room.w - 1, Math.floor(pc.x / 35)));
+        const ty = Math.max(0, Math.min(room.h - 1, Math.floor(pc.y / 35)));
+        sys.station = ty * room.w + tx;
+        sys.facing ??= pc.dir as ShipSystemSlot["facing"];
+      } else sys.station = 0;
+    }
   }
   for (const f of ["data/animations.xml", "data/dlcAnimations.xml"]) {
     const src = read(f);

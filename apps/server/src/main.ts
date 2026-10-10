@@ -25,24 +25,29 @@ const db = loadDb(ASSETS);
 console.log(`game data: ${db.source} (${db.hangar.length} hulls, ${Object.keys(db.weapons).length} weapons)`);
 
 const MIME: Record<string, string> = {
-  ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".ogg": "audio/ogg",
+  ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".ogg": "audio/ogg", ".font": "application/octet-stream",
   ".wav": "audio/wav", ".json": "application/json", ".xml": "text/xml", ".txt": "text/plain", ".svg": "image/svg+xml",
 };
 
-function serveFile(root: string, rel: string, res: import("node:http").ServerResponse): boolean {
+function serveFile(root: string, rel: string, res: import("node:http").ServerResponse, head = false): boolean {
   const p = normalize(join(root, rel));
   if (!p.startsWith(root) || !existsSync(p) || !statSync(p).isFile()) return false;
-  res.writeHead(200, { "content-type": MIME[extname(p)] ?? "application/octet-stream", "cache-control": "max-age=3600" });
-  createReadStream(p).pipe(res);
+  res.writeHead(200, {
+    "content-type": MIME[extname(p)] ?? "application/octet-stream", "content-length": statSync(p).size, "cache-control": "max-age=3600",
+  });
+  // HEAD gets headers only: streaming a body to a HEAD request makes proxies (Vite's) abort it.
+  if (head) res.end();
+  else createReadStream(p).pipe(res);
   return true;
 }
 
 const http = createServer((req, res) => {
   const url = decodeURIComponent((req.url ?? "/").split("?")[0]);
-  if (url.startsWith("/assets/") && serveFile(ASSETS, url.slice(8), res)) return;
+  const head = req.method === "HEAD";
+  if (url.startsWith("/assets/") && serveFile(ASSETS, url.slice(8), res, head)) return;
   if (!url.startsWith("/assets/") && existsSync(CLIENT)) {
-    if (serveFile(CLIENT, url === "/" ? "index.html" : url.slice(1), res)) return;
-    if (serveFile(CLIENT, "index.html", res)) return;
+    if (serveFile(CLIENT, url === "/" ? "index.html" : url.slice(1), res, head)) return;
+    if (serveFile(CLIENT, "index.html", res, head)) return;
   }
   res.writeHead(404).end("not found");
 });

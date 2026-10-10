@@ -12,8 +12,10 @@ const ready = new Map<string, Texture | null>();
 export function tex(path: string): Promise<Texture | null> {
   let p = cache.get(path);
   if (!p) {
-    p = fetch(BASE + path, { method: "HEAD" })
-      .then((r) => (r.ok && (r.headers.get("content-type") ?? "").startsWith("image") ? Assets.load<Texture>(BASE + path) : null))
+    // One GET per asset (no HEAD probe: hundreds of HEADs through Vite's dev proxy get aborted). A
+    // missing file just resolves to null and the renderer draws its fallback.
+    p = Assets.load<Texture>({ src: BASE + path, loadParser: "loadTextures" })
+      .then((t) => t ?? null)
       .catch(() => null)
       .then((t) => {
         ready.set(path, t);
@@ -45,7 +47,7 @@ export function frame(t: Texture, x: number, y: number, w: number, h: number): T
 export function animFrame(db: GameDB, name: string, i: number, file?: string): Texture | null {
   const a = db.anims[name];
   if (!a) return null;
-  const sh = db.animSheets[a.sheet];
+  const sh = a.sheetDef ?? db.animSheets[a.sheet];
   if (!sh) return null;
   const t = texNow(file ?? sh.file);
   if (!t) return null;
@@ -60,7 +62,7 @@ export function animFrame(db: GameDB, name: string, i: number, file?: string): T
 export function weaponFrame(db: GameDB, art: string, i: number): Texture | null {
   const a = db.weaponAnims[art];
   if (!a) return null;
-  const sh = db.animSheets[a.sheet];
+  const sh = a.sheetDef ?? db.animSheets[a.sheet];
   if (!sh) return null;
   const t = texNow(sh.file);
   if (!t) return null;
@@ -79,6 +81,7 @@ export async function preload(db: GameDB): Promise<boolean> {
   for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"])
     for (const c of ["green", "orange", "red", "grey"]) files.add(`icons/s_${sys}_${c}1.png`);
   for (const sh of Object.values(db.animSheets)) if (/^(weapons|effects|people)\//.test(sh.file)) files.add(sh.file);
+  for (const a of [...Object.values(db.anims), ...Object.values(db.weaponAnims)]) if (a.sheetDef) files.add(a.sheetDef.file);
   for (const r of Object.keys(db.crew)) files.add(`people/${r}_color.png`);
   for (const id of db.hangar) {
     const s = db.ships[id];
@@ -98,9 +101,16 @@ export async function preload(db: GameDB): Promise<boolean> {
   for (let i = 1; i <= 4; i++) files.add(`misc/crosshairs_placed${i}.png`), files.add(`misc/crosshairs_placed${i}_yellow.png`);
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
-  const r = await Promise.all([...files].map(tex));
-  return r.some(Boolean);
+  // Art is "available" as soon as one known image loads; everything else keeps loading in the background
+  // (the renderers pick textures up as they arrive).
+  const probe = `ship/${db.ships[db.hangar[0]]?.img}_base.png`;
+  const ok = !!(await tex(probe));
+  void Promise.all([...files].map(tex)).then(() => artReady.forEach((f) => f()));
+  return ok;
 }
+
+/** Called once every preloaded texture has arrived (for one last re-render). */
+export const artReady: (() => void)[] = [];
 
 /** FTL HUD art the battle screen uses. */
 export const UI_FILES = [
@@ -113,5 +123,5 @@ export const UI_FILES = [
   "bar_weapon_minibox_glow.png", "wireUI/wire_full.png", "wireUI/wire_456_cap.png", "wireUI/wire_36.png", "wireUI/wire_54_cap.png",
   "systemUI/button_door_base.png", "systemUI/button_door_top_on.png", "systemUI/button_door_top_off.png", "systemUI/button_door_bottom_on.png",
   "systemUI/button_door_bottom_off.png", "systemUI/button_door_top_select2.png", "systemUI/button_door_bottom_select2.png",
-  "people/green_destination.png", "systemUI/manning_white.png", "people/healing_strip11.png", "combatUI/icon_chain_on.png", "combatUI/icon_chain_off.png", "statusUI/button_station_base.png", "statusUI/button_station_assign_on.png", "statusUI/button_station_return_on.png", "effects/thrusters_on.png", "ship/enemy_shields.png", "upgradeUI/details_scrap.png", "people/health_box.png", "people/health_box_red.png", "effects/door_sheet.png", "effects/low_o2_stripes_2x2.png",
+  "people/green_destination.png", "systemUI/manning_white.png", "people/healing_strip11.png", "ship/interior/clone_bottom.png", "ship/interior/clone_top.png", "ship/interior/clone_gas.png", "combatUI/icon_chain_on.png", "combatUI/icon_chain_off.png", "statusUI/button_station_base.png", "statusUI/button_station_assign_on.png", "statusUI/button_station_return_on.png", "effects/thrusters_on.png", "ship/enemy_shields.png", "upgradeUI/details_scrap.png", "people/health_box.png", "people/health_box_red.png", "effects/door_sheet.png", "effects/low_o2_stripes_2x2.png",
 ];

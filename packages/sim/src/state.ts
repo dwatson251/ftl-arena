@@ -74,6 +74,8 @@ export interface CrewState {
   dead: boolean;
   /** Seconds left of the death animation; the crew member only counts as dead once it ends. */
   dying?: number;
+  /** Clone bay progress 0..1 while this dead crew member is being cloned. */
+  clone?: number;
 }
 
 export type WeaponTarget =
@@ -111,7 +113,11 @@ export interface ShipState {
   missiles: number;
   shieldLayers: number;
   shieldCharge: number;
+  /** Zoltan Shield points (augment); absorbs everything until gone. */
+  superShield?: number;
   evasion: number;
+  /** Augment ids (stackable ones may repeat). */
+  augments?: string[];
   /** Stats for the end screen. */
   stats: { shotsFired: number; hits: number; misses: number; blocked: number; damageDealt: number };
 }
@@ -141,6 +147,7 @@ export type MatchEvent =
   | { e: "beam"; ship: 0 | 1; x1: number; y1: number; x2: number; y2: number; blocked: boolean }
   | { e: "fireStart" | "breach"; ship: 0 | 1; room: number }
   | { e: "death"; ship: 0 | 1; crew: number }
+  | { e: "clone"; ship: 0 | 1; crew: number }
   | { e: "end"; winner: 0 | 1 | -1; reason: string };
 
 export interface MatchState {

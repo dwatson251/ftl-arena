@@ -116,3 +116,8 @@ button.buy { display: inline-flex; align-items: center; min-width: 64px; justify
 
 .warnbox { margin-top: 14px; padding: 10px; border: 2px solid var(--bad); background: #2a1616; }
 .warnbox .row { display: flex; gap: 8px; margin-top: 8px; }
+
+.wcard.aug { align-items: flex-start; }
+.wcard.aug.inert { opacity: 0.7; }
+.note.effect { color: #9fe89f; }
+.note.noeffect { color: #8a8e98; font-style: italic; }

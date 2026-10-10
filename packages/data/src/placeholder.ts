@@ -35,6 +35,7 @@ const systems: SystemBP[] = [
   sys("pilot", 3, [20, 50]),
   sys("sensors", 3, [25, 40]),
   sys("doors", 3, [35, 50]),
+  sys("clonebay", 3, [35, 45]),
 ];
 
 /** An original 13-room hull: a 3-wide spine with wings. */
@@ -89,12 +90,13 @@ export function placeholderDb(): GameDB {
     ships: {
       PH_SKIFF: {
         id: "PH_SKIFF", title: "Arena Skiff", className: "Practice Skiff · Type A", artDir: "ship", layout: "ph_skiff", img: "", weaponSlots: 4, weapons: ["PH_TORPEDO", "PH_TRIPLE"],
-        missiles: 8, health: 30, maxPower: 8, crewCount: 3, crewRace: "human", crewRaces: ["human", "human", "human"],
+        missiles: 8, health: 30, maxPower: 8, crewCount: 3, crewRace: "human", crewRaces: ["human", "human", "human"], augments: [],
         systems: [
           { id: "pilot", room: 0, power: 1, start: true, station: 1 },
           { id: "shields", room: 1, power: 2, start: true, station: 0 },
           { id: "weapons", room: 2, power: 3, start: true, station: 1 },
           { id: "medbay", room: 4, power: 1, start: true, station: -1 },
+          { id: "clonebay", room: 4, power: 1, start: false, station: -1 },
           { id: "oxygen", room: 5, power: 1, start: true, station: -1 },
           { id: "doors", room: 6, power: 1, start: true, station: 0 },
           { id: "engines", room: 7, power: 2, start: true, station: 0 },
@@ -103,6 +105,6 @@ export function placeholderDb(): GameDB {
       },
     },
     layouts: { ph_skiff: skiff },
-    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, names: [], enemies: [], music: [], hangar: ["PH_SKIFF"],
+    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, names: [], enemies: [], music: [], augments: {}, hangar: ["PH_SKIFF"],
   };
 }

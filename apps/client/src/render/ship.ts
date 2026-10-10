@@ -118,7 +118,7 @@ export class ShipRenderer {
     return { x: g.x + g.w / 2, y: g.y + g.h / 2 };
   }
 
-  private buildStatic(): void {
+  private buildStatic(v?: ShipView): void {
     const bp = this.db.ships[this.shipId];
     const L = this.layout;
     this.hull.removeChildren();
@@ -146,11 +146,24 @@ export class ShipRenderer {
       g.stroke({ color: GRID, width: 1 });
     }
     for (const r of L.rooms) g.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).stroke({ color: WALL, width: 3 });
+    // Interiors for the systems actually installed (a bought clone bay replaces the medbay art).
     for (const s of bp.systems) {
-      if (!s.img || !s.start) continue;
-      const t = texNow(`ship/interior/${s.img}.png`);
+      const installed = v ? !!v.systems[s.id] : s.start;
       const r = L.rooms.find((q) => q.id === s.room);
-      if (!t || !r) continue;
+      if (!installed || !r) continue;
+      if (s.id === "clonebay") {
+        for (const part of ["clone_bottom", "clone_top"]) {
+          const t = texNow(`ship/interior/${part}.png`);
+          if (!t) continue;
+          const sp = new Sprite(t);
+          sp.position.set(r.x * TILE, r.y * TILE);
+          this.interior.addChild(sp);
+        }
+        continue;
+      }
+      if (!s.img) continue;
+      const t = texNow(`ship/interior/${s.img}.png`);
+      if (!t) continue;
       const sp = new Sprite(t);
       sp.position.set(r.x * TILE, r.y * TILE);
       this.interior.addChild(sp);
@@ -174,7 +187,7 @@ export class ShipRenderer {
   }
 
   update(v: ShipView, crew: CrewDraw[], time: number, o: ShipDrawOpts): void {
-    if (!this.built) this.buildStatic();
+    if (!this.built) this.buildStatic(v);
     const L = this.layout;
     const up = this.upright;
     const d = this.dyn;
@@ -212,6 +225,13 @@ export class ShipRenderer {
         else g.rect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2).fill({ color: 0x3cff3c, alpha: 0.35 });
       }
     }
+    // Clone bay gas while someone is being cloned.
+    const cbs = v.systems.clonebay;
+    const gas = texNow("ship/interior/clone_gas.png");
+    if (cbs && gas && v.crew.some((c) => c.dead && c.clone !== undefined)) {
+      const r = L.rooms.find((q) => q.id === cbs.room)!;
+      d.sprite("cgas", gas, r.x * TILE, r.y * TILE, { alpha: 0.5 + 0.3 * Math.sin(time * 4) });
+    }
     // Hazards
     if (v.interior) {
       for (const rs of v.rooms) {
@@ -238,7 +258,9 @@ export class ShipRenderer {
     }
     // Doors from FTL's door sheet: rows = door level, columns = opening frames.
     const doorTex = texNow("effects/door_sheet.png");
-    const level = Math.max(1, Math.min(4, v.systems.doors?.level ?? 1));
+    // Door sprite row = door strength: the doors level, +1 while manned (level 4 = super doors).
+    const dsys = v.systems.doors;
+    const level = Math.max(1, Math.min(4, (dsys?.level ?? 1) + (dsys?.manBonus ?? 0)));
     this.geo.doors.forEach((dr, i) => {
       const open = v.doors[i];
       const a = (this.doorAnim[i] ??= { open, t: -9 });

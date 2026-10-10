@@ -51,8 +51,18 @@ export type SystemId =
   | "shields" | "engines" | "oxygen" | "weapons" | "medbay" | "pilot" | "sensors" | "doors"
   | "drones" | "teleporter" | "cloaking" | "battery" | "mind" | "hacking" | "clonebay" | "artillery";
 
-/** Systems the v1 arena simulates. Others are parsed but not installable yet. */
-export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"];
+/** Systems the arena simulates. Others are parsed but not installable yet. */
+export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "medbay", "clonebay", "pilot", "sensors", "doors"];
+
+export interface AugmentBP {
+  id: string;
+  title: string;
+  desc: string;
+  cost: number;
+  value: number;
+  stackable: boolean;
+  rarity: number;
+}
 /** AE subsystems: their power comes from their own level, not the reactor. */
 export const SUBSYSTEMS: SystemId[] = ["pilot", "sensors", "doors", "battery"];
 
@@ -164,6 +174,8 @@ export interface ShipBP {
   maxPower: number;
   crewCount: number;
   crewRace: string;
+  /** Starting augments (free). */
+  augments: string[];
   /** One race per starting crew member, in blueprint order. */
   crewRaces: string[];
 }
@@ -178,6 +190,8 @@ export interface AnimSheet {
 
 export interface WeaponAnim {
   sheet: string;
+  /** The sheet as it was defined when this anim was declared (FTL reuses sheet names). */
+  sheetDef?: AnimSheet;
   frames: number;
   chargedFrame: number;
   fireFrame: number;
@@ -187,6 +201,7 @@ export interface WeaponAnim {
 
 export interface Anim {
   sheet: string;
+  sheetDef?: AnimSheet;
   frames: number;
   x: number;
   y: number;
@@ -210,6 +225,7 @@ export interface GameDB {
   music: { name: string; explore?: string; combat?: string }[];
   /** Crew name pool (names.xml). */
   names: string[];
+  augments: Record<string, AugmentBP>;
   /** Single-player enemy hulls the practice bot can fly. */
   enemies: string[];
   /** Base hulls offered in the hangar, in order. */

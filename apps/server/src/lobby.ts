@@ -144,7 +144,11 @@ export class Lobby {
       case "difficulty":
         return this.setPractice(c, { difficulty: d.value });
       case "hull":
-        if (m) m.state.ships[d.ship].hull = Math.max(0, Math.min(m.state.ships[d.ship].maxHull, d.value | 0));
+        if (m) {
+          const s = m.state.ships[d.ship];
+          const v = d.delta !== undefined ? s.hull + d.delta : (d.value ?? s.hull);
+          s.hull = Math.max(0, Math.min(s.maxHull, Math.round(v)));
+        }
         break;
       case "fire":
         if (m) {
@@ -169,6 +173,15 @@ export class Lobby {
           const pick = sys[(Math.random() * sys.length) | 0]!;
           pick.ion = Math.min(pick.level, pick.ion + 2);
           pick.ionTimer = 5;
+        }
+        break;
+      case "breach":
+        if (m) {
+          // A breach in a random room that doesn't have one yet (one per room, as in the sim).
+          const s = m.state.ships[d.ship];
+          const free = s.rooms.filter((r) => !Object.keys(r.breaches).length);
+          const r = free[(Math.random() * free.length) | 0];
+          if (r) r.breaches[m.geo(s).roomTiles.get(r.id)![0]] = 100;
         }
         break;
       case "hurt":

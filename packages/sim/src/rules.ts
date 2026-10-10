@@ -81,6 +81,18 @@ export const RULES = {
   unlimitedReactor: 60,
   /** Death animation length (5 frames). */
   deathAnim: 0.9,
+  /** Clone bay: seconds to clone by power 0..3 (est). */
+  cloneTime: [0, 12, 9, 7],
+  /** Zoltan Shield (ENERGY_SHIELD augment): super-shield points at battle start; it doesn't recharge in combat (est 5). */
+  zoltanShield: 5,
+  /** Fire spread across a door: x0.5 when closed, then x(1 - 0.18 per door level). */
+  fireDoorClosed: 0.5,
+  fireDoorPerLevel: 0.18,
+  /** Augment numbers that aren't in the blueprint <value> (est). */
+  fireSuppression: 12,
+  slugGel: 5,
+  nanoMedbay: 1.6,
+  shardChance: 0.1,
   maxCrew: 8,
   sellRefund: 0.5,
 };
@@ -120,3 +132,26 @@ export const RACES: Record<string, RaceTraits> = {
   anaerobic: { hp: 100, speed: 1, repair: 1, combat: 1, suffocation: 0, drainO2: 1.5, blurb: "Doesn't breathe; drains O2 from its room." },
 };
 export const raceOf = (r: string): RaceTraits => RACES[r] ?? RACES.human;
+
+/**
+ * What each augment does in the arena. Ids not listed here are kept for authenticity but have no effect
+ * in a 1v1 fight (FTL jumps, the map, scrap) or wait for systems the arena doesn't have yet.
+ */
+export const AUGMENT_EFFECTS: Record<string, string> = {
+  AUTO_COOLDOWN: "Weapon charge ceilings 10% lower (stacks).",
+  SHIELD_RECHARGE: "Shield layers recharge 15% faster (stacks).",
+  WEAPON_PREIGNITE: "Powered weapons start the battle fully charged.",
+  EXPLOSIVE_REPLICATOR: "Missiles and bombs have a 50% chance not to use a missile.",
+  ENERGY_SHIELD: "Zoltan super shield: absorbs 5 points of anything (bombs and beams too) before your shields are touched. No recharge in battle.",
+  ROCK_ARMOR: "15% chance to negate hull damage from a hit (systems still take it).",
+  SYSTEM_CASING: "15% chance to negate system damage from a hit (hull still takes it).",
+  ION_ARMOR: "50% chance to negate ion damage (stacks).",
+  CRYSTAL_SHARDS: "10% chance, when your hull is hit, to fire a 1-damage piercing shard back.",
+  O2_MASKS: "Crew take half damage from low oxygen.",
+  NANO_MEDBAY: "Crew heal slowly anywhere outside the medbay.",
+  CREW_STIMS: "Crew move 25% faster.",
+  LIFE_SCANNER: "See enemy crew even without sensors.",
+  FIRE_EXTINGUISHERS: "Fires on your ship burn out on their own, quickly.",
+  SLUG_GEL: "Hull breaches slowly seal themselves.",
+  BACKUP_DNA: "The clone bay keeps its queue while unpowered or destroyed.",
+};

@@ -34,7 +34,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   const enemy = st.ships[1 - you];
   const sensors = m.eff(own.systems.sensors);
   const over = st.winner !== null || reveal;
-  const telepath = own.crew.some((c) => !c.dead && raceOf(c.race).telepathic);
+  const telepath = own.crew.some((c) => !c.dead && raceOf(c.race).telepathic) || (own.augments ?? []).includes("LIFE_SCANNER");
 
   const ownView: ShipView = { ...structuredClone(own), visibleRooms: null, interior: true, weaponsKnown: true };
   if (sensors <= 0 && !over) {
@@ -67,6 +67,12 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   for (const w of ev.weapons) {
     w.target = null;
     w.autofire = false;
+  }
+  if (!over) {
+    // The enemy's evasion is never shown (a later hacking drone on its helm/engines would reveal it), and
+    // its hull only with level-3 sensors.
+    ev.evasion = -1;
+    if (!ev.weaponsKnown) ev.hull = -1;
   }
   return {
     you, tick: st.tick, config: st.config, ships: you === 0 ? [ownView, ev] : [ev, ownView],

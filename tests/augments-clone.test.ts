@@ -1,0 +1,110 @@
+import { describe, expect, it } from "vitest";
+import { placeholderDb, type GameDB } from "@ftl/data";
+import { baseLoadout, DEFAULT_CONFIG, Match, priceLoadout, viewFor } from "@ftl/sim";
+
+function dbWithAugs(): GameDB {
+  const db = placeholderDb();
+  const a = (id: string, cost: number, value: number, stackable = false) => ({ id, title: id, desc: "", cost, value, stackable, rarity: 1 });
+  db.augments = {
+    AUTO_COOLDOWN: a("AUTO_COOLDOWN", 40, 0.1, true), ENERGY_SHIELD: a("ENERGY_SHIELD", 80, 2), ROCK_ARMOR: a("ROCK_ARMOR", 80, 0.15),
+    BACKUP_DNA: a("BACKUP_DNA", 40, 0), O2_MASKS: a("O2_MASKS", 50, 0.5),
+  };
+  return db;
+}
+
+describe("augments", () => {
+  it("are priced, capped at 3 and non-stackables can't repeat", () => {
+    const db = dbWithAugs();
+    const l = { ...baseLoadout(db, "PH_SKIFF"), augments: ["AUTO_COOLDOWN", "AUTO_COOLDOWN"] };
+    expect(priceLoadout(db, l, 1000).total).toBe(80);
+    expect(priceLoadout(db, { ...l, augments: ["ROCK_ARMOR", "ROCK_ARMOR"] }, 1000).ok).toBe(false);
+    expect(priceLoadout(db, { ...l, augments: ["AUTO_COOLDOWN", "AUTO_COOLDOWN", "O2_MASKS", "ROCK_ARMOR"] }, 1000).ok).toBe(false);
+  });
+  it("Automated Re-loader lowers the charge ceiling per copy", () => {
+    const db = dbWithAugs();
+    const base = baseLoadout(db, "PH_SKIFF");
+    const m = new Match(db, DEFAULT_CONFIG, [{ ...base, augments: ["AUTO_COOLDOWN", "AUTO_COOLDOWN"] }, base], ["a", "b"]);
+    m.step();
+    const w0 = m.state.ships[0].weapons.find((w) => w.powered)!;
+    const w1 = m.state.ships[1].weapons.find((w) => w.bp === w0.bp)!;
+    expect(w0.cd! / w1.cd!).toBeCloseTo(0.81, 2);
+  });
+  it("Zoltan Shield absorbs hits before shields and hull", () => {
+    const db = dbWithAugs();
+    const base = baseLoadout(db, "PH_SKIFF");
+    const m = new Match(db, { ...DEFAULT_CONFIG, seed: 3 }, [base, { ...base, augments: ["ENERGY_SHIELD"] }], ["a", "b"]);
+    const t = m.state.ships[1];
+    expect(t.superShield).toBe(5);
+    const hull = t.hull;
+    m.state.projectiles.push({ id: 999, from: 0, weapon: "PH_TORPEDO", slot: 0, kind: "MISSILES", delay: 0, t: 0, flight: 0.01, target: { kind: "room", room: 3 }, px: 0, py: 0, damageBonus: 0 });
+    t.evasion = 0;
+    m.state.ships[1].systems.engines!.damage = 2;
+    m.step();
+    m.step();
+    expect(t.superShield).toBeLessThan(5);
+    expect(t.hull).toBe(hull);
+  });
+});
+
+describe("clone bay", () => {
+  it("clones a dead crew member back while powered, and loses the queue without power (unless Backup DNA)", () => {
+    for (const dna of [false, true]) {
+      const db = dbWithAugs();
+      const base = baseLoadout(db, "PH_SKIFF");
+      const lo = { ...base, systems: { ...base.systems, medbay: 0, clonebay: 1 }, crew: [...base.crew, { name: "Spare", race: "human" }], augments: dna ? ["BACKUP_DNA"] : [] };
+      expect(priceLoadout(db, lo, 1000).ok).toBe(true);
+      const m = new Match(db, DEFAULT_CONFIG, [lo, base], ["a", "b"]);
+      const s = m.state.ships[0];
+      const cb = s.systems.clonebay!;
+      m.step();
+      if (cb.power === 0) cb.power = 1;
+      const victim = s.crew[0];
+      victim.hp = 0;
+      for (let i = 0; i < 40; i++) m.step();
+      expect(victim.dead).toBe(true);
+      expect(victim.clone).toBeDefined();
+      // Cut the power for a moment.
+      cb.damage = cb.level;
+      m.step();
+      expect(victim.clone !== undefined).toBe(dna);
+      cb.damage = 0;
+      cb.power = 1;
+      for (let i = 0; i < 30 * 15; i++) m.step();
+      expect(victim.dead).toBe(!dna);
+      if (dna) expect(victim.hp).toBe(victim.maxHp);
+    }
+  });
+});
+
+describe("doors and fog", () => {
+  it("manned level-3 doors become super doors (level 4)", () => {
+    const db = placeholderDb();
+    const base = baseLoadout(db, "PH_SKIFF");
+    const m = new Match(db, DEFAULT_CONFIG, [{ ...base, systems: { ...base.systems, doors: 3 } }, base], ["a", "b"]);
+    const s = m.state.ships[0];
+    const d = s.systems.doors!;
+    const c = s.crew[0];
+    c.tile = d.station;
+    c.path = [];
+    m.step();
+    expect(m.eff(d)).toBe(4);
+  });
+  it("hides the enemy's evasion always, and its hull without level-3 sensors", () => {
+    const db = placeholderDb();
+    const base = baseLoadout(db, "PH_SKIFF");
+    const m = new Match(db, DEFAULT_CONFIG, [base, base], ["a", "b"]);
+    m.step();
+    const v = viewFor(m, 0);
+    expect(v.ships[1].evasion).toBe(-1);
+    expect(v.ships[1].hull).toBe(-1);
+    m.state.ships[0].systems.sensors!.level = 3;
+    m.step();
+    expect(viewFor(m, 0).ships[1].hull).toBeGreaterThan(0);
+  });
+  it("unrestricted mode lifts only the weapons system", () => {
+    const db = placeholderDb();
+    const base = baseLoadout(db, "PH_SKIFF");
+    expect(priceLoadout(db, { ...base, systems: { ...base.systems, weapons: 20 } }, 99999, [], true).ok).toBe(true);
+    expect(priceLoadout(db, { ...base, systems: { ...base.systems, shields: 12 } }, 99999, [], true).ok).toBe(false);
+  });
+});

@@ -6,12 +6,12 @@ import type { GameDB, SystemId } from "@ftl/data";
 import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
-  baseLoadout, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
+  AUGMENT_EFFECTS, baseLoadout, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
   type MatchConfig,
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-const STEPS = ["Ship", "Systems", "Weapons", "Crew", "Launch"] as const;
+const STEPS = ["Ship", "Systems", "Weapons", "Crew", "Augments", "Launch"] as const;
 type Step = (typeof STEPS)[number];
 
 export interface HangarHooks {
@@ -119,7 +119,7 @@ export class Hangar {
   /** A crew portrait (FTL counts sheet rows from the bottom). */
   private portrait(race: string, scale = 1.4): string {
     const a = this.db.anims[`${race}_portrait`] ?? this.db.anims[`${race}_walk_down`];
-    const sh = a && this.db.animSheets[a.sheet];
+    const sh = a && (a.sheetDef ?? this.db.animSheets[a.sheet]);
     if (!a || !sh || !this.hasArt()) return `<div class="ph-portrait">${h(race[0].toUpperCase())}</div>`;
     const rows = Math.round(sh.h / sh.fh);
     const fx = a.x * sh.fw;
@@ -132,7 +132,7 @@ export class Hangar {
   private weaponArt(id: string, scale = 1): string {
     const bp = this.db.weapons[id];
     const wa = bp && this.db.weaponAnims[bp.weaponArt];
-    const sh = wa && this.db.animSheets[wa.sheet];
+    const sh = wa && (wa.sheetDef ?? this.db.animSheets[wa.sheet]);
     if (!wa || !sh || !this.hasArt()) return `<div class="ph-weapon">${h(bp?.type?.[0] ?? "?")}</div>`;
     const css = this.sheetCss(sh.file, wa.chargedFrame * sh.fw, 0, sh.fw, sh.fh, sh.w, sh.h, scale);
     return `<div class="weapon-art" style="width:${sh.fh * scale}px;height:${sh.fw * scale}px"><div style="${css};transform:rotate(90deg) translate(0,-100%);transform-origin:0 0;position:absolute;left:0;top:0"></div></div>`;
@@ -148,7 +148,7 @@ export class Hangar {
   }
 
   private sysIcon(id: string): string {
-    return this.hasArt() ? `<img class="sysicon" src="/assets/img/icons/s_${id}_green1.png">` : `<span class="sysicon ph">${id.slice(0, 2).toUpperCase()}</span>`;
+    return this.hasArt() ? `<img class="sysicon" src="/assets/img/icons/s_${id}.png">` : `<span class="sysicon ph">${id.slice(0, 2).toUpperCase()}</span>`;
   }
 
   // ---------------------------------------------------------------- render
@@ -158,7 +158,9 @@ export class Hangar {
     const l = this.loadout;
     if (!lobby || !l) return;
     const active = document.activeElement;
-    if (active && this.el.contains(active) && (active as HTMLElement).tagName === "INPUT" && (active as HTMLInputElement).type === "text") {
+    // Don't rebuild under the user's cursor: a focused field (text, scrap number, slider, select) would
+    // lose focus on every lobby update. Re-render once it loses focus.
+    if (active && this.el.contains(active) && ["INPUT", "SELECT", "TEXTAREA"].includes((active as HTMLElement).tagName)) {
       this.pendingRender = true;
       return;
     }
@@ -168,7 +170,7 @@ export class Hangar {
     const priced = priceLoadout(db, l, cfg.scrap, cfg.shipPool, cfg.unlimited);
     const me = lobby.players.find((p) => p.id === this.me());
     const scrollTop = this.el.querySelector(".hg-main")?.scrollTop ?? 0;
-    const body = { Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Crew: () => this.stepCrew(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
+    const body = { Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
     this.el.innerHTML = `
       <div class="hg">
         <div class="hg-steps">${STEPS.map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""}" data-step="${s}"><b>${i + 1}</b> ${s}</button>`).join("")}
@@ -236,6 +238,7 @@ export class Hangar {
       <div class="note">${h(sys)}</div>
       <h2 style="margin-top:10px">Weapons</h2>${l.weapons.map((w) => `<div class="note">• ${h(db.weapons[w]?.title ?? w)}</div>`).join("") || `<div class="note">none</div>`}
       <h2 style="margin-top:10px">Crew (${l.crew.length})</h2>${l.crew.map((c) => `<div class="note">• ${h(c.name)} <span style="opacity:.7">${h(db.crew[c.race]?.title ?? c.race)}</span></div>`).join("")}
+      <h2 style="margin-top:10px">Augments</h2>${(l.augments ?? []).map((a) => `<div class="note">• ${h(db.augments[a]?.title ?? a)}</div>`).join("") || `<div class="note">none</div>`}
       <h2 style="margin-top:10px">Bill</h2>
       ${priced.lines.map((x) => `<div class="kv note"><span>${h(x.item)}</span><span>${x.scrap}</span></div>`).join("") || `<div class="note">Nothing bought yet.</div>`}
       ${priced.errors.map((e) => `<div class="err">${h(e)}</div>`).join("")}
@@ -306,7 +309,7 @@ export class Hangar {
       })
       .join("");
     return `<h2>2 · Systems</h2>
-      <div class="note">Green bars came with the hull; yellow ones are bought. Shields give a layer per 2 bars; engines give evasion; weapons bars power your guns.</div>
+      <div class="note">Green bars came with the hull; yellow ones are bought. Shields give a layer per 2 bars; engines give evasion; weapons bars power your guns. The medbay and clone bay share a room: installing one replaces the other.</div>
       ${rows}
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>
         <button class="small" data-reactor="-1" ${l.reactor <= base.reactor ? "disabled" : ""}>−</button>
@@ -388,14 +391,42 @@ export class Hangar {
       .join("");
     return `<h2>4 · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
       <div class="note">Starting crew are free. Rename anyone; dismissing gives no refund. Crew fight fires, repair and man stations: manned helm and engines add evasion, manned weapons charge faster, manned shields recharge faster.</div>
-      ${crew}<h3>Hire</h3><div class="race-grid">${hire}</div>${this.nav("Weapons", "Launch")}`;
+      ${crew}<h3>Hire</h3><div class="race-grid">${hire}</div>${this.nav("Weapons", "Augments")}`;
+  }
+
+  private stepAugments(l: Loadout): string {
+    const db = this.db;
+    const augs = l.augments ?? [];
+    const base = baseLoadout(db, l.ship).augments ?? [];
+    const full = augs.length >= MAX_AUGMENTS;
+    const fitted = Array.from({ length: MAX_AUGMENTS }, (_, i) => {
+      const id = augs[i];
+      if (!id) return `<div class="wslot empty">augment slot ${i + 1}</div>`;
+      const a = db.augments[id];
+      return `<div class="wslot"><div><b>${h(a?.title ?? id)}</b>${base.includes(id) ? ` <span class="note">(came with the hull)</span>` : ""}<div class="note">${h(AUGMENT_EFFECTS[id] ?? "No effect in the arena.")}</div></div><button class="small" data-unaug="${i}" title="Remove">✕</button></div>`;
+    }).join("");
+    const all = Object.values(db.augments).sort((a, b) => Number(!AUGMENT_EFFECTS[a.id]) - Number(!AUGMENT_EFFECTS[b.id]) || a.title.localeCompare(b.title));
+    const cards = all
+      .map((a) => {
+        const has = augs.includes(a.id);
+        const effect = AUGMENT_EFFECTS[a.id];
+        return `<div class="wcard aug ${effect ? "" : "inert"}"><div class="wcard-body"><b>${h(a.title)}</b>${a.stackable ? ` <span class="note">stacks</span>` : ""}
+          <div class="note">${h(a.desc)}</div>
+          <div class="note ${effect ? "effect" : "noeffect"}">${effect ? `Arena: ${h(effect)}` : "No effect in the arena (kept for authenticity)."}</div></div>
+          <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) ? "disabled" : ""}>${this.scrapIcon()}${a.cost}</button></div>`;
+      })
+      .join("");
+    return `<h2>5 · Augments (${augs.length}/${MAX_AUGMENTS})</h2>
+      <div class="wslots-sticky"><div class="wslots">${fitted}</div>
+      <div class="note">Up to ${MAX_AUGMENTS}. Starting augments are free; removing one gives no refund.</div></div>
+      <div class="race-grid">${cards}</div>${this.nav("Crew", "Launch")}`;
   }
 
   private stepLaunch(l: Loadout, priced: ReturnType<typeof priceLoadout>): string {
     return `<h2>5 · Launch</h2>
       <p>${priced.ok ? "Your ship is ready. Press <b>Ready</b>; the battle starts when both captains are ready." : "Fix the problems listed on the right first."}</p>
       <div class="note">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
-      ${this.nav("Crew", null)}`;
+      ${this.nav("Augments", null)}`;
     void l;
   }
 
@@ -422,13 +453,19 @@ export class Hangar {
     if (d.sys) {
       const id = d.sys as SystemId;
       const base = hullSystems(this.db, l.ship, !!this.lobby?.config.unlimited).find((s) => s.id === id)!.base;
-      l.systems[id] = Math.max(base, (l.systems[id] ?? base) + Number(d.d));
+      // Medbay and clone bay share a room: installing one removes the other.
+      const swapped = id === "medbay" && (l.systems.clonebay ?? 0) > 0;
+      l.systems[id] = Math.max(swapped ? 0 : base, (l.systems[id] ?? base) + Number(d.d));
+      if (Number(d.d) > 0 && id === "clonebay") l.systems.medbay = 0;
+      if (Number(d.d) > 0 && id === "medbay") l.systems.clonebay = 0;
     } else if (d.reactor) l.reactor += Number(d.reactor);
     else if (d.msl) l.missiles = Math.max(0, l.missiles + Number(d.msl));
     else if (d.buy && l.weapons.length < ship.weaponSlots) l.weapons.push(d.buy);
     else if (d.sell) l.weapons.splice(Number(d.sell), 1);
     else if (d.hire && l.crew.length < RULES.maxCrew) l.crew.push({ race: d.hire, name: randomCrewName(this.db, l.crew.map((c) => c.name), Date.now() & 0xffff) });
     else if (d.fire) l.crew.splice(Number(d.fire), 1);
+    else if (d.aug) l.augments = [...(l.augments ?? []), d.aug];
+    else if (d.unaug) l.augments = (l.augments ?? []).filter((_, i) => i !== Number(d.unaug));
     else if (d.reroll) l.crew[Number(d.reroll)].name = randomCrewName(this.db, l.crew.map((c) => c.name), (Date.now() * 7) & 0xffff);
     else if (d.ready) {
       if (d.ready === "1" && !d.force && this.warnings(l).length) {
@@ -445,7 +482,7 @@ export class Hangar {
     }
     else if ("leave" in d) return this.hooks.leave();
     else return;
-    const down = !!(d.sell || d.fire || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
+    const down = !!(d.sell || d.fire || d.unaug || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
     this.sfx(down ? "powerDownSystem" : "powerUpSystem");
     this.change(l);
   }

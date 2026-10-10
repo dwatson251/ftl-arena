@@ -14,7 +14,11 @@ export interface Loadout {
   missiles: number;
   /** Server-built bot loadouts only: hull points override (enemy hulls are small). */
   hull?: number;
+  /** Augment ids, up to 3 (FTL's limit); stackable augments may repeat. */
+  augments?: string[];
 }
+
+export const MAX_AUGMENTS = 3;
 
 export interface CrewPick {
   name: string;
@@ -40,11 +44,13 @@ export function hullSystems(db: GameDB, shipId: string, unlimited = false): { id
   const seenRoom = new Set<number>();
   for (const slot of s.systems) {
     if (!V1_SYSTEMS.includes(slot.id) || out.some((o) => o.id === slot.id)) continue;
-    // Medbay and clonebay share a room in FTL; v1 has only the medbay.
-    if (seenRoom.has(slot.room) && slot.id !== "medbay") continue;
+    // Medbay and clone bay share a room in FTL (only one can be installed); nothing else may share.
+    const shared = slot.id === "medbay" || slot.id === "clonebay";
+    if (seenRoom.has(slot.room) && !shared) continue;
     seenRoom.add(slot.room);
     const bp = db.systems[slot.id];
-    const max = unlimited ? RULES.unlimitedLevel : bp ? bp.maxPower : 3;
+    // Unrestricted mode only lifts the weapons system's cap (plus the reactor).
+    const max = unlimited && slot.id === "weapons" ? RULES.unlimitedLevel : bp ? bp.maxPower : 3;
     out.push({ id: slot.id, base: slot.start ? slot.power : 0, max, room: slot.room });
   }
   return out;
@@ -57,7 +63,7 @@ export function baseLoadout(db: GameDB, shipId: string): Loadout {
   const pool = db.names.length ? db.names : NAMES;
   const crew = s.crewRaces.filter((r) => RACES[r]).map((race, i) => ({ race, name: pool[(hashStr(shipId) + i * 7) % pool.length] }));
   // Missiles start at 0: buy them in the hangar.
-  return { ship: shipId, systems, reactor: s.maxPower, weapons: s.weapons.filter((w) => db.weapons[w]), crew, missiles: 0 };
+  return { ship: shipId, systems, reactor: s.maxPower, weapons: s.weapons.filter((w) => db.weapons[w]), crew, missiles: 0, augments: [...(s.augments ?? [])].filter((a) => db.augments?.[a]) };
 }
 
 /** Races a player may hire: every race with a blueprint and known traits. */
@@ -90,7 +96,9 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   const base = baseLoadout(db, l.ship);
   for (const h of hullSystems(db, l.ship, unlimited)) {
     const want = l.systems[h.id] ?? h.base;
-    if (!Number.isInteger(want) || want < h.base) errors.push(`${h.id}: can't go below level ${h.base}`);
+    // Swapping the medbay for a clone bay (same room) is the one allowed removal.
+    const swapped = h.id === "medbay" && (l.systems.clonebay ?? 0) > 0;
+    if (!Number.isInteger(want) || (want < h.base && !swapped)) errors.push(`${h.id}: can't go below level ${h.base}`);
     if (want > h.max) errors.push(`${h.id}: max level is ${h.max}`);
     const bp = db.systems[h.id];
     if (!bp || want <= h.base) continue;
@@ -108,6 +116,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     if (!hullSystems(db, l.ship, unlimited).some((h) => h.id === k) && (l.systems[k as SystemId] ?? 0) > 0)
       errors.push(`${k}: this hull has no room for it`);
   }
+  if ((l.systems.medbay ?? 0) > 0 && (l.systems.clonebay ?? 0) > 0) errors.push("medbay and clone bay share a room: install one");
   if (!Number.isInteger(l.reactor) || l.reactor < base.reactor) errors.push(`reactor can't go below ${base.reactor}`);
   const reactorMax = unlimited ? RULES.unlimitedReactor : RULES.reactorMax;
   if (l.reactor > reactorMax) errors.push(`reactor max is ${reactorMax}`);
@@ -153,6 +162,20 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   }
   if (!Number.isInteger(l.missiles) || l.missiles < 0 || l.missiles > 99) errors.push("missiles must be 0-99");
   if (l.missiles > base.missiles) lines.push({ item: `${l.missiles - base.missiles} missiles`, scrap: (l.missiles - base.missiles) * RULES.missilePrice });
+  const augs = l.augments ?? [];
+  if (augs.length > MAX_AUGMENTS) errors.push(`at most ${MAX_AUGMENTS} augments`);
+  const freeAugs = [...(base.augments ?? [])];
+  for (const a of augs) {
+    const bp = db.augments?.[a];
+    if (!bp) {
+      errors.push(`unknown augment ${a}`);
+      continue;
+    }
+    if (!bp.stackable && augs.filter((x) => x === a).length > 1) errors.push(`${bp.title} doesn't stack`);
+    const i = freeAugs.indexOf(a);
+    if (i >= 0) freeAugs.splice(i, 1);
+    else lines.push({ item: `augment ${bp.title}`, scrap: bp.cost });
+  }
   const total = lines.reduce((a, b) => a + b.scrap, 0);
   if (total > scrap) errors.push(`costs ${total} scrap, budget is ${scrap}`);
   return { ok: errors.length === 0, total, lines, errors };
@@ -186,6 +209,8 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     crew: [],
     weapons: l.weapons.map((w, slot) => ({ slot, bp: w, powered: false, charge: 0, volleys: 0, target: null, autofire: false, boost: 0 })),
     missiles: l.missiles, shieldLayers: 0, shieldCharge: 0, evasion: 0,
+    augments: (l.augments ?? []).filter((a) => db.augments?.[a]),
+    superShield: (l.augments ?? []).includes("ENERGY_SHIELD") ? RULES.zoltanShield : 0,
     stats: { shotsFired: 0, hits: 0, misses: 0, blocked: 0, damageDealt: 0 },
   };
   // Stations first, in the order a captain would fill them; the rest stand in free tiles.
@@ -213,7 +238,18 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     });
   }
   autoPower(db, ship);
+  // Weapon Pre-igniter: weapons start the battle charged.
+  if (ship.augments?.includes("WEAPON_PREIGNITE"))
+    for (const w of ship.weapons) if (w.powered && db.weapons[w.bp]) {
+      w.charge = db.weapons[w.bp].cooldown;
+      w.volleys = db.weapons[w.bp].chargeLevels;
+    }
   return ship;
+}
+
+/** How many of an augment a ship carries (stackable ones count each copy). */
+export function augCount(ship: ShipState, id: string): number {
+  return (ship.augments ?? []).filter((a) => a === id).length;
 }
 
 export function isSubsystem(id: SystemId): boolean {
