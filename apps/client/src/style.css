@@ -43,9 +43,17 @@ input, select { font: inherit; color: var(--text); background: #11141a; border: 
 .hangar-screen { padding: 14px 18px; }
 .hg { max-width: 1500px; margin: 0 auto; }
 .hg-steps { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
-.hg-step { padding: 8px 14px 8px 12px; white-space: nowrap; border-width: 2px; background: #1b1f27; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
+/* Arrow tabs: clip-path would cut a real border off the slanted edges, so the tab is painted in its border
+   colour and the fill is a slightly smaller arrow on top (::before), leaving an even 2px outline all round. */
+.hg-step { position: relative; isolation: isolate; padding: 8px 16px 8px 12px; white-space: nowrap; border: none; border-radius: 0; background: var(--edge);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
+.hg-step::before { content: ""; position: absolute; inset: 2px 2px 2px 2px; z-index: -1; background: #1b1f27;
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%); }
+.hg-step:hover:not(:disabled) { background: #9aa3b2; }
+.hg-step:hover:not(:disabled)::before { background: #2b3240; }
 .hg-step b { color: var(--warn); margin-right: 4px; }
-.hg-step.on { background: #2f5e3a; border-color: var(--ok); }
+.hg-step.on, .hg-step.on:hover:not(:disabled) { background: var(--ok); }
+.hg-step.on::before { background: #2f5e3a; }
 .hg-scrap { margin-left: auto; white-space: nowrap; }
 .hg-body { display: grid; grid-template-columns: 280px 1fr 300px; gap: 12px; height: calc(100vh - 90px); }
 .hg-side, .hg-main, .hg-summary { overflow: auto; }
