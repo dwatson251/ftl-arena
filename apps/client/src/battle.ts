@@ -783,6 +783,12 @@ export class Battle {
       const closed = own.doors.some((o, i) => !o && prev.doors[i]);
       if (opened) play(this.db, ["doorOpen"], 2.5);
       else if (closed) play(this.db, ["doorClose"], 2.5);
+      else {
+        // Crew walking through: the door opens and shuts behind them, a little quieter.
+        const held = (s: ShipView, i: number) => (s.doorPass?.[i] ?? 0) > 0 && !s.doors[i];
+        if (own.doors.some((_, i) => held(own, i) && !held(prev, i))) play(this.db, ["doorOpen"], 1.2);
+        else if (own.doors.some((_, i) => !held(own, i) && held(prev, i))) play(this.db, ["doorClose"], 1.2);
+      }
       // An airlock opening to space: the oxygen whoosh.
       if (g.doors.some((d, i) => (d.roomA < 0 || d.roomB < 0) && own.doors[i] && !prev.doors[i])) play(this.db, ["airLoss", "breach"], 1.6);
     }

@@ -134,6 +134,10 @@ export interface ShipState {
   droneParts?: number;
   /** Teleporter charge in seconds (ready at RULES.teleCooldown[level]). */
   tele?: number;
+  /** Doors held open for a moment (crew walking through, a broken door), seconds left per door. */
+  doorPass?: number[];
+  /** Room whose doors an enemy hacking drone has locked (recomputed every tick). */
+  lockedRoom?: number;
   /** Cloaking: seconds of cloak left, and recharge left after it. */
   cloak?: { t: number; cd: number };
   /** This ship's hacking drone: in flight (attached false) or on an enemy room; pulse and recharge timers. */

@@ -135,6 +135,7 @@ export async function preload(db: GameDB): Promise<boolean> {
   for (let i = 1; i <= 9; i++) files.add(`icons/locking/s_ring_${i}_base.png`);
   files.add("icons/locking/s_ring_timer.png");
   files.add("icons/s_hacked.png");
+  files.add("icons/locking/s_lock.png");
   for (let n = 1; n <= 3; n++) for (const f of ["base", "on", "off", "select2", "charging_on", "charging_off"]) files.add(`systemUI/button_cloaking${n}_${f}.png`);
   for (const f of ["hack2_top_base", "hack2_bottom_base", "hack_drone_on", "hack_drone_off", "hack_drone_select2", "hack_grid_on", "hack_grid_off", "hack_grid_purple_on"]) files.add(`systemUI/button_${f}.png`);
   for (const f of ["base", "land", "light1", "light2"]) files.add(`ship/drones/drone_hack_${f}.png`);

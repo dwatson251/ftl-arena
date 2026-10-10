@@ -111,6 +111,9 @@ export const RULES = {
   combatSkillBonus: [0, 0.1, 0.2],
   sabotageRate: 0.12,
   doorBreak: [2, 4, 7, 11, 16],
+  /** A broken door stays open this long, then shuts again (est); crew walking through hold it open briefly. */
+  doorBrokenOpen: 4,
+  doorPassOpen: 0.35,
   boarderFlight: 2.4,
   /** Cloaking: duration by level ("Cloak: N seconds"; est 5/10/15), recharge after (est), +60 evasion (FTL text). */
   cloakDuration: [0, 5, 10, 15],

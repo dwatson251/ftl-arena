@@ -77,7 +77,11 @@ export class Match {
     for (const { player, cmd } of this.queue.splice(0)) this.apply(st.ships[player], cmd);
     // Alternate which ship is processed first so simultaneous events don't always favour one side.
     const order = st.tick % 2 ? [st.ships[1], st.ships[0]] : st.ships;
-    for (const s of st.ships) for (const x of Object.values(s.systems)) if (x) x.locked = x.hacked = false;
+    for (const s of st.ships) {
+      for (const x of Object.values(s.systems)) if (x) x.locked = x.hacked = false;
+      s.lockedRoom = undefined;
+      s.doorPass = (s.doorPass ?? s.doors.map(() => 0)).map((t) => Math.max(0, t - DT));
+    }
     for (const s of order) this.hackTick(s);
     for (const s of order) this.systemsTick(s);
     for (const s of order) this.weaponsTick(s);
@@ -203,14 +207,15 @@ export class Match {
         if (d && (this.eff(d) <= 0 || d.hacked)) return false;
         if (cmd.c === "door") {
           if (cmd.door < 0 || cmd.door >= ship.doors.length) return false;
+          if (cmd.open && this.doorLocked(ship, cmd.door)) return false;
           ship.doors[cmd.door] = cmd.open;
         } else {
           const g = this.geo(ship);
           const airlock = (i: number) => g.doors[i].roomA === -1 || g.doors[i].roomB === -1;
           // FTL's door button: the first "open" opens the interior doors; pressed again with them all
           // open, it opens the airlocks too (venting the ship). "Close" shuts everything.
-          const interiorOpen = ship.doors.every((o, i) => airlock(i) || o);
-          ship.doors = ship.doors.map((o, i) => (!cmd.open ? false : airlock(i) ? o || interiorOpen : true));
+          const interiorOpen = ship.doors.every((o, i) => airlock(i) || o || this.doorLocked(ship, i));
+          ship.doors = ship.doors.map((o, i) => (!cmd.open || this.doorLocked(ship, i) ? false : airlock(i) ? o || interiorOpen : true));
         }
         return true;
       }
@@ -245,6 +250,18 @@ export class Match {
 
   wbp(id: string): WeaponBP {
     return this.db.weapons[id];
+  }
+
+  /** A door is open when set open, or while it's held open (crew passing, broken). */
+  doorOpen(ship: ShipState, i: number): boolean {
+    return ship.doors[i] || (ship.doorPass?.[i] ?? 0) > 0;
+  }
+
+  /** Doors of the room an enemy hacking drone has locked. */
+  private doorLocked(ship: ShipState, i: number): boolean {
+    if (ship.lockedRoom === undefined) return false;
+    const d = this.geo(ship).doors[i];
+    return !!d && (d.roomA === ship.lockedRoom || d.roomB === ship.lockedRoom);
   }
 
   eff(s: SystemState | undefined): number {
@@ -760,8 +777,11 @@ export class Match {
       if (ownShip && augCount(ship, "NANO_MEDBAY") && !(medbay && medbay.room === room) && c.hp < c.maxHp) c.hp = Math.min(c.maxHp, c.hp + RULES.nanoMedbay * DT);
       if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - tr.drainO2 * DT);
       if (this.god.has(c.owner)) c.hp = c.maxHp;
-      if (ownShip && medbay && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
-      // A hacked medbay hurts its own crew instead.
+      if (ownShip && medbay && !medbay.hacked && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
+      // Drone units repair themselves in their own drone room, like crew in a medbay.
+      const dr = ship.systems.drones;
+      if (ownShip && c.drone !== undefined && dr && dr.room === room && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + RULES.medbayHeal[1] * DT);
+      // A hacked medbay hurts its own crew instead (and never heals).
       if (ownShip && medbay?.hacked && medbay.room === room) c.hp -= RULES.hackMedbayDps * DT;
       if (c.hp <= 0) {
         c.hp = 0;
@@ -780,26 +800,29 @@ export class Match {
       if (c.drone !== undefined && !c.path.length && !hostiles.length) this.unitThink(ship, g, c, room);
       // Movement. Intruders have to break closed doors first (longer for better doors).
       if (c.path.length) {
-        // Hacked doors are blast doors for their own crew (and open for the hacker's boarders).
-        if (ownShip && ship.systems.doors?.hacked) {
-          const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
-          if (edge && edge.door >= 0) {
+        const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
+        const door = edge && edge.door >= 0 ? edge.door : -1;
+        if (door >= 0 && !this.doorOpen(ship, door)) {
+          const locked = this.doorLocked(ship, door);
+          // Whose way is barred: the hacker's crew walk through locked doors; a doors-system pulse turns
+          // every door into a blast door for the ship's own crew; intruders and locked-in crew break doors.
+          const hackerCrew = locked && c.owner !== ship.idx;
+          if (ownShip && ship.systems.doors?.hacked) {
             c.task = "idle";
             continue;
           }
-        }
-        if (!ownShip && !ship.systems.doors?.hacked) {
-          const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
-          if (edge && edge.door >= 0 && !ship.doors[edge.door]) {
+          if (!hackerCrew && (!ownShip || locked)) {
             c.bash = (c.bash ?? 0) + DT * Math.max(0.5, tr.combat);
             c.task = "fight";
             if (c.bash >= RULES.doorBreak[doorLevel]) {
-              ship.doors[edge.door] = true;
+              ship.doorPass![door] = RULES.doorBrokenOpen;
               c.bash = 0;
-              st.events.push({ e: "doorBroken", ship: ship.idx, door: edge.door });
+              st.events.push({ e: "doorBroken", ship: ship.idx, door });
             }
             continue;
           }
+          // Anyone else opens it as they pass.
+          ship.doorPass![door] = Math.max(ship.doorPass![door], RULES.doorPassOpen + 1 / (RULES.crewSpeed * tr.speed));
         }
         const [nx, ny] = unkey(c.path[0]);
         const ddx = nx - c.x;
@@ -880,7 +903,11 @@ export class Match {
   private unitThink(ship: ShipState, g: Geometry, c: CrewState, room: number): void {
     const race = c.race;
     let target = -1;
-    if (race === "battle") {
+    const droneRoom = ship.systems.drones?.room;
+    if (c.owner === ship.idx && droneRoom !== undefined && c.hp < c.maxHp * 0.4) {
+      // Badly hurt interior drones go home to the drone room to repair themselves.
+      target = droneRoom;
+    } else if (race === "battle") {
       const intruder = ship.crew.find((q) => q.owner !== c.owner && !q.dead && q.dying === undefined);
       if (intruder) target = g.tiles.get(intruder.tile)!.room;
     } else if (race === "repair") {
@@ -889,7 +916,7 @@ export class Match {
       if (broken && !here) target = broken.room;
     } else {
       const here = Object.values(ship.systems).find((s) => s && s.room === room);
-      const done = !here || (raceOf(race).ionBoarder ? false : here.damage >= here.level);
+      const done = !here || (raceOf(race).ionBoarder ? here.ion >= here.level : here.damage >= here.level);
       if (done) {
         const options = Object.values(ship.systems).filter((s) => s && s.level > 0 && s.damage < s.level && s.room !== room);
         if (options.length) target = this.rng.pick(options)!.room;
@@ -998,6 +1025,11 @@ export class Match {
         h.cd = RULES.hackCooldown;
       }
     } else if (h.cd > 0 && powered) h.cd = Math.max(0, h.cd - DT);
+    if (powered) {
+      // A powered hacking drone locks the room's doors shut, whatever the pulse is doing.
+      T.lockedRoom = h.room;
+      T.doors = T.doors.map((o, i) => (this.doorLocked(T, i) ? false : o));
+    }
     if (sys && powered) {
       sys.locked = true;
       if (h.pulse > 0) sys.hacked = true;
@@ -1071,8 +1103,8 @@ export class Match {
     if (type === "BOARDER") {
       if ((enemy.superShield ?? 0) > 0) return false;
       const eg = this.geo(enemy);
-      const rooms = Object.values(enemy.systems).filter((s) => s && s.level > 0).map((s) => s!.room);
-      const room = rooms.length ? this.rng.pick(rooms) : this.rng.pick(enemy.rooms).id;
+      // It picks a random room to punch into, system or not (FTL's boarding drone).
+      const room = this.rng.pick(enemy.rooms).id;
       const [tx, ty] = unkey(eg.roomTiles.get(room)![0]);
       st.projectiles.push({
         id: st.nextId++, boarder: d.slot, from: ship.idx, weapon: bpId, slot: -1, kind: "BOARDER", delay: 0, t: 0,
@@ -1193,7 +1225,7 @@ export class Match {
           const e = opts.length ? this.rng.pick(opts) : null;
           // Crossing a door: halved when it's closed, and less likely with every door level (super doors at 4).
           const dl = Math.min(4, this.eff(ship.systems.doors));
-          const doorK = e && e.door >= 0 ? (ship.doors[e.door] ? 1 : RULES.fireDoorClosed) * Math.max(0.05, 1 - RULES.fireDoorPerLevel * dl) : 1;
+          const doorK = e && e.door >= 0 ? (this.doorOpen(ship, e.door) ? 1 : RULES.fireDoorClosed) * Math.max(0.05, 1 - RULES.fireDoorPerLevel * dl) : 1;
           if (e && this.rng.chance(doorK)) {
             const to = e.to;
             const tr = byId.get(g.tiles.get(to)!.room)!;
@@ -1222,7 +1254,7 @@ export class Match {
     const depth = new Map<number, number>();
     const q: number[] = [];
     g.doors.forEach((d, i) => {
-      if (!ship.doors[i] || (d.roomA >= 0 && d.roomB >= 0)) return;
+      if (!this.doorOpen(ship, i) || (d.roomA >= 0 && d.roomB >= 0)) return;
       const r = d.roomA >= 0 ? d.roomA : d.roomB;
       if (!depth.has(r)) {
         depth.set(r, 0);
@@ -1232,7 +1264,7 @@ export class Match {
     while (q.length) {
       const r = q.shift()!;
       g.doors.forEach((d, i) => {
-        if (!ship.doors[i] || d.roomA < 0 || d.roomB < 0) return;
+        if (!this.doorOpen(ship, i) || d.roomA < 0 || d.roomB < 0) return;
         const o = d.roomA === r ? d.roomB : d.roomB === r ? d.roomA : -1;
         if (o >= 0 && !depth.has(o)) {
           depth.set(o, depth.get(r)! + 1);
@@ -1243,7 +1275,7 @@ export class Match {
     for (const [r, dd] of depth) if (dd > 0) byId.get(r)!.o2 -= (RULES.ventPull / (1 + 0.5 * (dd - 1))) * DT;
     // Doors: open interior doors share O2 gradually, open airlocks vent to space.
     g.doors.forEach((d, i) => {
-      if (!ship.doors[i]) return;
+      if (!this.doorOpen(ship, i)) return;
       const a = d.roomA >= 0 ? byId.get(d.roomA) : undefined;
       const b = d.roomB >= 0 ? byId.get(d.roomB) : undefined;
       if (a && b) {

@@ -87,7 +87,6 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     // The enemy's evasion is never shown (a later hacking drone on its helm/engines would reveal it), and
     // its hull only with level-3 sensors.
     ev.evasion = -1;
-    if (!ev.weaponsKnown) ev.hull = -1;
   }
   return {
     you, tick: st.tick, config: st.config, ships: you === 0 ? [ownView, ev] : [ev, ownView],

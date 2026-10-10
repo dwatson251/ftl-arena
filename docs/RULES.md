@@ -104,3 +104,14 @@ Driving the real game needs the owner's go-ahead, because it takes over their mo
 | Pulse effects | shields drained, engines/helm evasion 0, sensors off, oxygen drains, medbay hurts its crew, weapons drain charge, drones frozen (1 in 3 destroyed), teleporter recalls the enemy's boarders, cloaking off, hacking off, clone bay queue killed, doors become blast doors for their own crew | FTL `hack_*` texts |
 | Fog | Unseen rooms are flat #373737 (sampled from the real game); doors and room glyphs stay on top | measured |
 | Ion display | The icon becomes a numbered blue badge (stacks left) inside one segmented timer ring | FTL art `icons/locking/s_ring_*` |
+
+## Doors, locks and drone units (round 9)
+| Rule | Value | Source |
+|---|---|---|
+| Enemy hull | Always visible; unseen rooms stay grey until sensors | user correction |
+| Crew passing a door | Opens it while they cross (animation and sound), then it shuts | FTL |
+| Broken door | Opens for 4 s (with the normal opening sound), then shuts again | est |
+| Hacking drone (powered) | Locks its room's doors: the owner's crew must break them; the hacker's crew walk through whatever the door level | FTL |
+| Hacked medbay | Never heals; hurts its own crew while pulsed | FTL |
+| Drone units | Repair themselves in their own drone room, at medbay level-1 speed; go home below 40 % | user rule |
+| Boarding drones | Never player-controlled. They land in a random room (breaching it), then wander system rooms wrecking (or ionising) them. They fight only what's in their room. | FTL |

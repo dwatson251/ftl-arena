@@ -93,8 +93,13 @@ describe("boarding", () => {
     const c = them.crew.find((q) => q.id === ids[0])!;
     expect(g.tiles.get(c.tile)!.room).toBe(5);
     expect(c.task).toBe("fight");
-    run(m, 25);
-    expect(doorsOut.some((i) => them.doors[i])).toBe(true);
+    let broke = false;
+    for (let i = 0; i < 25 * 30 && !broke; i++) {
+      m.step();
+      broke = m.state.events.some((e) => e.e === "doorBroken");
+    }
+    expect(broke).toBe(true);
+    expect(doorsOut.some((i) => m.doorOpen(them, i))).toBe(true);
   });
 
   it("a living boarder keeps a player in a crew-kill match", () => {

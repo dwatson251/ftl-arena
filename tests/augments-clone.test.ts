@@ -89,14 +89,14 @@ describe("doors and fog", () => {
     m.step();
     expect(m.eff(d)).toBe(4);
   });
-  it("hides the enemy's evasion always, and its hull without level-3 sensors", () => {
+  it("hides the enemy's evasion always, but always shows its hull", () => {
     const db = placeholderDb();
     const base = baseLoadout(db, "PH_SKIFF");
     const m = new Match(db, DEFAULT_CONFIG, [base, base], ["a", "b"]);
     m.step();
     const v = viewFor(m, 0);
     expect(v.ships[1].evasion).toBe(-1);
-    expect(v.ships[1].hull).toBe(-1);
+    expect(v.ships[1].hull).toBeGreaterThan(0);
     m.state.ships[0].systems.sensors!.level = 3;
     m.step();
     expect(viewFor(m, 0).ships[1].hull).toBeGreaterThan(0);

@@ -270,7 +270,10 @@ export class ShipRenderer {
     const dsys = v.systems.doors;
     const level = Math.max(1, Math.min(4, (dsys?.level ?? 1) + (dsys?.manBonus ?? 0)));
     this.geo.doors.forEach((dr, i) => {
-      const open = v.doors[i];
+      // Open when set open, or held open for a moment (crew walking through, a broken door).
+      const open = v.doors[i] || (v.doorPass?.[i] ?? 0) > 0;
+      // Doors of a room locked by a hacking drone carry FTL's lock.
+      const locked = v.lockedRoom !== undefined && (dr.roomA === v.lockedRoom || dr.roomB === v.lockedRoom);
       const a = (this.doorAnim[i] ??= { open, t: -9 });
       if (a.open !== open) {
         a.open = open;
@@ -289,6 +292,7 @@ export class ShipRenderer {
         if (dr.vertical) gg.rect(dr.px - 3, dr.py - 15 + f * 3, 6, 30 - f * 6).fill({ color: col });
         else gg.rect(dr.px - 15 + f * 3, dr.py - 3, 30 - f * 6, 6).fill({ color: col });
       }
+      if (locked && !open) d.sprite(`dlock${i}`, texNow("icons/locking/s_lock.png"), dr.px, dr.py, { anchor: 0.5, scale: 0.6, rotation: this.upright });
     });
     const facing = new Map<string, string>();
     for (const s of Object.values(v.systems)) if (s?.station && s.facing) facing.set(s.station, s.facing);

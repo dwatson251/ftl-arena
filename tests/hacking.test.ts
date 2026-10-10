@@ -77,3 +77,31 @@ describe("hacking", () => {
     expect(them.weapons.find((w) => w.powered)!.charge).toBeLessThan(before);
   });
 });
+
+describe("hack-locked doors", () => {
+  it("lock the hacked room: its own crew must break out, the hacker's boarders walk through", () => {
+    const db = db2();
+    const m = new Match(db, DEFAULT_CONFIG, [full(db), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    const [me, them] = m.state.ships;
+    const room = them.systems.weapons!.room;
+    m.apply(me, { c: "hackLaunch", room });
+    run(m, RULES.hackFlight + 1);
+    expect(them.lockedRoom).toBe(room);
+    const g = m.geo(them);
+    const lockedDoors = g.doors.filter((d) => d.roomA === room || d.roomB === room).map((d) => d.index);
+    expect(m.apply(them, { c: "door", door: lockedDoors[0], open: true })).toBe(false);
+    // Their crew member inside tries to leave: they bash, then the door breaks open for a while.
+    const crew = them.crew.find((c) => c.owner === 1 && g.tiles.get(c.tile)!.room === room) ?? them.crew[0];
+    const exit = g.doors.find((d) => lockedDoors.includes(d.index) && d.roomA >= 0 && d.roomB >= 0)!;
+    if (g.tiles.get(crew.tile)!.room !== room) {
+      m.apply(them, { c: "moveCrew", crew: [crew.id], room });
+      // Walking in is blocked too: they break in.
+    } else m.apply(them, { c: "moveCrew", crew: [crew.id], room: exit.roomA === room ? exit.roomB : exit.roomA });
+    let broke = false;
+    for (let i = 0; i < 30 * 30 && !broke; i++) {
+      m.step();
+      broke = m.state.events.some((e) => e.e === "doorBroken" && e.ship === 1);
+    }
+    expect(broke).toBe(true);
+  });
+});
