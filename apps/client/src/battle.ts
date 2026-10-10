@@ -22,7 +22,7 @@ const OWN = { cx: 467, cy: 346, w: 700, h: 470, clipX: 868 };
 /** FTL's hostiles window (box_hostiles2) and the part of it the enemy ship is fitted into. */
 const WIN = { x: 870, y: 45, w: 410, h: 555 };
 const WIN_SHIP = { x: WIN.x + 18, y: WIN.y + 104, w: 366, h: 372 };
-const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "weapons", "drones", "teleporter"];
+const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "weapons", "drones", "teleporter", "cloaking", "hacking"];
 const ACTIVE_DRONES = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER"];
 const UNIT_DRONES = ["BATTLE", "REPAIR", "BOARDER"];
 const SUB_SYS: SystemId[] = ["pilot", "sensors", "doors"];
@@ -278,6 +278,17 @@ export class Battle {
         if (e.ship === v.you) this.say(e.out ? "Crew teleported" : "Crew retrieved", 0x9ff0ff);
         else if (e.out) this.say("Intruders aboard!", 0xff5a50);
         break;
+      case "cloak":
+        play(this.db, [e.on ? "cloak" : "decloak"], e.ship === v.you ? 1 : 0.7);
+        if (e.ship !== v.you && e.on) this.say("Enemy cloaked: weapons can't charge", 0xb8c8ff);
+        break;
+      case "hackLand":
+        play(this.db, ["hackLand"], e.ship === v.you ? 0.8 : 1);
+        if (e.ship !== v.you) this.say("Hacking drone attached!", 0xd070ff);
+        break;
+      case "hackPulse":
+        play(this.db, ["hackStart"], 1);
+        break;
       case "doorBroken":
         play(this.db, ["doorOpen"], 1);
         break;
@@ -421,11 +432,11 @@ export class Battle {
     };
     this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.time, {
       hover: this.hoverOwn, weaponFrame: (s) => this.weaponFrameFor(ownV, v.you, s), shieldFlash: this.time - this.shieldHitAt[v.you],
-      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: eng(ownV),
+      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0,
     });
     this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.time, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
-      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.weaponsKnown ? eng(enV) : 1,
+      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.weaponsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
     });
     this.drawTargets(ownV);
     this.drawProjectiles(v, k);
@@ -556,7 +567,7 @@ export class Battle {
       }
       if (p.kind === "BEAM") continue;
       if (p.delay - dtSnap > 0) continue;
-      if (p.kind === "BOARDER" && !this.launched.has(p.id)) {
+      if ((p.kind === "BOARDER" || p.kind === "HACK") && !this.launched.has(p.id)) {
         this.launched.add(p.id);
         play(this.db, ["droneLaunch"], mine ? 0.8 : 0.5);
       }
@@ -631,6 +642,19 @@ export class Battle {
   }
 
   private drawShot(layer: Container, image: string | undefined, x: number, y: number, ang: number, kind: string, alpha: number): void {
+    if (kind === "HACK") {
+      const t = texNow("ship/drones/drone_hack_base.png");
+      if (t) {
+        const s = new Sprite(t);
+        s.anchor.set(0.5);
+        s.position.set(x, y);
+        s.rotation = ang + Math.PI / 2;
+        s.scale.set(0.8);
+        s.alpha = alpha;
+        layer.addChild(s);
+        return;
+      }
+    }
     if (kind === "BOARDER") {
       // A boarding drone in flight: its engine flare behind the drone body, nose first.
       const eng = texNow("ship/drones/boarder_engine.png");
@@ -878,7 +902,8 @@ export class Battle {
       const s = en.systems[id]!;
       const state = s.damage >= s.level ? "red" : s.damage > 0 ? "orange" : s.ion > 0 ? "blue" : en.weaponsKnown && s.power === 0 && !SUBSYSTEMS.includes(id) ? "grey" : "green";
       const t = texNow(`icons/s_${id}_${state}1.png`);
-      if (t) h.sprite(`eic${id}`, t, x + 74 + i * 30, y + 502, { anchor: 0.5, scale: 0.85 });
+      if (t) h.sprite(`eic${id}`, t, x + 74 + i * 30, y + 502, { anchor: 0.5, scale: 0.85, tint: s.hacked ? 0xd070ff : 0xffffff });
+      if (s.locked) h.sprite(`eick${id}`, texNow("icons/s_hacked.png"), x + 82 + i * 30, y + 494, { anchor: 0.5, scale: 0.6 });
     });
 
   }
@@ -950,22 +975,29 @@ export class Battle {
   }
 
   /**
-   * Ion lock: one segmented ring per ion stack around the system icon; the current one empties as its
-   * timer runs out (FTL's countdown pie).
+   * Ion lock, as FTL draws it: the system icon becomes a blue badge numbered with the stacks left
+   * (icons/locking/s_ring_N_base), ringed by one segmented timer that empties over the current stack.
+   * When it runs out the number drops by one and the ring starts again.
    */
   private ionPie(key: string, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, cy: number): void {
     if (sys.ion <= 0) return;
-    const g = this.hud.gfx(key);
-    const segs = 8;
-    for (let r = 0; r < sys.ion; r++) {
-      const rad = 16 + r * 4;
-      const left = r === 0 ? Math.max(0, sys.ionTimer / RULES.ionDuration) : 1;
-      const lit = Math.ceil(left * segs);
-      for (let i = 0; i < segs; i++) {
-        const a0 = -Math.PI / 2 + (i / segs) * Math.PI * 2 + 0.08;
-        const a1 = -Math.PI / 2 + ((i + 1) / segs) * Math.PI * 2 - 0.08;
-        g.arc(cx, cy, rad, a0, a1).stroke({ color: i < lit ? 0x6ab4ff : 0x1c2a40, width: 3 });
-      }
+    const h = this.hud;
+    const n = Math.min(9, sys.ion);
+    const badge = texNow(`icons/locking/s_ring_${n}_base.png`);
+    const ring = texNow("icons/locking/s_ring_timer.png");
+    const k = Math.max(0, Math.min(1, sys.ionTimer / RULES.ionDuration));
+    if (badge) h.sprite(`${key}b`, badge, cx, cy, { anchor: 0.5 });
+    else h.gfx(`${key}bg`).circle(cx, cy, 13).fill({ color: 0x0c2a2c }).stroke({ color: 0x6ad8ff, width: 2 });
+    if (!badge) h.text(`${key}n`, String(n), cx, cy, fstyle("JustinFont10", 0x9ff0ff), [0.5, 0.5]);
+    // The ring's remaining segments: a wedge mask from 12 o'clock, shrinking clockwise.
+    const mask = h.gfx(`${key}m`);
+    mask.moveTo(cx, cy).arc(cx, cy, 40, -Math.PI / 2 + (1 - k) * Math.PI * 2, Math.PI * 1.5).closePath().fill({ color: 0xffffff });
+    if (ring) {
+      const sp = h.sprite(`${key}r`, ring, cx, cy, { anchor: 0.5 });
+      if (sp) sp.mask = mask;
+    } else {
+      mask.clear();
+      h.gfx(`${key}rg`).arc(cx, cy, 18, -Math.PI / 2 + (1 - k) * Math.PI * 2, Math.PI * 1.5).stroke({ color: 0x6ad8ff, width: 3 });
     }
   }
 
@@ -1031,16 +1063,22 @@ export class Battle {
       this.bars(`b${sys.id}`, sys, cx, 657);
       if (this.manned(s, sys.id)) h.sprite(`mn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 657 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`) ?? texNow(`icons/s_${sys.id}_green1.png`);
-      if (icon) h.sprite(`si${sys.id}`, icon, SYS_X0 + i * SYS_DX, SYS_ICON_Y);
-      else h.text(`si${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SYS_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
+      if (icon) {
+        if (sys.ion <= 0) h.sprite(`si${sys.id}`, icon, SYS_X0 + i * SYS_DX, SYS_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
+      } else if (sys.ion <= 0) h.text(`si${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SYS_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
       this.sysHit.push({ id: sys.id, box: { x: cx - 16, y: 657 - sys.level * this.pitch(sys.level) - 4, w: 32, h: sys.level * this.pitch(sys.level) + 60 } });
-      if (sys.id === "teleporter") this.telePanel(s, sys, cx, 657 - sys.level * this.pitch(sys.level) - 8);
+      const top = 657 - sys.level * this.pitch(sys.level) - 8;
+      if (sys.id === "teleporter") this.telePanel(s, sys, cx, top);
+      if (sys.id === "cloaking") this.cloakPanel(s, sys, cx, top);
+      if (sys.id === "hacking") this.hackPanel(s, sys, cx, top);
+      // A hacking drone on this system: FTL's purple hacked mark (the icon goes purple while it pulses).
+      if (sys.locked) h.sprite(`hk${sys.id}`, texNow("icons/s_hacked.png"), cx + 10, SYS_ICON_Y + 12, { anchor: 0.5 });
     });
   }
 
   private trayDx = 0;
   private teleBtns: { out: boolean; box: Box }[] = [];
-  private teleMode: "send" | "return" | null = null;
+  private teleMode: "send" | "return" | "hack" | null = null;
 
   /** FTL's teleporter panel above its bars: the charge gauge, then send (top) and return (bottom) buttons. */
   private telePanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
@@ -1070,7 +1108,70 @@ export class Battle {
     h.sprite("tpT", texNow(`systemUI/button_teleport_top_${sel("send")}.png`), x, y);
     h.sprite("tpBt", texNow(`systemUI/button_teleport_bottom_${anyAway ? sel("return") : "off"}.png`), x, y);
     this.teleBtns.push({ out: true, box: { x: x + 4, y: y + 4, w: 32, h: 32 } }, { out: false, box: { x: x + 4, y: y + 27, w: 32, h: 32 } });
-    if (this.teleMode) h.text("tpHint", this.teleMode === "send" ? "Click an enemy room to board" : "Click the enemy room to retrieve from", OWN.cx, 588, fstyle("JustinFont10", 0x9ff0ff, { stroke: 0x101010 }), [0.5, 0]);
+    if (this.teleMode === "send" || this.teleMode === "return") h.text("tpHint", this.teleMode === "send" ? "Click an enemy room to board" : "Click the enemy room to retrieve from", OWN.cx, 588, fstyle("JustinFont10", 0x9ff0ff, { stroke: 0x101010 }), [0.5, 0]);
+  }
+
+  private cloakBtn: Box | null = null;
+  private hackBtns: { kind: "launch" | "pulse"; box: Box }[] = [];
+
+  /** A charge gauge (FTL's striped bar) filled k of the way up, cropped from the "on" art over the "off" art. */
+  private gauge(key: string, off: string, on: string, x: number, y: number, top: number, height: number, k: number): void {
+    const h = this.hud;
+    h.sprite(`${key}0`, texNow(off), x, y);
+    const t = texNow(on);
+    if (!t) return;
+    const from = top + Math.round(height * (1 - Math.max(0, Math.min(1, k))));
+    if (from < top + height) h.sprite(`${key}1`, frame(t, 0, from, t.width, top + height - from), x, y + from);
+  }
+
+  /** FTL's cloak button above its bars: lit when ready, glowing while cloaked, a filling gauge while it recharges. */
+  private cloakPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
+    const h = this.hud;
+    this.cloakBtn = null;
+    const n = Math.max(1, Math.min(3, sys.level));
+    const x = cx - 20;
+    const y = bottom - 92;
+    const base = texNow(`systemUI/button_cloaking${n}_base.png`);
+    if (!base) return;
+    h.sprite("ckB", base, x, y);
+    const c = s.cloak;
+    const lv = Math.min(3, Math.min(sys.power + (sys.bonus ?? 0), usable(sys)));
+    if ((c?.t ?? 0) > 0) {
+      this.gauge("ckG", `systemUI/button_cloaking${n}_charging_off.png`, `systemUI/button_cloaking${n}_charging_on.png`, x, y, 35, 31, (c!.t) / (RULES.cloakDuration[lv] || 1));
+      return;
+    }
+    if ((c?.cd ?? 0) > 0) {
+      this.gauge("ckG", `systemUI/button_cloaking${n}_charging_off.png`, `systemUI/button_cloaking${n}_charging_on.png`, x, y, 35, 31, 1 - c!.cd / RULES.cloakCooldown);
+      return;
+    }
+    const ready = lv > 0 && !sys.hacked;
+    h.sprite("ckOn", texNow(`systemUI/button_cloaking${n}_${ready ? "on" : "off"}.png`), x, y);
+    if (ready) this.cloakBtn = { x: x + 4, y: y + 29, w: 32, h: 43 };
+  }
+
+  /** FTL's hacking panel: the top button launches the drone (one drone part), the bottom one pulses it. */
+  private hackPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
+    const h = this.hud;
+    this.hackBtns = [];
+    const x = cx - 20;
+    const y = bottom - 81;
+    const top = texNow("systemUI/button_hack2_top_base.png");
+    if (!top) return;
+    h.sprite("hkT", top, x, y);
+    h.sprite("hkBm", texNow("systemUI/button_hack2_bottom_base.png"), x, y);
+    const hk = s.hack;
+    const powered = usable(sys) > 0 && (sys.power + (sys.bonus ?? 0)) > 0;
+    const canLaunch = powered && !hk && (s.droneParts ?? 0) > 0;
+    const sel = this.teleMode === "hack" ? "select2" : canLaunch ? "on" : "off";
+    h.sprite("hkD", texNow(`systemUI/button_hack_drone_${sel}.png`), x, y);
+    if (canLaunch) this.hackBtns.push({ kind: "launch", box: { x: x + 10, y: y + 10, w: 20, h: 20 } });
+    const pulsing = (hk?.pulse ?? 0) > 0;
+    const ready = powered && !!hk?.attached && !pulsing && (hk?.cd ?? 0) <= 0;
+    h.sprite("hkG", texNow(pulsing ? "systemUI/button_hack_grid_purple_on.png" : ready ? "systemUI/button_hack_grid_on.png" : "systemUI/button_hack_grid_off.png"), x, y);
+    if (ready) this.hackBtns.push({ kind: "pulse", box: { x: x + 10, y: y + 36, w: 20, h: 20 } });
+    if (this.teleMode === "hack") h.text("hkHint", "Click an enemy room to attach the hacking drone", OWN.cx, 588, fstyle("JustinFont10", 0xd8a0ff, { stroke: 0x101010 }), [0.5, 0]);
+    // Recharge after a pulse: a thin bar under the grid button.
+    if (hk?.attached && !pulsing && (hk.cd ?? 0) > 0) h.gfx("hkCd").rect(x + 10, y + 58, Math.round(20 * (1 - hk.cd / RULES.hackCooldown)), 3).fill({ color: 0xd070ff });
   }
 
   private teleClick(own: ShipView, out: boolean): void {
@@ -1096,8 +1197,10 @@ export class Battle {
       this.bars(`sb${sys.id}`, sys, cx, 639);
       if (this.manned(s, sys.id)) h.sprite(`smn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 639 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`);
-      if (icon) h.sprite(`ssi${sys.id}`, icon, SUB_X0 + i * SYS_DX, SUB_ICON_Y);
-      else h.text(`ssi${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SUB_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
+      if (sys.locked) h.sprite(`hk${sys.id}`, texNow("icons/s_hacked.png"), cx + 10, SUB_ICON_Y + 12, { anchor: 0.5 });
+      if (icon) {
+        if (sys.ion <= 0) h.sprite(`ssi${sys.id}`, icon, SUB_X0 + i * SYS_DX, SUB_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
+      } else if (sys.ion <= 0) h.text(`ssi${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SUB_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
     });
     this.doorBtns = [];
     if (s.systems.doors) {
@@ -1258,6 +1361,30 @@ export class Battle {
   private droneAim = new Map<string, { x: number; y: number }>();
 
   private drawDrones(v: MatchView): void {
+    // Hacking drones sit on the room they hacked (FTL's landing strip, last frame), lights blinking while pulsing.
+    for (const s of v.ships) {
+      if (!s.hack?.attached) continue;
+      const r = s.idx === v.you ? this.enemy : this.own;
+      const tiles = r.geo.roomTiles.get(s.hack.room);
+      const strip = texNow("ship/drones/drone_hack_land.png");
+      if (!tiles?.length || !strip) continue;
+      const xs = tiles.map((t) => Number(t.split(",")[0]));
+      const ys = tiles.map((t) => Number(t.split(",")[1]));
+      const c = this.stage.toLocal(r.root.toGlobal({ x: ((Math.min(...xs) + Math.max(...xs)) / 2 + 0.5) * 35, y: ((Math.min(...ys) + Math.max(...ys)) / 2 + 0.5) * 35 }));
+      const sp = new Sprite(frame(strip, 4 * 31, 0, 31, 49));
+      sp.anchor.set(0.5);
+      sp.position.set(c.x, c.y);
+      (s.idx === v.you ? this.projWin : this.projOwn).addChild(sp);
+      if (s.hack.pulse > 0) {
+        const lt = texNow(Math.floor(this.time * 6) % 2 ? "ship/drones/drone_hack_light1.png" : "ship/drones/drone_hack_light2.png");
+        if (lt) {
+          const l = new Sprite(frame(lt, 4 * 31, 0, Math.min(31, lt.width), Math.min(49, lt.height)));
+          l.anchor.set(0.5);
+          l.position.set(c.x, c.y);
+          (s.idx === v.you ? this.projWin : this.projOwn).addChild(l);
+        }
+      }
+    }
     const layerFor = (owner: 0 | 1, type: string) => ((owner === v.you) !== (type === "COMBAT") ? this.projOwn : this.projWin);
     for (const owner of [0, 1] as const) {
       for (const d of v.ships[owner].drones ?? []) {
@@ -1380,13 +1507,32 @@ export class Battle {
       if (right) return void (this.teleMode = null);
       return this.teleClick(own, b.out);
     }
+    if (this.cloakBtn && inBox(p, this.cloakBtn) && !right) {
+      play(this.db, ["cloak"]);
+      return this.send({ c: "cloak" });
+    }
+    for (const b of this.hackBtns) {
+      if (!inBox(p, b.box) || right) continue;
+      if (b.kind === "pulse") {
+        play(this.db, ["hackStart"]);
+        return this.send({ c: "hackPulse" });
+      }
+      play(this.db, ["powerUpSystem"]);
+      this.teleMode = "hack";
+      return;
+    }
     const ep = this.enemy.root.toLocal(e.global);
     const eh = inBox(p, WIN) ? this.enemy.pick(ep.x, ep.y) : { room: -1, door: -1 };
     if (this.teleMode) {
-      const out = this.teleMode === "send";
+      const mode = this.teleMode;
+      const out = mode === "send";
       this.teleMode = null;
       if (right) return;
       if (eh.room < 0) return this.fail("Pick a room on the enemy ship");
+      if (mode === "hack") {
+        play(this.db, ["droneLaunch"]);
+        return this.send({ c: "hackLaunch", room: eh.room });
+      }
       play(this.db, ["teleport"]);
       return this.send({ c: out ? "teleport" : "retrieve", room: eh.room });
     }
@@ -1450,6 +1596,7 @@ export class Battle {
     if (!s) return;
     if (SUBSYSTEMS.includes(id)) return this.fail("Subsystems are powered by their own level");
     if (s.ion > 0) return this.fail("System is locked by ion damage");
+    if (s.locked) return this.fail("System locked: an enemy hacking drone is attached");
     const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
     if (id === "weapons") {
       // Clicking the weapons system powers the next weapon in slot order (right-click: the last one).

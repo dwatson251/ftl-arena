@@ -118,7 +118,7 @@ export async function preload(db: GameDB): Promise<boolean> {
     files.add(shieldFile(s.img));
     files.add(`customizeUI/miniship_${s.img}.png`);
   }
-  for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "clonebay", "drones", "teleporter", "pilot", "sensors", "doors"]) {
+  for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "clonebay", "drones", "teleporter", "cloaking", "hacking", "pilot", "sensors", "doors"]) {
     for (const c of ["blue", "grey", "orange", "red", "green"]) files.add(`icons/s_${sys}_${c}1.png`);
     files.add(`icons/s_${sys}_overlay.png`);
   }
@@ -132,6 +132,12 @@ export async function preload(db: GameDB): Promise<boolean> {
   files.add("statusUI/top_drones_on.png");
   for (const f of ["base", "top_on", "top_select2", "bottom_on", "bottom_off", "bottom_select2", "charging_on", "charging_off"]) files.add(`systemUI/button_teleport_${f}.png`);
   files.add("ship/drones/boarder_engine.png");
+  for (let i = 1; i <= 9; i++) files.add(`icons/locking/s_ring_${i}_base.png`);
+  files.add("icons/locking/s_ring_timer.png");
+  files.add("icons/s_hacked.png");
+  for (let n = 1; n <= 3; n++) for (const f of ["base", "on", "off", "select2", "charging_on", "charging_off"]) files.add(`systemUI/button_cloaking${n}_${f}.png`);
+  for (const f of ["hack2_top_base", "hack2_bottom_base", "hack_drone_on", "hack_drone_off", "hack_drone_select2", "hack_grid_on", "hack_grid_off", "hack_grid_purple_on"]) files.add(`systemUI/button_${f}.png`);
+  for (const f of ["base", "land", "light1", "light2"]) files.add(`ship/drones/drone_hack_${f}.png`);
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
   // Art is "available" as soon as one known image loads; everything else keeps loading in the background

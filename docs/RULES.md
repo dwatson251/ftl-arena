@@ -92,3 +92,15 @@ Driving the real game needs the owner's go-ahead, because it takes over their mo
 | Anti-personnel drone | 150 HP unit, hunts intruders on its own ship | est |
 | System repair drone | 70 HP unit, repairs damaged systems, can't fight | est |
 | Boarding drone | Flies 2.4 s (defense drones can shoot it down), breaches its landing room, then a 150 HP unit wrecks systems | est |
+
+## Cloaking and hacking (round 8; effects from FTL's text, timings estimated)
+| Rule | Value | Source |
+|---|---|---|
+| Cloak | +60 evasion; enemy weapons stop charging while it lasts | FTL tooltip text |
+| Cloak duration / recharge | 5 / 10 / 15 s by level; 20 s recharge after | est ("Cloak: N seconds") |
+| Hacking drone | Uses a drone part, flies 2.4 s (defense drones can shoot it), blocked by a Zoltan shield | FTL text + est |
+| Attached drone | Locks the system's power ("SYSTEM LOCKED") and shows its room to the hacker | FTL |
+| Pulse | 4 / 7 / 10 s by level, then a 15 s recharge | est |
+| Pulse effects | shields drained, engines/helm evasion 0, sensors off, oxygen drains, medbay hurts its crew, weapons drain charge, drones frozen (1 in 3 destroyed), teleporter recalls the enemy's boarders, cloaking off, hacking off, clone bay queue killed, doors become blast doors for their own crew | FTL `hack_*` texts |
+| Fog | Unseen rooms are flat #373737 (sampled from the real game); doors and room glyphs stay on top | measured |
+| Ion display | The icon becomes a numbered blue badge (stacks left) inside one segmented timer ring | FTL art `icons/locking/s_ring_*` |

@@ -306,7 +306,10 @@ function render(): void {
   toScreen: (x: number, y: number) => (battle ? { x: battle.stage.x + x * battle.stage.scale.x, y: battle.stage.y + y * battle.stage.scale.y } : null),
   // Test helpers: send a command as this player; read HUD hit boxes.
   send: (cmd: unknown) => (battle as unknown as { send(c: unknown): void } | null)?.send(cmd),
-  ui: () => (battle ? { tele: (battle as unknown as { teleBtns: unknown }).teleBtns } : null),
+  ui: () => {
+    const b = battle as unknown as { teleBtns: unknown; cloakBtn: unknown; hackBtns: unknown } | null;
+    return b ? { tele: b.teleBtns, cloak: b.cloakBtn, hack: b.hackBtns } : null;
+  },
   /** Screen position of an enemy room's centre. */
   enemyRoom: (room: number) => {
     const r = (battle as unknown as { enemy?: { root: { toGlobal(p: { x: number; y: number }): { x: number; y: number } }; geo: { roomTiles: Map<number, string[]> } } } | null)?.enemy;

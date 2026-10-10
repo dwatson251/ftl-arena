@@ -37,6 +37,10 @@ export interface SystemState {
   fireDmg: number;
   /** Free power from Zoltan crew standing in the room (recomputed every tick). */
   bonus: number;
+  /** A hacking drone is attached: the owner can't change this system's power (recomputed every tick). */
+  locked?: boolean;
+  /** A hacking pulse is running on this system (recomputed every tick). */
+  hacked?: boolean;
   /** Subsystems (sensors, doors) work one level higher while manned (recomputed every tick). */
   manBonus?: number;
   /** Direction a crew member at the station faces. */
@@ -130,6 +134,10 @@ export interface ShipState {
   droneParts?: number;
   /** Teleporter charge in seconds (ready at RULES.teleCooldown[level]). */
   tele?: number;
+  /** Cloaking: seconds of cloak left, and recharge left after it. */
+  cloak?: { t: number; cd: number };
+  /** This ship's hacking drone: in flight (attached false) or on an enemy room; pulse and recharge timers. */
+  hack?: { room: number; attached: boolean; pulse: number; cd: number };
   /** Stats for the end screen. */
   stats: { shotsFired: number; hits: number; misses: number; blocked: number; damageDealt: number };
 }
@@ -156,7 +164,7 @@ export interface Projectile {
   weapon: string;
   slot: number;
   /** BOARDER: a boarding drone in flight (`boarder` = the owner's drone slot). */
-  kind: "LASER" | "MISSILES" | "BURST" | "BOMB" | "BEAM" | "BOARDER";
+  kind: "LASER" | "MISSILES" | "BURST" | "BOMB" | "BEAM" | "BOARDER" | "HACK";
   boarder?: number;
   /** Seconds until launch (shots in a volley are staggered), then flight time remaining. */
   delay: number;
@@ -184,6 +192,10 @@ export type MatchEvent =
   /** Crew teleported by `ship`'s teleporter: out to the enemy (out) or back home. */
   | { e: "teleport"; ship: 0 | 1; crew: number[]; out: boolean; room: number }
   | { e: "doorBroken"; ship: 0 | 1; door: number }
+  | { e: "cloak"; ship: 0 | 1; on: boolean }
+  /** `ship`'s hacking drone landed on / started a pulse on the enemy `room`. */
+  | { e: "hackLand"; ship: 0 | 1; room: number }
+  | { e: "hackPulse"; ship: 0 | 1; room: number }
   | { e: "end"; winner: 0 | 1 | -1; reason: string };
 
 export interface MatchState {

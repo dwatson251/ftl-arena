@@ -17,4 +17,8 @@ export type Command =
   | { c: "dronePower"; slot: number; on: boolean }
   /** Teleport own crew standing in the teleporter room to an enemy room / bring own crew back from one. */
   | { c: "teleport"; room: number }
-  | { c: "retrieve"; room: number };
+  | { c: "retrieve"; room: number }
+  | { c: "cloak" }
+  /** Launch the hacking drone at an enemy room (uses a drone part), then pulse it. */
+  | { c: "hackLaunch"; room: number }
+  | { c: "hackPulse" };

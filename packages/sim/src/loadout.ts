@@ -350,6 +350,8 @@ export function autoPower(db: GameDB, ship: ShipState): void {
   give("medbay", 1);
   give("clonebay", 1);
   give("teleporter", 99);
+  give("cloaking", 99);
+  give("hacking", 99);
 }
 
 export { key };

@@ -127,7 +127,11 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
   Crew fight hostiles in the same room, boarders wreck systems and break closed doors, and dead boarders
   can be cloned at home. Anti-personnel, system repair and boarding drones work as units inside ships.
 
-Planned next: hacking, cloaking, mind control, battery.
+- **Cloaking:** +60 evasion, and enemy weapons stop charging while it lasts.
+- **Hacking:** launch the drone at a room to lock that system, then pulse it for the system's FTL effect.
+- **Hulls:** all 28 player hulls, including the C variants, Zoltan, Stealth and Crystal ships.
+
+Planned next: mind control, battery and artillery (the hulls that carry them fly without them for now).
 
 ## Layout
 | Path | What |

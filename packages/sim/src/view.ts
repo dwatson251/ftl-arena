@@ -51,6 +51,8 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     const eg = geometry(m.db.layouts[enemy.layout]);
     const roomOf = (c: { tile: string }) => eg.tiles.get(c.tile)!.room;
     const seen = new Set(ev.crew.filter((c) => c.owner === you && !c.dead).map(roomOf));
+    // An attached hacking drone shows its room too.
+    if (own.hack?.attached) seen.add(own.hack.room);
     // Telepathy (Slug crew, the life scanner) senses where the others are, nothing else: anonymous blips.
     ev.crew = ev.crew.flatMap((c) => {
       if (c.owner === you || seen.has(roomOf(c))) return [c];

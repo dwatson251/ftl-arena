@@ -173,6 +173,15 @@
 - **HUD:** FTL's tray fits five main systems; each extra system pushes the weapons and drone trays right
   by one system width.
 
+## Round 8: cloaking, hacking, fog, ion
+- **Hacking effects:** FTL's `text_misc.xml` lists every hack effect (`hack_shields` ... `hack_mind`),
+  so the behaviour follows the game's own descriptions. Timings aren't in the data.
+- **Countdown art:** the ion badge and timer ring are `icons/locking/s_ring_N_base.png` (N = 1-9) and
+  `s_ring_timer.png`. The ring empties through a wedge mask.
+- **Fog:** unseen rooms are solid #373737, sampled from the user's screenshots, not a tint. The fog layer
+  now sits under the crew and doors layer.
+- **Hangar:** it was a fixed list from round 1. It now has all 28 player hulls.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

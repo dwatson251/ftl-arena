@@ -52,7 +52,7 @@ export type SystemId =
   | "drones" | "teleporter" | "cloaking" | "battery" | "mind" | "hacking" | "clonebay" | "artillery";
 
 /** Systems the arena simulates. Others are parsed but not installable yet. */
-export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "drones", "teleporter", "medbay", "clonebay", "pilot", "sensors", "doors"];
+export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "drones", "teleporter", "cloaking", "hacking", "medbay", "clonebay", "pilot", "sensors", "doors"];
 
 export type DroneType = "COMBAT" | "DEFENSE" | "SHIP_REPAIR" | "REPAIR" | "BATTLE" | "BOARDER" | "HACKING" | "SHIELD";
 /** Drone types the arena flies: space drones, plus interior and boarding drones (hacking and the shield drone come later). */

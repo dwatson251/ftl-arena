@@ -38,6 +38,8 @@ export interface ShipDrawOpts {
   flashTiles?: Map<string, number>;
   /** Engines' effective power (thruster glow). */
   engines?: number;
+  /** Cloaked: the ship fades into FTL's translucent cloak look. */
+  cloaked?: boolean;
 }
 
 export class ShipRenderer {
@@ -80,7 +82,7 @@ export class ShipRenderer {
     this.marks = new Imm(this.marksRoot);
     this.thrusters = new Imm(this.thrusterRoot);
     this.weaponsImm = new Imm(this.weaponRoot);
-    this.root.addChild(this.shieldG, this.thrusterRoot, this.weaponRoot, this.hull, this.floorG, this.interior, this.stripeRoot, this.dynRoot, this.fog, this.overlay, this.marksRoot, this.gibRoot);
+    this.root.addChild(this.shieldG, this.thrusterRoot, this.weaponRoot, this.hull, this.floorG, this.interior, this.stripeRoot, this.fog, this.dynRoot, this.overlay, this.marksRoot, this.gibRoot);
   }
 
   /** img/<dir>/<img>_<suffix>.png for this hull (player hulls in ship/, enemy hulls in ships_glow/). */
@@ -195,6 +197,9 @@ export class ShipRenderer {
     const d = this.dyn;
     const exploded = o.exploded ?? null;
     for (const n of [this.hull, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.weaponRoot, this.thrusterRoot]) n.visible = exploded === null;
+    // Cloaking: fade toward FTL's half-there look (eased so it doesn't pop).
+    const want = o.cloaked ? 0.4 : 1;
+    this.root.alpha += (want - this.root.alpha) * 0.15;
     if (this.shieldArt) this.shieldArt.visible = exploded === null;
     if (exploded !== null) {
       this.drawGibs(exploded);
@@ -355,7 +360,9 @@ export class ShipRenderer {
     const fg = this.fog.clear();
     for (const r of L.rooms) {
       if (visible(r.id)) continue;
-      fg.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).fill({ color: 0x2b2f38, alpha: v.interior ? 0.85 : 0.5 });
+      // FTL draws unseen rooms as flat grey (sampled #373737 from the real game), not a see-through tint;
+      // doors, room glyphs and sensed crew stay on top.
+      fg.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).fill({ color: 0x373737 });
     }
     d.end();
   }

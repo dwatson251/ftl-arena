@@ -112,6 +112,18 @@ export const RULES = {
   sabotageRate: 0.12,
   doorBreak: [2, 4, 7, 11, 16],
   boarderFlight: 2.4,
+  /** Cloaking: duration by level ("Cloak: N seconds"; est 5/10/15), recharge after (est), +60 evasion (FTL text). */
+  cloakDuration: [0, 5, 10, 15],
+  cloakCooldown: 20,
+  cloakEvasion: 60,
+  /** Hacking (est): pulse length by level, recharge after a pulse, drone flight, and pulse effect rates. */
+  hackPulse: [0, 4, 7, 10],
+  hackCooldown: 15,
+  hackFlight: 2.4,
+  hackO2Drain: 4,
+  hackMedbayDps: 8,
+  hackWeaponDrain: 1,
+  hackDroneKill: 0.33,
   maxCrew: 8,
   sellRefund: 0.5,
 };

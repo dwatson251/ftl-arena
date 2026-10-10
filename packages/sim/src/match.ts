@@ -12,6 +12,7 @@ import type {
   CrewState, DroneState, MatchConfig, MatchEvent, MatchState, Projectile, ShipState, SystemState, WeaponTarget,
 } from "./state.ts";
 
+const HACK_OFF: SystemId[] = ["shields", "engines", "pilot", "sensors", "cloaking", "hacking", "teleporter", "clonebay"];
 const MANNABLE: SystemId[] = ["pilot", "engines", "shields", "weapons", "sensors", "doors"];
 
 export class Match {
@@ -76,10 +77,13 @@ export class Match {
     for (const { player, cmd } of this.queue.splice(0)) this.apply(st.ships[player], cmd);
     // Alternate which ship is processed first so simultaneous events don't always favour one side.
     const order = st.tick % 2 ? [st.ships[1], st.ships[0]] : st.ships;
+    for (const s of st.ships) for (const x of Object.values(s.systems)) if (x) x.locked = x.hacked = false;
+    for (const s of order) this.hackTick(s);
     for (const s of order) this.systemsTick(s);
     for (const s of order) this.weaponsTick(s);
     for (const s of order) this.dronesTick(s);
     for (const s of order) this.teleTick(s);
+    for (const s of order) this.cloakTick(s);
     this.projectilesTick(order[0].idx);
     for (const s of order) this.crewTick(s);
     for (const s of order) this.environmentTick(s);
@@ -95,8 +99,8 @@ export class Match {
     switch (cmd.c) {
       case "power": {
         const s = ship.systems[cmd.system];
-        // An ionised system is locked: power can neither enter nor leave it.
-        if (!s || isSubsystem(s.id) || s.ion > 0) return false;
+        // An ionised or hacked system is locked: power can neither enter nor leave it.
+        if (!s || isSubsystem(s.id) || s.ion > 0 || s.locked) return false;
         if (cmd.delta > 0) {
           if (reactorUsed(ship) >= ship.reactor || s.power >= usable(s)) return false;
           s.power++;
@@ -110,7 +114,7 @@ export class Match {
       case "weaponPower": {
         const w = ship.weapons[cmd.slot];
         const ws = ship.systems.weapons;
-        if (!w || !ws || ws.ion > 0) return false;
+        if (!w || !ws || ws.ion > 0 || ws.locked) return false;
         if (!cmd.on) {
           if (!w.powered) return false;
           w.powered = false;
@@ -152,6 +156,12 @@ export class Match {
         }
         return true;
       }
+      case "cloak":
+        return this.startCloak(ship);
+      case "hackLaunch":
+        return this.hackLaunch(ship, cmd.room);
+      case "hackPulse":
+        return this.startPulse(ship);
       case "teleport":
       case "retrieve":
         return this.teleport(ship, cmd.room, cmd.c === "teleport");
@@ -159,7 +169,7 @@ export class Match {
         const d = ship.drones?.[cmd.slot];
         const ds = ship.systems.drones;
         const bp = d && this.db.droneBPs?.[d.bp];
-        if (!d || !ds || !bp || ds.ion > 0) return false;
+        if (!d || !ds || !bp || ds.ion > 0 || ds.locked) return false;
         if (!cmd.on) {
           if (!d.powered) return false;
           d.powered = false;
@@ -190,7 +200,7 @@ export class Match {
       case "door":
       case "doorsAll": {
         const d = ship.systems.doors;
-        if (d && this.eff(d) <= 0) return false;
+        if (d && (this.eff(d) <= 0 || d.hacked)) return false;
         if (cmd.c === "door") {
           if (cmd.door < 0 || cmd.door >= ship.doors.length) return false;
           ship.doors[cmd.door] = cmd.open;
@@ -239,6 +249,8 @@ export class Match {
 
   eff(s: SystemState | undefined): number {
     if (!s) return 0;
+    // A hacking pulse shuts these down outright (FTL's hack_* texts); the rest are handled where they act.
+    if (s.hacked && HACK_OFF.includes(s.id)) return 0;
     // A manned subsystem (sensors, doors) works one level up while it has any power.
     if (isSubsystem(s.id)) return usable(s) > 0 ? usable(s) + (s.manBonus ?? 0) : 0;
     return Math.min(s.power + (s.bonus ?? 0), usable(s));
@@ -271,9 +283,10 @@ export class Match {
     const enemy = st.ships[1 - ship.idx];
     const scrambled = augCount(enemy, "DEFENSE_SCRAMBLER") > 0;
     const boost = augCount(ship, "DRONE_SPEED") ? 1 + (this.db.augments?.DRONE_SPEED?.value ?? 0.25) : 1;
+    const frozen = !!ship.systems.drones?.hacked;
     for (const d of ship.drones ?? []) {
       const bp = this.db.droneBPs?.[d.bp];
-      if (!bp || !d.powered) continue;
+      if (!bp || !d.powered || frozen) continue;
       if (!d.deployed) {
         // Launching uses a drone part.
         if ((ship.droneParts ?? 0) <= 0) continue;
@@ -304,11 +317,12 @@ export class Match {
         }
         const lasersToo = bp.id !== "DEFENSE_1";
         const incoming = st.projectiles
-          .filter((p) => p.from === enemy.idx && p.delay <= 0 && p.flight - p.t > RULES.interceptMin && (p.kind === "MISSILES" || p.kind === "BOARDER" || (lasersToo && (p.kind === "LASER" || p.kind === "BURST"))))
+          .filter((p) => p.from === enemy.idx && p.delay <= 0 && p.flight - p.t > RULES.interceptMin && (p.kind === "MISSILES" || p.kind === "BOARDER" || p.kind === "HACK" || (lasersToo && (p.kind === "LASER" || p.kind === "BURST"))))
           .sort((a, b) => a.flight - a.t - (b.flight - b.t))[0];
         if (incoming) {
           st.projectiles = st.projectiles.filter((p) => p !== incoming);
           if (incoming.boarder !== undefined) this.loseDrone(enemy, incoming.boarder);
+          if (incoming.kind === "HACK") enemy.hack = undefined;
           st.events.push({ e: "intercept", ship: ship.idx, projectile: incoming.id, drone: d.slot });
         } else d.cd = 0.1;
       } else if (bp.type === "SHIP_REPAIR") {
@@ -429,7 +443,7 @@ export class Match {
   }
 
   private updateDerived(ship: ShipState): void {
-    ship.evasion = this.evasionOf(ship);
+    ship.evasion = Math.min(100, this.evasionOf(ship) + ((ship.cloak?.t ?? 0) > 0 ? RULES.cloakEvasion : 0));
   }
 
   // ---------------------------------------------------------------- weapons and projectiles
@@ -450,6 +464,9 @@ export class Match {
   }
 
   private weaponsTick(ship: ShipState): void {
+    // FTL: while the enemy is cloaked, weapons stop charging and aiming. A hacked weapons system drains.
+    const enemyCloaked = (this.state.ships[1 - ship.idx].cloak?.t ?? 0) > 0;
+    const drained = !!ship.systems.weapons?.hacked;
     for (const w of ship.weapons) {
       const bp = this.wbp(w.bp);
       const cd = this.cooldownOf(ship, w.slot);
@@ -461,6 +478,12 @@ export class Match {
         w.boost = 0;
         continue;
       }
+      if (drained) {
+        w.volleys = 0;
+        w.charge = Math.max(0, w.charge - DT * RULES.hackWeaponDrain);
+        continue;
+      }
+      if (enemyCloaked) continue;
       if (w.volleys < bp.chargeLevels) {
         w.charge = Math.min(cd, w.charge + DT * rate);
         if (w.charge >= cd) {
@@ -547,6 +570,7 @@ export class Match {
     const T = st.ships[1 - p.from];
     const g = this.geo(T);
     if (p.kind === "BOARDER") return this.landBoarder(src, T, p);
+    if (p.kind === "HACK") return this.landHack(src, T, p);
     const bp = this.wbp(p.weapon);
     if (p.kind === "BEAM" && p.target.kind === "beam") return this.resolveBeam(src, T, g, bp, p.target);
     if (p.target.kind !== "room") return;
@@ -737,6 +761,8 @@ export class Match {
       if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - tr.drainO2 * DT);
       if (this.god.has(c.owner)) c.hp = c.maxHp;
       if (ownShip && medbay && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
+      // A hacked medbay hurts its own crew instead.
+      if (ownShip && medbay?.hacked && medbay.room === room) c.hp -= RULES.hackMedbayDps * DT;
       if (c.hp <= 0) {
         c.hp = 0;
         c.path = [];
@@ -754,7 +780,15 @@ export class Match {
       if (c.drone !== undefined && !c.path.length && !hostiles.length) this.unitThink(ship, g, c, room);
       // Movement. Intruders have to break closed doors first (longer for better doors).
       if (c.path.length) {
-        if (!ownShip) {
+        // Hacked doors are blast doors for their own crew (and open for the hacker's boarders).
+        if (ownShip && ship.systems.doors?.hacked) {
+          const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
+          if (edge && edge.door >= 0) {
+            c.task = "idle";
+            continue;
+          }
+        }
+        if (!ownShip && !ship.systems.doors?.hacked) {
           const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
           if (edge && edge.door >= 0 && !ship.doors[edge.door]) {
             c.bash = (c.bash ?? 0) + DT * Math.max(0.5, tr.combat);
@@ -865,6 +899,110 @@ export class Match {
   }
 
   // ---------------------------------------------------------------- boarding
+
+  // ---------------------------------------------------------------- cloaking and hacking
+
+  private startCloak(ship: ShipState): boolean {
+    const cs = ship.systems.cloaking;
+    const lv = Math.min(3, this.eff(cs));
+    if (!cs || lv <= 0 || (ship.cloak?.t ?? 0) > 0 || (ship.cloak?.cd ?? 0) > 0) return false;
+    ship.cloak = { t: RULES.cloakDuration[lv], cd: 0 };
+    this.state.events.push({ e: "cloak", ship: ship.idx, on: true });
+    return true;
+  }
+
+  private cloakTick(ship: ShipState): void {
+    const c = ship.cloak;
+    if (!c) return;
+    if (c.t > 0) {
+      c.t -= DT;
+      // Losing the system (damage, ion, a hack) drops the cloak early.
+      if (this.eff(ship.systems.cloaking) <= 0) c.t = 0;
+      if (c.t <= 0) {
+        c.t = 0;
+        c.cd = RULES.cloakCooldown;
+        this.state.events.push({ e: "cloak", ship: ship.idx, on: false });
+      }
+    } else if (c.cd > 0 && this.eff(ship.systems.cloaking) > 0) c.cd = Math.max(0, c.cd - DT);
+  }
+
+  private hackLaunch(ship: ShipState, room: number): boolean {
+    const st = this.state;
+    const T = st.ships[1 - ship.idx];
+    const hs = ship.systems.hacking;
+    if (!hs || this.eff(hs) <= 0 || ship.hack || (ship.droneParts ?? 0) <= 0) return false;
+    if (!this.geo(T).roomTiles.has(room) || (T.superShield ?? 0) > 0) return false;
+    ship.droneParts = (ship.droneParts ?? 0) - 1;
+    ship.hack = { room, attached: false, pulse: 0, cd: 0 };
+    const [tx, ty] = unkey(this.geo(T).roomTiles.get(room)![0]);
+    st.projectiles.push({
+      id: st.nextId++, from: ship.idx, weapon: "DRONE_HACKING", slot: -1, kind: "HACK", delay: 0, t: 0, flight: RULES.hackFlight,
+      target: { kind: "room", room }, px: (tx + 0.5) * TILE, py: (ty + 0.5) * TILE, damageBonus: 0,
+    });
+    return true;
+  }
+
+  private landHack(src: ShipState, T: ShipState, p: Projectile): void {
+    if (!src.hack || p.target.kind !== "room") return;
+    if ((T.superShield ?? 0) > 0) {
+      src.hack = undefined;
+      return;
+    }
+    src.hack.attached = true;
+    src.hack.cd = 1;
+    this.state.events.push({ e: "hackLand", ship: src.idx, room: p.target.room });
+  }
+
+  private startPulse(ship: ShipState): boolean {
+    const h = ship.hack;
+    const lv = Math.min(3, this.eff(ship.systems.hacking));
+    if (!h?.attached || lv <= 0 || h.pulse > 0 || h.cd > 0) return false;
+    const st = this.state;
+    const T = st.ships[1 - ship.idx];
+    h.pulse = RULES.hackPulse[lv];
+    const sys = Object.values(T.systems).find((s) => s && s.room === h.room);
+    // One-off effects as the pulse starts.
+    if (sys?.id === "teleporter") {
+      // Take over their teleporter: their boarders on this ship are sent home.
+      const g = this.geo(T);
+      for (const c of ship.crew.filter((q) => q.owner === T.idx && !q.dead && q.dying === undefined && q.drone === undefined)) {
+        const taken = new Set(T.crew.filter((q) => q.owner === T.idx && !q.dead).map((q) => q.tile));
+        const tile = (g.roomTiles.get(sys.room) ?? []).find((t) => !taken.has(t)) ?? [...g.tiles.keys()].find((t) => !taken.has(t));
+        if (tile) this.moveAboard(c, ship, T, tile);
+      }
+    } else if (sys?.id === "drones") {
+      for (const d of T.drones ?? []) if (d.deployed && this.rng.chance(RULES.hackDroneKill)) this.loseDrone(T, d.slot);
+    } else if (sys?.id === "clonebay") {
+      for (const c of this.crewOf(T.idx)) if (c.dead) c.clone = undefined;
+    } else if (sys?.id === "hacking" && T.hack) {
+      T.hack.pulse = 0;
+    } else if (sys?.id === "doors") {
+      T.doors = T.doors.map(() => false);
+    }
+    st.events.push({ e: "hackPulse", ship: ship.idx, room: h.room });
+    return true;
+  }
+
+  /** The hacking drone locks the system in its room; a pulse switches that system's hack effect on. */
+  private hackTick(ship: ShipState): void {
+    const h = ship.hack;
+    if (!h?.attached) return;
+    const T = this.state.ships[1 - ship.idx];
+    const sys = Object.values(T.systems).find((s) => s && s.room === h.room);
+    const powered = this.eff(ship.systems.hacking) > 0;
+    if (h.pulse > 0) {
+      h.pulse -= DT;
+      if (!powered) h.pulse = 0;
+      if (h.pulse <= 0) {
+        h.pulse = 0;
+        h.cd = RULES.hackCooldown;
+      }
+    } else if (h.cd > 0 && powered) h.cd = Math.max(0, h.cd - DT);
+    if (sys && powered) {
+      sys.locked = true;
+      if (h.pulse > 0) sys.hacked = true;
+    }
+  }
 
   /** Every crew member a player owns, aboard either ship (drone units excluded). */
   crewOf(idx: 0 | 1): CrewState[] {
@@ -1024,9 +1162,11 @@ export class Match {
   private environmentTick(ship: ShipState): void {
     const g = this.geo(ship);
     const ox = this.eff(ship.systems.oxygen);
+    const o2Hacked = !!ship.systems.oxygen?.hacked;
     const byId = new Map(ship.rooms.map((r) => [r.id, r]));
     for (const rs of ship.rooms) {
       const tiles = g.roomTiles.get(rs.id)!;
+      if (o2Hacked) rs.o2 -= RULES.hackO2Drain * DT;
       if (ox > 0) rs.o2 += RULES.o2Refill[Math.min(3, ox)] * DT;
       else rs.o2 -= RULES.o2Drain * DT;
       const nb = Object.keys(rs.breaches).length;
