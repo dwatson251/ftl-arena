@@ -19,6 +19,8 @@ export interface Loadout {
   /** Drone ids (up to the hull's drone slots) and drone parts. */
   drones?: string[];
   droneParts?: number;
+  /** "ftl": brought in from an FTL save and not changed since (what a "Bring your own ship" lobby accepts). */
+  origin?: "ftl";
 }
 
 export const MAX_AUGMENTS = 3;

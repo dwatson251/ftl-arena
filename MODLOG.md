@@ -359,6 +359,23 @@
   - below 900 px the lobby is a strip above the step;
   - the tabs wrap.
 
+## Bring your own ship (rule: Ships → FTL saves only)
+- **The rule:** `MatchConfig.ftlOnly`. A loadout carries `origin: "ftl"` from an FTL import. The client drops
+  it on any change, since `change()` keeps it only while the loadout `isSame`s the import (`ftlBase`). A
+  preset saved from an unchanged import keeps it.
+- **Server:** `setReady` refuses non-`ftl` ships, and the scrap allowance is ignored (`Lobby.price()`). When
+  the rule is switched on, every non-host build that isn't from FTL is reset to the default hull and
+  unreadied.
+- **Client:**
+  - Only Rules, Presets and (with an FTL ship) Launch are open; everything else is greyed out and
+    unreachable (tabs, nav, Next, Tab/Enter).
+  - New ship and non-FTL presets are disabled.
+  - Launch's back button goes to Presets.
+  - Non-hosts are sent to Presets when the rule switches on.
+  - The host is asked first if anyone else has started building or readied.
+- **Not enforced:** the server can't tell a real save from a crafted `origin` tag. That's fine among
+  friends.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

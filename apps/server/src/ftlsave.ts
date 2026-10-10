@@ -269,7 +269,7 @@ export function ftlSaveToLoadout(save: FtlSave, db: GameDB): { loadout: Loadout;
   if (people.length > RULES.maxCrew) notes.push(`${people.length - RULES.maxCrew} crew over the arena's limit of ${RULES.maxCrew} stayed behind.`);
   if (dropped.length) notes.push(`Not carried over: ${dropped.join(", ")}.`);
   return {
-    loadout: { ship: save.blueprint, systems, reactor: save.reactor, weapons, crew, missiles: Math.max(0, save.missiles), augments, drones, droneParts: Math.max(0, save.droneParts) },
+    loadout: { origin: "ftl", ship: save.blueprint, systems, reactor: save.reactor, weapons, crew, missiles: Math.max(0, save.missiles), augments, drones, droneParts: Math.max(0, save.droneParts) },
     notes,
   };
 }

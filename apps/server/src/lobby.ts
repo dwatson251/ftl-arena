@@ -72,7 +72,7 @@ export class Lobby {
     if (this.phase !== "lobby") return "that match has already started";
     const ship = this.config.shipPool[0] ?? this.db.hangar[0];
     const loadout = baseLoadout(this.db, ship);
-    this.players.push({ id: c.id, name: c.name, ready: false, loadout, priced: priceLoadout(this.db, loadout, this.config.scrap, this.config.shipPool, this.config.unlimited), connected: true });
+    this.players.push({ id: c.id, name: c.name, ready: false, loadout, priced: this.price(loadout), connected: true });
     this.clients.set(c.id, c);
     c.lobby = this;
     if (this.practice && this.players.length === 1) this.addBot();
@@ -280,15 +280,23 @@ export class Lobby {
     this.broadcast();
   }
 
+  /** Price a build under the rules ("Bring your own ship" has no scrap allowance). */
+  private price(l: Loadout) {
+    return priceLoadout(this.db, l, this.config.ftlOnly ? Number.MAX_SAFE_INTEGER : this.config.scrap, this.config.shipPool, this.config.unlimited);
+  }
+
   setConfig(c: Client, cfg: Partial<MatchConfig>): string | null {
     if (c.id !== this.host) return "only the host can change the rules";
     if (this.phase !== "lobby") return "rules are locked once the countdown starts";
+    const wasFtl = !!this.config.ftlOnly;
     this.config = sanitizeConfig(this.db, { ...this.config, ...cfg, seed: this.config.seed }, this.practice);
     for (const p of this.players) {
       if (p.bot) continue;
       if (p.loadout && this.config.shipPool.length && !this.config.shipPool.includes(p.loadout.ship))
         p.loadout = baseLoadout(this.db, this.config.shipPool[0]);
-      p.priced = p.loadout ? priceLoadout(this.db, p.loadout, this.config.scrap, this.config.shipPool, this.config.unlimited) : null;
+      // Switching to "Bring your own ship": everyone else's hangar build is cleared (they bring theirs).
+      if (this.config.ftlOnly && !wasFtl && p.id !== this.host && p.loadout?.origin !== "ftl") p.loadout = baseLoadout(this.db, this.config.shipPool[0] ?? this.db.hangar[0]);
+      p.priced = p.loadout ? this.price(p.loadout) : null;
       p.ready = false;
     }
     this.rebuildBot();
@@ -302,7 +310,7 @@ export class Lobby {
     if (!p) return "not in this lobby";
     if (!this.db.ships[l.ship]) return "unknown ship";
     p.loadout = l;
-    p.priced = priceLoadout(this.db, l, this.config.scrap, this.config.shipPool, this.config.unlimited);
+    p.priced = this.price(l);
     p.ready = false;
     this.broadcast();
     return null;
@@ -314,6 +322,7 @@ export class Lobby {
     const calling = !ready && this.phase === "countdown";
     if (!p || (this.phase !== "lobby" && !calling)) return "can't ready now";
     if (ready && !p.priced?.ok) return p.priced?.errors.join("; ") || "loadout invalid";
+    if (ready && this.config.ftlOnly && !p.bot && p.loadout?.origin !== "ftl") return "this lobby flies ships from FTL saves only: load yours on the Presets step";
     p.ready = ready;
     if (calling) {
       this.phase = "lobby";
@@ -458,6 +467,7 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
     timeLimit: clamp(Math.round(Number(c.timeLimit) || 0), 0, 3600),
     seed: Number(c.seed) | 0,
     unlimited: !!c.unlimited,
+    ftlOnly: !!c.ftlOnly,
   };
 }
 

@@ -21,6 +21,11 @@ export interface MatchConfig {
   /** Unrestricted hangar: weapons, drones and reactor up to the most the hull could ever use (loadout.ts). */
   unlimited?: boolean;
   /**
+   * "Bring your own ship": every captain flies the ship from their own FTL run (Load from FTL, or a preset
+   * saved from one, unchanged). The hangar's building steps are off and the scrap allowance doesn't apply.
+   */
+  ftlOnly?: boolean;
+  /**
    * Pausing (experimental; FTL's single player pauses at will). "off": never. "tactical": every `tacticalEvery`
    * seconds of play both players get a forced `tacticalLength` s timeout (it ends early once both are ready).
    * "clock": either player may pause everyone, spending their own `pauseBank` seconds (0 = unlimited, practice

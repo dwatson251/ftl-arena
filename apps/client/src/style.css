@@ -231,3 +231,7 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
   .hg-side .players { flex: 1; min-width: 200px; }
   .hg-side > div[style] { margin-top: 0 !important; }
 }
+/* Steps a rule closes (Bring your own ship): greyed out, not clickable. */
+.hg-step.locked { filter: grayscale(1); opacity: 0.45; cursor: not-allowed; }
+.preset-new:disabled { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; }
+.preset-card.off { filter: grayscale(1); }
