@@ -118,6 +118,7 @@ export class Match {
     this.projectilesTick(order[0].idx);
     for (const s of order) this.crewTick(s);
     for (const s of order) this.environmentTick(s);
+    for (const s of order) this.restorePower(s);
     for (const s of order) this.updateDerived(s);
     st.tick++;
     this.checkEnd();
@@ -136,10 +137,23 @@ export class Match {
           if (reactorUsed(ship) >= this.cap(ship) || s.power >= usable(s)) return false;
           s.power++;
         } else {
-          if (s.power <= 0) return false;
+          // Taking power off a system that's down to nothing cancels a bar it would get back when repaired.
+          if (s.power <= 0) {
+            if ((s.want ?? 0) <= 0) return false;
+            s.want = (s.want ?? 0) - 1;
+            return true;
+          }
           s.power--;
-          if (s.id === "weapons") this.clampWeapons(ship);
+          if (s.id === "weapons") {
+            this.clampWeapons(ship);
+            for (const w of ship.weapons) if (!w.powered) w.want = false;
+          }
+          if (s.id === "drones") {
+            this.clampDrones(ship);
+            for (const d of ship.drones ?? []) if (!d.powered) d.want = false;
+          }
         }
+        s.want = s.power;
         return true;
       }
       case "weaponPower": {
@@ -149,6 +163,7 @@ export class Match {
         if (!cmd.on) {
           if (!w.powered) return false;
           w.powered = false;
+          w.want = false;
           ws.power = Math.max(0, ws.power - this.wbp(w.bp).power);
           return true;
         }
@@ -163,6 +178,7 @@ export class Match {
           ws.power += extra;
         }
         w.powered = true;
+        w.want = true;
         return true;
       }
       case "target": {
@@ -219,6 +235,7 @@ export class Match {
           // A deployed drone that loses power goes offline (it stays out there, idle) until it's powered again.
           if (!d.powered) return false;
           d.powered = false;
+          d.want = false;
           d.launch = 0;
           ds.power = Math.max(0, ds.power - bp.power);
           return true;
@@ -232,6 +249,7 @@ export class Match {
           ds.power += extra;
         }
         d.powered = true;
+        d.want = true;
         // A new drone launches after a moment (using a drone part); an offline one just comes back on. A Shield
         // Overcharger's timer starts over when it gets power back (wiki).
         d.launch = d.deployed ? 0 : RULES.droneLaunch;
@@ -646,6 +664,35 @@ export class Match {
     if (em !== undefined) ev += RULES.engineManBonus[em];
     if (pilot !== undefined) return ev + RULES.pilotManBonus[pilot];
     return Math.floor(ev * RULES.autopilot[Math.min(3, pilotPower)]);
+  }
+
+  /**
+   * FTL remembers the power a player gave each system, gun and drone: what damage, ion or a power shortage
+   * took away comes back by itself once it's repaired (or the ion wears off, or the reactor frees up), most
+   * vital systems first. Only the player taking power off lowers what's remembered.
+   */
+  private restorePower(ship: ShipState): void {
+    for (const s of Object.values(ship.systems)) if (s && !isSubsystem(s.id)) s.want ??= s.power;
+    for (const w of ship.weapons) w.want ??= w.powered;
+    for (const d of ship.drones ?? []) d.want ??= d.powered;
+    const order: SystemId[] = ["shields", "engines", "oxygen", "medbay", "clonebay", "weapons", "teleporter", "cloaking", "hacking", "mind", "artillery", "artillery2", "artillery3", "artillery4", "drones"];
+    for (const id of order) {
+      const s = ship.systems[id];
+      if (!s || s.ion > 0 || s.locked) continue;
+      if (id === "weapons") {
+        ship.weapons.forEach((w, slot) => {
+          if (w.want && !w.powered) this.apply(ship, { c: "weaponPower", slot, on: true });
+        });
+      } else if (id === "drones") {
+        (ship.drones ?? []).forEach((d, slot) => {
+          if (d.want && !d.powered) this.apply(ship, { c: "dronePower", slot, on: true });
+        });
+      } else {
+        const want = s.want ?? 0;
+        while (s.power < want && this.apply(ship, { c: "power", system: id, delta: 1 })) {}
+        s.want = want;
+      }
+    }
   }
 
   private updateDerived(ship: ShipState): void {
@@ -1801,6 +1848,7 @@ export class Match {
     const bp = this.db.droneBPs?.[d.bp];
     if (d.powered && ship.systems.drones) ship.systems.drones.power = Math.max(0, ship.systems.drones.power - (bp?.power ?? 1));
     d.powered = false;
+    d.want = false;
     d.deployed = false;
     d.launch = 0;
     if (rebuild) d.rebuild = RULES.droneRebuild;

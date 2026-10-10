@@ -57,6 +57,8 @@ export interface SystemState {
   level: number;
   /** Reactor power allocated (main systems) - always clamped to usable(). */
   power: number;
+  /** The power the player last chose: damage, ion or a shortage take bars away, and they come back by themselves. */
+  want?: number;
   damage: number;
   repair: number;
   /** Boarders' progress (0..1) toward breaking the next bar, for the HUD (recomputed every tick). */
@@ -162,6 +164,8 @@ export interface WeaponState {
   slot: number;
   bp: string;
   powered: boolean;
+  /** The player wants it on: it powers back up by itself when it can (after repairs, ion, a power shortage). */
+  want?: boolean;
   charge: number;
   /** Volleys stored (charge weapons store up to chargeLevels). */
   volleys: number;
@@ -227,6 +231,8 @@ export interface DroneState {
   bp: string;
   /** Powered drones deploy (using a drone part); a deployed drone that loses power goes offline until it's powered again. */
   powered: boolean;
+  /** The player wants it on: it powers back up by itself when it can. */
+  want?: boolean;
   deployed: boolean;
   /** Orbit angle (radians) for drawing. */
   angle: number;

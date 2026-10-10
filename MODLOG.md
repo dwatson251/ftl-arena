@@ -376,6 +376,22 @@
 - **Not enforced:** the server can't tell a real save from a crafted `origin` tag. That's fine among
   friends.
 
+## Round 20: ion flash, power that comes back
+- **Ion icon:** an ionised system's room icon now flashes between blue and its usual colour (grey, orange or
+  red) twice a second on the wall clock, instead of staying blue. This is from memory of FTL; not checked
+  against a capture yet.
+- **Power restore (sim):**
+  - Each system now remembers the power the player last gave it (`SystemState.want`), and guns and drones
+    remember whether the player wants them on (`want`).
+  - Bars lost to damage, ion or a reactor shortage come back by themselves once repaired, once the ion wears
+    off or once the reactor frees up. Vital systems come first: shields, engines, oxygen, medbay, then
+    weapons, and drones last.
+  - Only the player taking power off lowers the remembered value. Powering down a system that's at zero
+    cancels one bar it would have got back.
+  - A destroyed drone forgets: it has to be powered by hand after its rebuild.
+  - The enemy's `want` is stripped from the view.
+- Tests: `tests/round20.test.ts` (116 passing in total).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

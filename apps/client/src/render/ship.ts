@@ -310,13 +310,15 @@ export class ShipRenderer {
       }
     }
     // Room system icons as FTL draws them (matched against real screenshots): the white overlay glyph
-    // tinted grey whatever the power; red when destroyed, blue while ionised, yellow-orange when damaged.
+    // tinted grey whatever the power; red when destroyed, yellow-orange when damaged. An ionised one flashes
+    // between blue and its usual colour.
+    const ionBlink = Math.floor((o.clock ?? time) * 2) % 2 === 0;
     for (const s of Object.values(v.systems)) {
       if (!s) continue;
       const r = L.rooms.find((q) => q.id === s.room)!;
       const cx = (r.x + r.w / 2) * TILE;
       const cy = (r.y + r.h / 2) * TILE;
-      const tint = s.damage >= s.level ? 0xff3c30 : s.ion > 0 ? 0x5aa8ff : s.damage > 0 ? 0xffa830 : 0x8a8a8a;
+      const tint = s.ion > 0 && ionBlink ? 0x5aa8ff : s.damage >= s.level ? 0xff3c30 : s.damage > 0 ? 0xffa830 : 0x8a8a8a;
       const t = texNow(`icons/s_${baseSystemId(s.id)}_overlay.png`);
       if (t) d.sprite(`ic${s.id}`, t, cx, cy, { anchor: 0.5, scale: r.w * r.h <= 1 ? 0.8 : 1, rotation: up, tint });
       else {

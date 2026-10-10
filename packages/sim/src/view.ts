@@ -152,6 +152,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     for (const s of Object.values(ev.systems)) {
       if (!s) continue;
       s.power = -1;
+      delete s.want;
       s.ionTimer = 0;
       s.repair = 0;
       s.sabotage = 0;
@@ -161,7 +162,9 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   for (const w of ev.weapons) {
     w.target = null;
     w.autofire = false;
+    delete w.want;
   }
+  for (const d of ev.drones ?? []) delete d.want;
   if (!over) {
     // The enemy's evasion is never shown; its hull always is, whatever your sensors.
     ev.evasion = -1;
