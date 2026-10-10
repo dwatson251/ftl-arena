@@ -191,6 +191,28 @@ export class Lobby {
       case "hurt":
         if (m) for (const c of m.state.ships[d.ship].crew) if (!c.dead && c.dying === undefined) c.hp -= 45;
         break;
+      case "missiles":
+        if (m) m.state.ships[d.ship].missiles += 5;
+        break;
+      case "parts":
+        if (m) {
+          const s = m.state.ships[d.ship];
+          s.droneParts = (s.droneParts ?? 0) + 5;
+        }
+        break;
+      case "fixall":
+        if (m) {
+          // Every system whole again: no damage, ion or repair in progress, and every recharge done.
+          const s = m.state.ships[d.ship];
+          for (const x of Object.values(s.systems)) if (x) Object.assign(x, { damage: 0, repair: 0, ion: 0, ionTimer: 0, fireDmg: 0 });
+          s.tele = 99;
+          if (s.cloak) s.cloak.cd = 0;
+          if (s.hack) s.hack.cd = 0;
+          if (s.battery) s.battery.cd = 0;
+          s.mindCd = 0;
+          for (const dr of s.drones ?? []) dr.rebuild = 0;
+        }
+        break;
       case "kill": {
         // One of that player's crew dies (for clone bay checks).
         const c = m?.crewOf(d.ship).find((q) => !q.dead && q.dying === undefined);

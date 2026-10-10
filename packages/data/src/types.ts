@@ -36,6 +36,8 @@ export interface WeaponBP {
   stun: number;
   /** Projectile anim name and the weapon's mount anim name (for the client). */
   image: string;
+  /** Flak: the art of each real piece of a volley (FTL's debris_large / debris_med / ...). */
+  pieceArt?: string[];
   weaponArt: string;
   /** Store availability: rarity 0 means never sold in stores. */
   rarity: number;

@@ -188,6 +188,9 @@ function renderDebug(): void {
       else if (a.op === "ion") dbg({ op: "ion", ship: who });
       else if (a.op === "hurt") dbg({ op: "hurt", ship: who });
       else if (a.op === "kill") dbg({ op: "kill", ship: who });
+      else if (a.op === "missiles") dbg({ op: "missiles", ship: who });
+      else if (a.op === "parts") dbg({ op: "parts", ship: who });
+      else if (a.op === "fixall") dbg({ op: "fixall", ship: who });
       else if (a.op === "restart") dbg({ op: "restart" });
     });
     el.addEventListener("input", (e) => {
@@ -214,7 +217,7 @@ function renderDebug(): void {
         <input type="range" min="0" max="100" step="5" data-diff style="width:100%">
         <div class="note" data-skill></div>
         <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="them" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="them">breach</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button><button class="small" data-op="ion" data-who="them">ion</button><button class="small" data-op="hurt" data-who="them">hurt crew</button></div>
-        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="me" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="me">breach</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button><button class="small" data-op="kill" data-who="me">kill one</button></div>
+        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="me" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="me">breach</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button><button class="small" data-op="kill" data-who="me">kill one</button><button class="small" data-op="missiles" data-who="me">+5 missiles</button><button class="small" data-op="parts" data-who="me">+5 drone parts</button><button class="small" data-op="fixall" data-who="me">fix all systems</button></div>
         <div class="debug-log" data-log></div>`
       : `<button class="small" data-toggle title="Debug">⟨ DEBUG</button>`;
   }

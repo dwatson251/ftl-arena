@@ -31,9 +31,10 @@ export function parseWeapon(n: XNode, text: Record<string, string>): WeaponBP | 
   const type = txt(n, "type") ?? "";
   if (!WEAPON_TYPES.has(type)) return undefined;
   // Flak lists its pieces under <projectiles>; "fake" pieces are cosmetic.
-  const pieces = kids(kid(n, "projectiles"), "projectile")
-    .filter((p) => p.attrs.fake !== "true")
-    .reduce((a, p) => a + (Number(p.attrs.count) || 1), 0);
+  const real = kids(kid(n, "projectiles"), "projectile").filter((p) => p.attrs.fake !== "true");
+  const pieces = real.reduce((a, p) => a + (Number(p.attrs.count) || 1), 0);
+  // Each real piece's art (debris_large, debris_med...), one entry per piece.
+  const pieceArt = real.flatMap((p) => Array.from({ length: Number(p.attrs.count) || 1 }, () => p.text.trim())).filter(Boolean);
   const boost = kid(n, "boost");
   return {
     id: n.attrs.name,
@@ -59,6 +60,7 @@ export function parseWeapon(n: XNode, text: Record<string, string>): WeaponBP | 
     speed: num(n, "speed"),
     stun: num(n, "stun"),
     image: txt(n, "image") ?? "",
+    ...(pieceArt.length ? { pieceArt } : {}),
     weaponArt: txt(n, "weaponArt") ?? "",
     rarity: num(n, "rarity"),
     chargeLevels: Math.max(1, num(n, "chargeLevels", 1)),

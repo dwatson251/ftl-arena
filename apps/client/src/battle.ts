@@ -635,6 +635,8 @@ export class Battle {
       const t = p.t + Math.max(0, dtSnap - Math.max(0, p.delay));
       const F = p.flight;
       const bp = this.db.weapons[p.weapon];
+      // Flak pieces fly FTL's debris art, a different piece per shot of the volley.
+      const art = bp?.pieceArt?.length ? bp.pieceArt[p.id % bp.pieceArt.length] : bp?.image;
       // Phases: out of the source view (first 35 % of the flight), a gap, then into the target view.
       const k1 = t / (F * 0.35);
       const k2 = (t - F * 0.5) / (F * 0.5);
@@ -687,7 +689,7 @@ export class Battle {
         const dx = (ahead.x - muzzle.x) / d;
         const dy = (ahead.y - muzzle.y) / d;
         const dist = speed * t;
-        this.drawShot(mine ? this.projOwn : this.projWin, bp?.image, muzzle.x + dx * dist, muzzle.y + dy * dist, Math.atan2(dy, dx), p.kind, 1);
+        this.drawShot(mine ? this.projOwn : this.projWin, art, muzzle.x + dx * dist, muzzle.y + dy * dist, Math.atan2(dy, dx), p.kind, 1);
       } else if (k2 >= 0) {
         // Into the target view from a varying angle: from the left half for the hostiles window,
         // from the right half for our own ship.
@@ -699,7 +701,7 @@ export class Battle {
         const y = target.y + Math.sin(ang) * R;
         const heading = ang + Math.PI;
         this.lastInbound.set(mine ? 1 - v.you : v.you, heading);
-        this.drawShot(mine ? this.projWin : this.projOwn, bp?.image, x, y, heading, p.kind, 1);
+        this.drawShot(mine ? this.projWin : this.projOwn, art, x, y, heading, p.kind, 1);
       }
     }
   }
@@ -739,7 +741,8 @@ export class Battle {
       s.anchor.set(0.5);
       s.position.set(x, y);
       // Missile and bomb art point up; laser art points right.
-      s.rotation = kind === "MISSILES" ? ang + Math.PI / 2 : kind === "BOMB" ? 0 : ang;
+      // Flak debris tumbles as it flies.
+      s.rotation = kind === "MISSILES" ? ang + Math.PI / 2 : kind === "BOMB" ? 0 : kind === "BURST" ? this.animTime * 6 + x * 0.01 : ang;
       if (kind === "MISSILES") s.scale.set(0.7);
       s.alpha = alpha;
       layer.addChild(s);
@@ -1097,14 +1100,7 @@ export class Battle {
     let y = 155;
     const away = new Set(crew.filter((c) => !s.crew.includes(c)).map((c) => c.id));
     for (const c of crew) {
-      if (c.dead && c.clone !== undefined) {
-        // Being cloned: a greyed box with the clone bar (FTL's clonebar).
-        g.rect(10, y, 86, 26).fill({ color: 0x14202a, alpha: 0.95 }).stroke({ color: 0x6ab4d0, width: 2 });
-        h.text(`cn${c.id}`, c.name, 14, y - 1, fstyle("JustinFont8", 0x9fd8f0));
-        g.rect(14, y + 18, Math.floor((78 * c.clone) / 3) * 3, 4).fill({ color: 0x6ad8ff });
-        y += 30;
-        continue;
-      }
+      // The dead (cloning ones too: their progress shows in the clone bay's queue above its bars) drop out.
       if (c.dead) continue;
       const sel = this.selected.has(c.id);
       g.rect(10, y, 86, 26).fill({ color: sel ? 0x24502c : 0x1a1f22, alpha: 0.95 }).stroke({ color: sel ? 0x78ff78 : 0x7c8686, width: 2 });
@@ -2010,7 +2006,12 @@ export class Battle {
       return this.send({ c: out ? "teleport" : "retrieve", room: eh.room });
     }
     if (this.armed !== null) {
-      if (right) return this.disarm();
+      // Right-click while choosing a target: the weapon stops aiming altogether (its old target is cleared).
+      if (right) {
+        this.send({ c: "target", slot: this.armed, target: null });
+        play(this.db, ["powerDownSystem"]);
+        return this.disarm();
+      }
       const bp = this.db.weapons[own.weapons[this.armed].bp];
       if (bp?.type === "BEAM") {
         if (!this.beamStart) {
