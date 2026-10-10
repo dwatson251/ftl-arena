@@ -362,7 +362,8 @@ export class Hangar {
         const bars = Array.from({ length: s.max }, (_, i) => `<i class="${i < Math.min(s.base, lv) ? "on" : i < lv ? "new" : ""}"></i>`).join("");
         return `<div class="sys-row">${this.sysIcon(s.id)}<span class="sys-name">${s.id}</span><span class="bars">${bars}</span>
           <button class="small" data-sys="${s.id}" data-d="-1" ${lv <= s.base && !(this.bayPair(s.id) && lv > 0 && hullSystems(db, l.ship).some((x) => x.id === this.bayPair(s.id) && x.base > 0)) ? "disabled" : ""}>−</button>
-          <button class="small" data-sys="${s.id}" data-d="1" ${lv >= s.max || capped ? "disabled" : ""}>+</button><span class="note">${capped ? "system limit reached" : next}</span></div>`;
+          <button class="small" data-sys="${s.id}" data-d="1" ${lv >= s.max || capped ? "disabled" : ""}>+</button><span class="note">${capped ? "system limit reached" : next}</span></div>
+          ${this.sysInfo(s.id, lv, s.max)}`;
       })
       .join("");
     return `<h2>2 · Systems <span class="note">${installed}/${RULES.maxSystems} systems</span></h2>
@@ -371,11 +372,53 @@ export class Hangar {
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>
         <button class="small" data-reactor="-1" ${l.reactor <= base.reactor ? "disabled" : ""}>−</button>
         <button class="small" data-reactor="1" ${l.reactor >= reactorCap(db, l.ship, unl) ? "disabled" : ""}>+</button><span class="note">${RULES.reactorPrice(l.reactor)} per bar</span></div>
+      ${db.reactorDesc ? `<div class="sys-info"><div>${h(db.reactorDesc)}</div></div>` : ""}
       ${this.powerNote(l)}
       ${this.nav("Ship", "Weapons")}`;
   }
 
-  private bayPair(id: string): SystemId | null {
+  /**
+   * FTL's own description of a system and its "Level N" lines (from the player's install), with the numbers
+   * in FTL's templates filled from the arena's rules. The level you have is highlighted.
+   */
+  private sysInfo(id: SystemId, lv: number, max: number): string {
+    const bp = this.db.systems[id];
+    if (!bp?.desc && !bp?.levels) return "";
+    const fill = (t: string, n: number): string => {
+      const v: Record<string, (n: number) => (number | string)[]> = {
+        cloaking: (n) => [RULES.cloakDuration[n] ?? "?"],
+        teleporter: (n) => [RULES.teleCooldown[n] ?? "?"],
+        engines: (n) => [`${RULES.engineEvasion[n] ?? "?"}%`],
+        medbay: (n) => [+((RULES.medbayHeal[n] ?? 0) / RULES.medbayHeal[1]).toFixed(1)],
+        oxygen: (n) => [+((RULES.o2Refill[n] ?? 0) / RULES.o2Refill[1]).toFixed(1)],
+        hacking: (n) => [RULES.hackPulse[n] ?? "?"],
+        battery: (n) => [RULES.batteryPower[n] ?? "?"],
+        clonebay: (n) => [RULES.cloneTime[n] ?? "?"],
+      };
+      const vals = v[id]?.(n) ?? [];
+      // There's no FTL jump in the arena, so the engines' "/ FTL: \2x" half is dropped.
+      const base = id === "engines" ? t.replace(/\s*\/\s*FTL:.*$/, "") : t;
+      return base.replace(/\\(\d)/g, (_, i) => String(vals[Number(i) - 1] ?? "?"));
+    };
+    // Group runs of the same line ("More System Power" for every weapons level) into one "Lv 2-8" entry.
+    const lines = (bp.levels ?? []).slice(0, max).map((t, i) => (t ? fill(t, i + 1) : ""));
+    const runs: { from: number; to: number; text: string }[] = [];
+    lines.forEach((text, i) => {
+      if (!text) return;
+      const last = runs[runs.length - 1];
+      if (last && last.text === text && last.to === i) last.to = i + 1;
+      else runs.push({ from: i + 1, to: i + 1, text });
+    });
+    const chips = runs
+      .map((r) => {
+        const cls = lv >= r.from && lv <= r.to ? "now" : lv > r.to ? "have" : "";
+        return `<span class="lvl ${cls}"><b>Lv ${r.from === r.to ? r.from : `${r.from}-${r.to}`}</b> ${h(r.text)}</span>`;
+      })
+      .join("");
+    return `<div class="sys-info">${bp.desc ? `<div>${h(bp.desc)}</div>` : ""}${chips ? `<div class="lvls">${chips}</div>` : ""}</div>`;
+  }
+
+  private bayPair(id: SystemId): SystemId | null {
     return id === "medbay" ? "clonebay" : id === "clonebay" ? "medbay" : null;
   }
 

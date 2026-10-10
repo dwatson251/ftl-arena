@@ -90,6 +90,39 @@ export function parseSystem(n: XNode): SystemBP | undefined {
   };
 }
 
+/**
+ * Which "System level info" line of text_misc.xml FTL shows for each level of a system. A string is a fixed
+ * key per level (`door_1`...), a function picks one by level; templates keep their \1 / \2 placeholders.
+ */
+const LEVEL_TEXT: Record<string, (lv: number) => string | undefined> = {
+  shields: (lv) => (lv % 2 === 0 ? `shields_${lv / 2 - 1}` : undefined),
+  doors: (lv) => `door_${lv}`,
+  pilot: (lv) => `pilot_${lv}`,
+  sensors: (lv) => `sensor_${lv}`,
+  mind: (lv) => `mind_${lv}`,
+  artillery: (lv) => `artillery_${lv}`,
+  cloaking: () => "cloak",
+  teleporter: () => "teleporter_on",
+  engines: () => "engine",
+  medbay: () => "medbay_healing",
+  oxygen: () => "oxygen_on",
+  hacking: () => "hacking_duration",
+  battery: () => "battery_power",
+  clonebay: () => "clone",
+  weapons: (lv) => (lv > 1 ? "system_power" : undefined),
+  drones: (lv) => (lv > 1 ? "system_power" : undefined),
+};
+
+/** FTL's title, description and per-level lines for a system blueprint. */
+function systemText(s: SystemBP, n: XNode, text: Record<string, string>): Partial<SystemBP> {
+  const pick = LEVEL_TEXT[s.id];
+  const levels = Array.from({ length: s.maxPower }, (_, i) => {
+    const k = pick?.(i + 1);
+    return (k && text[k]) || "";
+  });
+  return { title: title(n, "title", text) || undefined, desc: title(n, "desc", text) || undefined, levels: levels.some(Boolean) ? levels : undefined };
+}
+
 export function parseCrew(n: XNode, text: Record<string, string>): CrewBP {
   const c = kid(kids(kid(n, "colorList"), "layer")[0], "color");
   const shirt = c ? ((+c.attrs.r & 255) << 16) | ((+c.attrs.g & 255) << 8) | (+c.attrs.b & 255) : undefined;
@@ -269,6 +302,7 @@ export function buildDbFromFtl(read: FileSource, imageSize?: (path: string) => {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
     anims: {}, sounds: {}, names: [], hangar: [], enemies: [], music: [], augments: {}, droneBPs: {},
   };
+  db.reactorDesc = text.reactor_desc;
   const lists: Record<string, string[]> = {};
   const enemyNodes: XNode[] = [];
   for (const f of ["data/blueprints.xml", "data/dlcBlueprints.xml", "data/dlcBlueprintsOverwrite.xml", "data/autoBlueprints.xml"]) {
@@ -282,7 +316,7 @@ export function buildDbFromFtl(read: FileSource, imageSize?: (path: string) => {
         if (w) db.weapons[w.id] = w;
       } else if (n.tag === "systemBlueprint") {
         const s = parseSystem(n);
-        if (s) db.systems[s.id] = s;
+        if (s) db.systems[s.id] = { ...s, ...systemText(s, n, text) };
       } else if (n.tag === "crewBlueprint") db.crew[n.attrs.name] = parseCrew(n, text);
       else if (n.tag === "shipBlueprint" && n.attrs.name?.startsWith("PLAYER_SHIP_")) {
         db.ships[n.attrs.name] = parseShip(n, text);

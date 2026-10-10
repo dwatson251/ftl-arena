@@ -113,6 +113,15 @@ export interface SystemBP {
   upgradeCost: number[];
   /** Price to install from a store. */
   cost: number;
+  /** FTL's own name and upgrade-screen description (text_blueprints.xml), from the owner's install. */
+  title?: string;
+  desc?: string;
+  /**
+   * FTL's "Level N" line for each level (levels[0] = level 1), from text_misc.xml's "System level info". Some
+   * are templates with \1 / \2 for numbers (cloak seconds, dodge, heal boost...) that the hangar fills in from
+   * the arena's rules; "" where FTL shows nothing for that level.
+   */
+  levels?: string[];
 }
 
 export interface CrewBP {
@@ -283,4 +292,6 @@ export interface GameDB {
   enemies: string[];
   /** Base hulls offered in the hangar, in order. */
   hangar: string[];
+  /** FTL's reactor description (text_misc.xml reactor_desc). */
+  reactorDesc?: string;
 }

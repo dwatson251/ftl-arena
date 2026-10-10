@@ -131,3 +131,10 @@ button.buy { display: inline-flex; align-items: center; min-width: 64px; justify
 .tabs .tab { flex: 1; border-radius: 0; border-bottom: none; opacity: 0.65; }
 .tabs .tab.on { opacity: 1; background: var(--panel, #263040); border-color: var(--accent); color: var(--accent); }
 .tab-body { border: 1px solid var(--edge); padding: 10px 12px 12px; margin-bottom: 8px; }
+.sys-info { font-size: 11px; color: var(--dim); padding: 0 0 6px 44px; border-bottom: 1px solid #2c3340; margin-top: -4px; }
+.sys-info .lvls { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.sys-info .lvl { border: 1px solid #39414f; border-radius: 3px; padding: 1px 6px; }
+.sys-info .lvl b { color: var(--text); font-weight: normal; }
+.sys-info .lvl.have { border-color: #3e6a45; }
+.sys-info .lvl.now { border-color: var(--ok); color: var(--text); background: #1d3a1f; }
+.sys-row:has(+ .sys-info) { border-bottom: none; }
