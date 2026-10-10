@@ -287,7 +287,11 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
             } catch {}
             for (const c of wss.clients) c.terminate();
             wss.close();
+            // http.close() alone waits for every keep-alive connection (the game window's own) to end, which
+            // can be never: drop them all so the port is free and the process can exit.
             http.close(() => done());
+            http.closeAllConnections();
+            setTimeout(done, 1000).unref();
           }),
       });
     });

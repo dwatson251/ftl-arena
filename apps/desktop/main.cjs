@@ -175,10 +175,20 @@ function menu() {
   ]));
 }
 
-app.whenReady().then(() => {
-  menu();
-  createWindow();
-});
+// One copy per data folder: launching again brings the open window forward instead of starting a second
+// server (separate FTL_ARENA_DATA folders, for testing two copies on one machine, still get one each).
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.on("second-instance", () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  });
+  app.whenReady().then(() => {
+    menu();
+    createWindow();
+  });
+}
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", (e) => {
   if (!server) return;
@@ -186,6 +196,9 @@ app.on("before-quit", (e) => {
   e.preventDefault();
   const s = server;
   server = null;
-  // (Closing the server also takes down its UPnP port forward.)
-  s.close().finally(() => app.quit());
+  // (Closing the server also takes down its UPnP port forward.) Never hang on the way out: whatever happens,
+  // the process ends within a moment, so the port is free for the next launch.
+  const bye = () => app.exit(0);
+  setTimeout(bye, 1500);
+  s.close().then(bye, bye);
 });
