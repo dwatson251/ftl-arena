@@ -466,6 +466,8 @@ export class ShipRenderer {
       // doors, room glyphs and sensed crew stay on top.
       fg.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).fill({ color: 0x373737 });
     }
+    // The room walls stay visible over the fog (black, as in FTL), so the layout reads with sensors out.
+    for (const r of L.rooms) if (!visible(r.id)) fg.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).stroke({ color: WALL, width: 3 });
     d.end();
   }
 
