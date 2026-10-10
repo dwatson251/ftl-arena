@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Host a match</title>
+    <style>
+      body { margin: 0; padding: 22px 26px; background: #1b1f27; color: #e9ecf1; font: 14px/1.5 system-ui, "Segoe UI", sans-serif; }
+      h2 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: #9aa3b2; }
+      .addr { font: 700 20px/1.3 Consolas, monospace; color: #78b9ff; user-select: all; }
+      button { font: inherit; color: #e9ecf1; background: #2b3240; border: 1px solid #6d7686; padding: 6px 12px; cursor: pointer; border-radius: 3px; }
+      input { font: inherit; color: #e9ecf1; background: #11141a; border: 1px solid #6d7686; padding: 5px 8px; width: 90px; }
+      p, li { color: #b8c0cc; }
+      .ok { color: #7bd47b; } .bad { color: #ef5b5b; }
+    </style>
+  </head>
+  <body>
+    <p>This app is already hosting: anyone can join a match here. Tell your friends the address below; they type it into
+      <b>Server</b> on the game's main menu, press Connect, then join your match code.</p>
+    <h2>Friends on the internet</h2>
+    <div class="addr" id="public">…</div>
+    <p><button id="getip">Find my public address</button> <span id="ipnote"></span></p>
+    <h2>Friends on the same Wi-Fi / network</h2>
+    <div id="local" class="addr"></div>
+    <h2>Opening the port</h2>
+    <p>For friends on the internet, your router has to let them in on TCP port <b id="port"></b>.</p>
+    <p><button id="upnp">Try automatic port forwarding</button> <span id="upnpres"></span></p>
+    <p>If that doesn't work: open your router's settings page, find <i>Port forwarding</i> (sometimes <i>Virtual server</i> or
+      <i>NAT</i>), and forward <b>TCP</b> port <b id="port2"></b> to this computer's address (<span id="lan"></span>). Windows may also ask
+      to allow FTL Arena through its firewall: allow it on private and public networks.</p>
+    <h2>Port</h2>
+    <p><input id="newport" type="number" min="1024" max="65535" /> <button id="setport">Use this port</button></p>
+    <script>
+      const api = window.ftlArena;
+      const $ = (id) => document.getElementById(id);
+      let port = 8787;
+      async function refresh() {
+        const n = await api.netInfo();
+        port = n.port;
+        for (const id of ["port", "port2"]) $(id).textContent = String(port);
+        $("newport").value = String(port);
+        $("local").innerHTML = n.local.map((a) => `${a}:${port}`).join("<br>") || "(no network)";
+        $("lan").textContent = n.local[0] ?? "?";
+        $("public").textContent = `(your public IP):${port}`;
+      }
+      $("getip").addEventListener("click", async () => {
+        $("ipnote").textContent = "asking…";
+        const ip = await api.publicIp();
+        $("public").textContent = ip ? `${ip}:${port}` : "(couldn't find it)";
+        $("ipnote").textContent = ip ? "share this one" : "check your connection";
+      });
+      $("upnp").addEventListener("click", async () => {
+        $("upnpres").textContent = "asking the router…";
+        const r = await api.upnp();
+        $("upnpres").innerHTML = r.ok ? `<span class="ok">Done: the router forwards port ${port} to ${r.ip}${r.external ? ` (public address ${r.external}:${port})` : ""}. It's removed when you quit.</span>` : `<span class="bad">No luck: ${r.error}. Use the manual steps below.</span>`;
+        if (r.ok && r.external) $("public").textContent = `${r.external}:${port}`;
+      });
+      $("setport").addEventListener("click", async () => {
+        await api.setPort(Number($("newport").value));
+        await refresh();
+      });
+      refresh();
+    </script>
+  </body>
+</html>

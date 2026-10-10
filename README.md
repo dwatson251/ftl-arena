@@ -63,6 +63,21 @@ Measured against a steady mid-level player, the bot wins 0% at difficulty 0, 40%
 the server serves it at `http://<host>:8787/`. To play with each player's own art, both players run
 `npm run extract` and `npm run client`, and point `?server=` at the host.
 
+## Playtesting with friends (desktop app)
+- **Build it:** `npm run desktop:win` makes `release/FTL-Arena-win-x64.zip`, a portable folder with
+  `FTL Arena.exe` and a `README.txt` for players. Friends install nothing.
+  - `npm run desktop:dev` runs the app from source.
+  - `npm run desktop:mac` makes the macOS app. Build that on a Mac and wrap it with
+    `hdiutil create -volname "FTL Arena" -srcfolder "release/FTL Arena-darwin-x64" FTL-Arena.dmg`.
+- **First start:** each player picks their own FTL folder. The app unpacks `ftl.dat` into its data folder
+  (`%APPDATA%\FTL Arena`). No FTL file is in the package, and none is ever sent between players.
+- **Hosting:** every copy is a server.
+  - The menu entry *FTL Arena → Host a match…* shows the address to share (local network, and public on
+    request).
+  - It can try UPnP to open the port. Otherwise forward TCP 8787 on the router.
+- **Joining:** type the host's `IP:port` under **Server** on the main menu, press Connect, then join the
+  host's match code. Art and sound always come from your own install; only the match runs on the host.
+
 ## Controls (FTL's)
 | Action | Input |
 |---|---|

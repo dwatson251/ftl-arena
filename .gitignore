@@ -4,3 +4,5 @@ dist/
 *.log
 traces/
 .idea/
+release/
+apps/desktop/dist/

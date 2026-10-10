@@ -15,7 +15,7 @@ export interface Client {
   lobby: Lobby | null;
 }
 
-const COUNTDOWN = 3;
+const COUNTDOWN = 5;
 const GRACE_MS = 20_000;
 
 export class Lobby {

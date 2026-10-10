@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FTL Arena: setup</title>
+    <style>
+      :root { --bg: #0b0d12; --panel: #1b1f27; --edge: #6d7686; --text: #e9ecf1; --dim: #9aa3b2; --ok: #7bd47b; --bad: #ef5b5b; }
+      html { min-height: 100%; background: #0b0d12; }
+      body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at 30% 20%, #1c2433 0%, var(--bg) 70%); color: var(--text); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
+      .card { max-width: 620px; margin: 7vh auto; background: var(--panel); border: 2px solid var(--edge); padding: 28px 32px; }
+      h1 { margin: 0 0 6px; letter-spacing: 0.08em; }
+      p, li { color: var(--dim); }
+      button { font: inherit; color: var(--text); background: #2b3240; border: 1px solid var(--edge); padding: 9px 16px; cursor: pointer; border-radius: 3px; }
+      button.primary { background: #2f5e3a; border-color: var(--ok); }
+      button:disabled { opacity: 0.45; cursor: default; }
+      .found button { display: block; width: 100%; text-align: left; margin: 6px 0; }
+      .bar { height: 14px; border: 2px solid var(--text); margin-top: 16px; display: none; }
+      .bar i { display: block; height: 100%; width: 0; background: var(--text); }
+      .err { color: var(--bad); min-height: 1.5em; }
+      code { color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>FTL ARENA</h1>
+      <p>One-time setup. FTL Arena plays with <b>your own copy</b> of <i>FTL: Faster Than Light</i> (version 1.6 or later, from
+        Steam, GOG or Humble): it reads the ships, weapons, art and sound from your install. Nothing from FTL comes with this app,
+        and nothing is sent to other players.</p>
+      <div id="found" class="found"></div>
+      <p><button id="pick" class="primary">Choose my FTL folder…</button></p>
+      <p style="font-size:13px">It's the folder with <code>ftl.dat</code> in it, e.g. <code>Steam\steamapps\common\FTL Faster Than Light</code>
+        (in Steam: right-click FTL → Manage → Browse local files). On a Mac, pick <code>FTL.app</code>.</p>
+      <div class="bar" id="bar"><i id="fill"></i></div>
+      <p id="status"></p>
+      <div class="err" id="err"></div>
+    </div>
+    <script>
+      const api = window.ftlArena;
+      const $ = (id) => document.getElementById(id);
+      let busy = false;
+      async function go(folder) {
+        if (busy || !folder) return;
+        busy = true;
+        $("err").textContent = "";
+        $("pick").disabled = true;
+        document.querySelectorAll(".found button").forEach((b) => (b.disabled = true));
+        $("bar").style.display = "block";
+        $("status").textContent = "Unpacking your FTL data…";
+        const r = await api.extract(folder);
+        busy = false;
+        $("pick").disabled = false;
+        document.querySelectorAll(".found button").forEach((b) => (b.disabled = false));
+        if (r.ok) $("status").textContent = `Done: ${r.files} files. Starting the game…`;
+        else {
+          $("bar").style.display = "none";
+          $("status").textContent = "";
+          $("err").textContent = r.error;
+        }
+      }
+      api.onProgress((done, total) => {
+        $("fill").style.width = `${Math.round((100 * done) / total)}%`;
+        $("status").textContent = `Unpacking your FTL data… ${done} / ${total}`;
+      });
+      $("pick").addEventListener("click", async () => go(await api.pickFolder()));
+      api.findInstalls().then((list) => {
+        if (!list.length) return;
+        $("found").innerHTML = `<p>Found FTL here, use it?</p>`;
+        for (const f of list) {
+          const b = document.createElement("button");
+          b.textContent = f;
+          b.addEventListener("click", () => go(f));
+          $("found").appendChild(b);
+        }
+      });
+    </script>
+  </body>
+</html>

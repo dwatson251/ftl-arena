@@ -98,6 +98,10 @@ export class Hangar {
   }
 
   update(lobby: LobbyState): void {
+    // The launch countdown beeps once a second (a sharper warning on the last).
+    const n = lobby.phase === "countdown" ? lobby.countdown : 0;
+    if (n > 0 && n !== this.lastCountdown) this.sfx(n === 1 ? "environWarning" : "hoverBeep");
+    this.lastCountdown = n;
     this.lobby = lobby;
     const mine = lobby.players.find((p) => p.id === this.me());
     if (!this.loadout && mine?.loadout) this.loadout = mine.loadout;
@@ -293,6 +297,7 @@ export class Hangar {
   }
 
   private confirming = false;
+  private lastCountdown = 0;
 
   /** Things worth a second look before launching (FTL would let you, but you'd regret it). */
   private warnings(l: Loadout): string[] {
@@ -531,8 +536,11 @@ export class Hangar {
   }
 
   private stepLaunch(l: Loadout, priced: ReturnType<typeof priceLoadout>): string {
+    const ready = !!this.lobby?.players.find((p) => p.id === this.me())?.ready;
+    const cd = this.lobby?.phase === "countdown" ? `<div class="code launch-count">Launch in ${this.lobby.countdown}…</div>` : "";
     return `<h2>7 · Launch</h2>
-      <p>${priced.ok ? "Your ship is ready. Press <b>Ready</b>; the battle starts when both captains are ready." : "Fix the problems listed on the right first."}</p>
+      <p>${priced.ok ? "Your ship is ready. Press <b>Ready</b> (or Enter); the battle starts when both captains are ready." : "Fix the problems listed on the right first."}</p>
+      <div class="launch-ready">${this.readyButton(l, priced, ready)}${cd}</div>
       <div class="note">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
       ${this.nav("Augments", null)}`;
     void l;

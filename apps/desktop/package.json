@@ -1,0 +1,8 @@
+{
+  "name": "ftl-arena-desktop",
+  "productName": "FTL Arena",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FTL Arena: 1v1 real-time FTL, played with your own copy of FTL's data.",
+  "main": "main.cjs"
+}

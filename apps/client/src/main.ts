@@ -25,9 +25,25 @@ function loadingDone(): void {
   document.getElementById("loading")?.remove();
 }
 const params = new URLSearchParams(location.search);
-const wsUrl = params.get("server")
-  ? `ws://${params.get("server")}/ws`
-  : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+/**
+ * The game server: ?server= in the address, else the last one typed in the menu, else this page's own (the
+ * built-in one). Art and sound always come from this page's own server, i.e. the player's own extract; only the
+ * match runs on the chosen server.
+ */
+let serverAddr = params.get("server") ?? "";
+try {
+  serverAddr ||= localStorage.getItem("ftl-arena-server") ?? "";
+} catch {}
+/** "1.2.3.4:8787", "myhost", "ws://…" or "" (this page's own server) → the WebSocket URL. */
+function wsFor(addr: string): string {
+  const a = addr.trim();
+  if (!a) return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+  if (/^wss?:\/\//.test(a)) return a.endsWith("/ws") ? a : `${a.replace(/\/$/, "")}/ws`;
+  const hostPort = a.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  return `ws://${hostPort.includes(":") ? hostPort : `${hostPort}:8787`}/ws`;
+}
+let wsUrl = wsFor(serverAddr);
+let netStatus = "connecting";
 let name = "";
 try {
   name = localStorage.getItem("ftl-arena-name") ?? "";
@@ -299,8 +315,23 @@ function render(): void {
       <button id="practice" ${db ? "" : "disabled"}>Practice vs bot</button></div>
     <div class="row"><input id="code" placeholder="CODE" maxlength="4" style="text-transform:uppercase;max-width:110px"><button id="join" ${db ? "" : "disabled"}>Join</button></div>
     <div class="err">${esc(error)}</div>
-    <div class="note">Server: ${esc(wsUrl)}</div>
+    <h2 style="margin-top:18px">Server</h2>
+    <div class="row"><input id="server" placeholder="This computer (or host's IP:port, e.g. 81.2.3.4:8787)" value="${esc(serverAddr)}"><button id="connect">Connect</button></div>
+    <div class="note">${netStatus === "connected" ? `Connected to ${esc(serverAddr || "this computer")}.` : `Can't reach ${esc(serverAddr || "this computer")} yet (${esc(netStatus)}): check the address, and that the host's port is open.`}</div>
   </div></div>`;
+  const serverEl = ui.querySelector<HTMLInputElement>("#server")!;
+  const connect = () => {
+    serverAddr = serverEl.value.trim();
+    try {
+      localStorage.setItem("ftl-arena-server", serverAddr);
+    } catch {}
+    wsUrl = wsFor(serverAddr);
+    db = null;
+    net.setUrl(wsUrl);
+    render();
+  };
+  ui.querySelector("#connect")!.addEventListener("click", connect);
+  serverEl.addEventListener("keydown", (e) => e.key === "Enter" && connect());
   const nameEl = ui.querySelector<HTMLInputElement>("#name")!;
   const saveName = () => {
     name = nameEl.value.trim() || "Captain";
@@ -352,6 +383,9 @@ function render(): void {
   },
 };
 
-net.onStatus = () => render();
+net.onStatus = (s) => {
+  netStatus = s;
+  if (!battle && !lobby) render();
+};
 net.connect();
 render();

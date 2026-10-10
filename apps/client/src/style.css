@@ -123,3 +123,5 @@ button.buy { display: inline-flex; align-items: center; min-width: 64px; justify
 .note.noeffect { color: #8a8e98; font-style: italic; }
 
 .drone-art { width: 40px; height: 40px; object-fit: contain; flex: none; }
+.launch-ready { display: flex; flex-wrap: wrap; align-items: center; gap: 22px; margin: 18px 0; }
+.launch-ready .launch-count { margin: 0; }

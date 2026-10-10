@@ -240,3 +240,8 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 |---|---|---|
 | Shield Overcharger | One super-shield point after 8 / 10 / 13 / 16 / 20 s with 0-4 points; the timer restarts when it gets power back; shown as FTL's green bubble and energy-shield bars | wiki |
 | Missile weapons | Can't be powered (nor auto-powered at the start) without missiles to fire | FTL |
+
+## Lobby
+| Rule | Value | Source |
+|---|---|---|
+| Launch countdown | 5 s once both captains are ready, a beep each second (sharper on the last); Unready or Escape calls it off; Ready (and the countdown) also on the Launch page | user |

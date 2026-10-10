@@ -16,13 +16,19 @@
     "bench": "tsx tools/bench/run.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "vite build apps/client"
+    "build": "vite build apps/client",
+    "desktop:build": "node tools/build-desktop.mjs",
+    "desktop:dev": "node tools/build-desktop.mjs --run",
+    "desktop:win": "node tools/build-desktop.mjs --win",
+    "desktop:mac": "node tools/build-desktop.mjs --mac"
   },
   "devDependencies": {
+    "@electron/packager": "^18.4.4",
     "@types/node": "^22.10.0",
     "@types/opentype.js": "^1.3.8",
     "@types/ws": "^8.5.13",
     "concurrently": "^9.1.0",
+    "electron": "^33.4.11",
     "playwright": "^1.49.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

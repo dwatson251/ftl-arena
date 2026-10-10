@@ -14,16 +14,19 @@ export interface ExtractOptions {
 /** Folders the arena never uses. Everything else is unpacked from the owner's own ftl.dat. */
 const SKIP = [/^img\/loc-/, /^img\/ipad\//, /^img\/achievements\//, /^img\/map\//, /^fonts\/(ja|zh)/, /^data\/text-/];
 
-export function extractFtl(opts: ExtractOptions): { files: number; bytes: number } {
+/**
+ * The extraction as steps: each yield is one entry done (of `total`). The manifest is written last, so a folder
+ * with a manifest.json is a finished extract (the desktop app's setup checks for it).
+ */
+function* extractSteps(opts: ExtractOptions): Generator<{ done: number; total: number }, { files: number; bytes: number }> {
   const datPath = opts.ftl.endsWith(".dat") ? opts.ftl : join(opts.ftl, "ftl.dat");
   if (!existsSync(datPath)) throw new Error(`no ftl.dat at ${datPath} (FTL 1.6+ required)`);
   const pkg = new PkgArchive(readFileSync(datPath));
   let files = 0;
   let bytes = 0;
   const manifest: string[] = [];
-  for (const e of pkg.entries) {
-    if (SKIP.some((r) => r.test(e.path))) continue;
-    if (opts.music === false && e.path.startsWith("audio/music/")) continue;
+  const todo = pkg.entries.filter((e) => !SKIP.some((r) => r.test(e.path)) && !(opts.music === false && e.path.startsWith("audio/music/")));
+  for (const [i, e] of todo.entries()) {
     const dest = join(opts.out, e.path);
     mkdirSync(dirname(dest), { recursive: true });
     const data = pkg.readEntry(e);
@@ -33,18 +36,36 @@ export function extractFtl(opts: ExtractOptions): { files: number; bytes: number
       const base = dest.replace(/\.font$/, "").replace(/&/g, "and");
       writeFileSync(`${base}.png`, fontToPng(f));
       writeFileSync(`${base}.json`, JSON.stringify(f.metrics));
-      manifest.push(e.path);
-      files++;
-      continue;
+    } else {
+      writeFileSync(dest, data);
+      bytes += data.length;
     }
-    writeFileSync(dest, data);
     manifest.push(e.path);
     files++;
-    bytes += data.length;
+    yield { done: i + 1, total: todo.length };
   }
   writeFileSync(
     join(opts.out, "manifest.json"),
     JSON.stringify({ source: "ftl.dat (owner's install)", extractedAt: new Date().toISOString(), files: manifest }, null, 1),
   );
   return { files, bytes };
+}
+
+export function extractFtl(opts: ExtractOptions): { files: number; bytes: number } {
+  const it = extractSteps(opts);
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+  }
+}
+
+/** The same, giving the event loop a turn every few files and reporting progress (for a setup screen). */
+export async function extractFtlAsync(opts: ExtractOptions, onProgress: (done: number, total: number) => void = () => {}): Promise<{ files: number; bytes: number }> {
+  const it = extractSteps(opts);
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+    onProgress(r.value.done, r.value.total);
+    if (r.value.done % 20 === 0) await new Promise((ok) => setImmediate(ok));
+  }
 }

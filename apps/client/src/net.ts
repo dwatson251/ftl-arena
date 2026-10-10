@@ -12,6 +12,23 @@ export class Net {
 
   constructor(public url: string, public name: string) {}
 
+  /** Switch to another server: drop this connection (and its session) and connect there instead. */
+  setUrl(url: string): void {
+    if (url === this.url && this.connected) return;
+    this.url = url;
+    try {
+      sessionStorage.removeItem("ftl-arena-token");
+    } catch {}
+    const old = this.ws;
+    this.ws = null;
+    this.connected = false;
+    if (old) {
+      old.onclose = null;
+      old.close();
+    }
+    this.connect();
+  }
+
   connect(): void {
     const ws = new WebSocket(this.url);
     this.ws = ws;
@@ -35,9 +52,11 @@ export class Net {
       for (const h of this.handlers) h(m);
     };
     ws.onclose = () => {
+      // A connection that's been replaced (setUrl) doesn't retry.
+      if (this.ws !== ws) return;
       this.connected = false;
       this.onStatus("disconnected - retrying");
-      setTimeout(() => this.connect(), 1500);
+      setTimeout(() => this.ws === ws && this.connect(), 1500);
     };
   }
 

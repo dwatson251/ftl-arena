@@ -232,6 +232,23 @@
   - The build's `assets/` folder clashed with the server's `/assets/` route, so it's now `app/`.
   - Pixi's renderer chunks deadlocked against the entry chunk's top-level await, so Pixi gets its own chunk.
 
+## Desktop app (playtesting)
+- **What it is:** Electron 33 via `@electron/packager`, producing a portable Windows zip built on Linux with
+  no Wine. It bundles Node, so players need nothing installed.
+- **Inside:** the server and extractor run in the main process from one esbuild CJS bundle
+  (`apps/desktop/dist/server.cjs`, `ws` inlined). The window loads the built client from that in-process
+  server.
+- **First run:** pick the FTL folder. The app looks in Steam libraries (`libraryfolders.vdf`), GOG and macOS
+  `FTL.app` paths, then runs `extractFtlAsync` with progress into userData (`assets.part`, renamed when
+  done).
+- **Hosting:** every copy hosts. A busy port moves to the next (the WebSocket server's own error on a taken
+  port has to be swallowed, or the main process dies). UPnP is about 120 lines of SSDP + SOAP.
+- **Verified here:**
+  - Playwright `_electron` drove setup, extraction and a practice hangar.
+  - Two copies on ports 9921 and 9931 played a match, B joining A by address.
+  - The packaged zip has no FTL data, and `um publish check` passes apart from Chromium's own
+    `resources.pak` warning.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
