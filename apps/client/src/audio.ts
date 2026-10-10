@@ -22,10 +22,22 @@ export const setSound = (on: boolean) => {
 };
 export const soundOn = () => sfxOn;
 
+/** Sound effects fetched ahead of time, as in-memory blob URLs (so the first play of each isn't late). */
+const blobs = new Map<string, string>();
+/** Fetch every sound effect (not the music) into memory; one promise per file, for a loading bar. */
+export function preloadSounds(db: GameDB): (() => Promise<unknown>)[] {
+  const files = [...new Set(Object.values(db.sounds).map((s) => `/assets/audio/waves/${s.file}`))];
+  return files.map((f) => async () => {
+    if (blobs.has(f)) return;
+    const r = await fetch(f);
+    if (r.ok) blobs.set(f, URL.createObjectURL(await r.blob()));
+  });
+}
+
 function load(file: string): HTMLAudioElement | null {
   let a = cache.get(file);
   if (a === undefined) {
-    a = new Audio(file);
+    a = new Audio(blobs.get(file) ?? file);
     a.onerror = () => cache.set(file, null);
     cache.set(file, a);
   }
@@ -55,7 +67,8 @@ export function loop(db: GameDB, name: string, on: boolean, gain = 1): void {
   const s = db.sounds[name];
   if (!s) return;
   if (!a) {
-    a = new Audio(`/assets/audio/waves/${s.file}`);
+    const f = `/assets/audio/waves/${s.file}`;
+    a = new Audio(blobs.get(f) ?? f);
     a.loop = true;
     loops.set(name, a);
   }

@@ -11,13 +11,37 @@ const ready = new Map<string, Texture | null>();
 /** Every file the extractor wrote (assets-local/manifest.json): paths not in it are never requested. */
 let manifest: Set<string> | null = null;
 
-export async function loadManifest(): Promise<void> {
+let manifestLoaded: Promise<void> | null = null;
+export function loadManifest(): Promise<void> {
+  manifestLoaded ??= (async () => {
+    try {
+      const r = await fetch("/assets/manifest.json");
+      if (!r.ok) return;
+      const m = (await r.json()) as { files: string[]; extractedAt?: string };
+      manifest = new Set(m.files);
+      // A fresh extract (new FTL data) invalidates the offline copy of the old one.
+      await syncAssetCache(m.extractedAt ?? "");
+    } catch {
+      manifest = null;
+    }
+  })();
+  return manifestLoaded;
+}
+
+const CACHE_KEY = "ftl-arena-assets-version";
+/** Drop the service worker's asset cache when the extract it holds is not the server's. */
+async function syncAssetCache(version: string): Promise<void> {
   try {
-    const r = await fetch("/assets/manifest.json");
-    if (r.ok) manifest = new Set(((await r.json()) as { files: string[] }).files);
-  } catch {
-    manifest = null;
-  }
+    if (localStorage.getItem(CACHE_KEY) === version) return;
+    if ("caches" in window) await caches.delete("ftl-arena-assets");
+    localStorage.setItem(CACHE_KEY, version);
+  } catch {}
+}
+
+/** Register the offline cache (sw.js). Browsers only allow it on https or localhost; elsewhere it's skipped. */
+export function registerOfflineCache(): void {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  void navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
 /** True when the extracted files include img/<path> (always true before the manifest loads). */
@@ -97,8 +121,15 @@ export function shieldFile(img: string): string {
   return `ship/${img.replace(/_\d+$/, "")}_shields1.png`;
 }
 
-export async function preload(db: GameDB): Promise<boolean> {
-  if (db.source !== "ftl") return false;
+/**
+ * Load every texture the game uses before showing a menu, reporting progress (0..1). At most `PARALLEL`
+ * requests run at once, so a dev proxy isn't flooded.
+ */
+export async function preload(db: GameDB, progress: (k: number) => void = () => {}, extra: (() => Promise<unknown>)[] = []): Promise<boolean> {
+  if (db.source !== "ftl") {
+    progress(1);
+    return false;
+  }
   await loadManifest();
   const files = new Set<string>();
   for (const id of db.hangar) {
@@ -150,13 +181,24 @@ export async function preload(db: GameDB): Promise<boolean> {
   files.add("effects/fire_smoke.png");
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
-  // Art is "available" as soon as one known image loads; everything else keeps loading in the background
-  // (the renderers pick textures up as they arrive).
   const probe = `ship/${db.ships[db.hangar[0]]?.img}_base.png`;
-  const ok = !!(await tex(probe));
-  void Promise.all([...files].map(tex)).then(() => artReady.forEach((f) => f()));
-  return ok;
+  // The extras (fonts, sounds) go first so slow ones run alongside the textures, not after them.
+  const jobs: (() => Promise<unknown>)[] = [...extra, ...[...files].map((f) => () => tex(f))];
+  let done = 0;
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const job = jobs[next++];
+      await job().catch(() => null);
+      progress(++done / jobs.length);
+    }
+  };
+  await Promise.all(Array.from({ length: PARALLEL }, worker));
+  artReady.forEach((f) => f());
+  return !!(await tex(probe));
 }
+
+const PARALLEL = 48;
 
 /** Called once every preloaded texture has arrived (for one last re-render). */
 export const artReady: (() => void)[] = [];

@@ -2,14 +2,28 @@ import { Application } from "pixi.js";
 import type { GameDB } from "@ftl/data";
 import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
 import type { MatchView } from "@ftl/sim";
-import { artReady, preload } from "./assets.ts";
+import { artReady, preload, registerOfflineCache } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
-import { music } from "./audio.ts";
+import { music, preloadSounds } from "./audio.ts";
 import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar } from "./hangar.ts";
 import { Net } from "./net.ts";
 
 const ui = document.getElementById("ui")!;
+registerOfflineCache();
+
+/** The loading screen (index.html): fill FTL's bar to k (0..1); done removes it. */
+function loadingProgress(k: number, note?: string): void {
+  const fill = document.getElementById("ld-fill");
+  if (fill) fill.style.width = `${16 + Math.round(174 * Math.max(0, Math.min(1, k)))}px`;
+  const plain = document.getElementById("ld-plain-fill");
+  if (plain) plain.style.width = `${Math.round(100 * k)}%`;
+  const n = document.getElementById("ld-note");
+  if (n && note !== undefined) n.textContent = note;
+}
+function loadingDone(): void {
+  document.getElementById("loading")?.remove();
+}
 const params = new URLSearchParams(location.search);
 const wsUrl = params.get("server")
   ? `ws://${params.get("server")}/ws`
@@ -44,11 +58,18 @@ function onMsg(m: ServerMsg): void {
     case "welcome":
       db = m.db;
       token = m.token;
-      void Promise.all([preload(db), loadFtlFonts()]).then(([ok]) => {
-        hasArt = ok;
-        document.body.classList.toggle("ftl-fonts", ok);
-        render();
-      });
+      if (document.getElementById("loading")) {
+        // Everything (art, fonts, sound effects) loads behind FTL's loading bar before the first menu.
+        let fonts = false;
+        loadingProgress(0, "");
+        void preload(db, (k) => loadingProgress(k), [async () => (fonts = await loadFtlFonts()), ...preloadSounds(db)]).then((ok) => {
+          hasArt = ok;
+          document.body.classList.toggle("ftl-fonts", fonts);
+          loadingProgress(1);
+          loadingDone();
+          render();
+        });
+      }
       break;
     case "lobby":
       lobby = m.lobby;

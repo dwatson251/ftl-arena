@@ -220,6 +220,18 @@
   (an estimate) against 6 HP/s of melee. The wiki's 9.6 / 19.2 now apply. A boarder's door-breaking time
   could also carry over into sabotage and break a system at once; they're now separate.
 
+## Loading and caching
+- **Loading screen:** FTL's `main_menus/Loading_main.png` and `Loading_bar.png`. Textures, fonts and
+  sound effects load 48 at a time before the first menu.
+- **Service worker:** `/assets/*` is cache-first. The page drops that cache when the manifest's
+  `extractedAt` changes. Code is network-first.
+- **Load to menu:** Vite dev takes about 14 s cold and 5.5 s warm; the built client about 4.4 s cold and
+  2.3 s warm.
+- **The production build never worked before this:**
+  - Top-level await needs `target: es2022`.
+  - The build's `assets/` folder clashed with the server's `/assets/` route, so it's now `app/`.
+  - Pixi's renderer chunks deadlocked against the entry chunk's top-level await, so Pixi gets its own chunk.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

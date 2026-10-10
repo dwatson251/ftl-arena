@@ -25,6 +25,13 @@ npm run extract -- --ftl "/path/to/FTL Faster Than Light"   # needs FTL 1.6+ (ft
 npm run server                                                  # authoritative server on :8787
 npm run client                                                  # Vite dev client on :5173 (proxies /ws and /assets)
 ```
+Or, for faster loads, build the client once (`npm run build`) and open http://localhost:8787: the server
+serves the build itself. Rebuild after pulling changes, or the server keeps serving the old build.
+
+Everything loads behind FTL's loading bar before the first menu. On https or localhost, a service worker keeps
+the extracted art and sound in the browser's cache (cleared when you re-extract) and the code for when the
+server can't be reached; the game itself still needs the server.
+
 Open http://localhost:5173 in two browsers:
 1. One player clicks **Create match** and shares the 4-letter code.
 2. The other player clicks **Join**.

@@ -7,6 +7,15 @@
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
+    <!-- FTL's own LOADING art (from the player's extract) fills as everything loads; plain bar without it. -->
+    <div id="loading" style="position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px">
+      <div id="ld-art" style="position:relative;width:200px;height:69px;transform:scale(2);image-rendering:pixelated">
+        <img src="/assets/img/main_menus/Loading_main.png" alt="" onerror="document.getElementById('ld-art').style.display='none';document.getElementById('ld-plain').style.display='block'" style="position:absolute;left:0;top:0">
+        <div id="ld-fill" style="position:absolute;left:-3px;top:-4px;width:16px;height:128px;overflow:hidden"><img src="/assets/img/main_menus/Loading_bar.png" alt="" style="position:absolute;left:0;top:0"></div>
+      </div>
+      <div id="ld-plain" style="display:none;width:360px;height:14px;border:2px solid #e9ecf1"><div id="ld-plain-fill" style="height:100%;width:0;background:#e9ecf1"></div></div>
+      <div id="ld-note" style="color:#9aa3b2;font:12px system-ui,sans-serif">Connecting…</div>
+    </div>
     <div id="game"></div>
     <div id="ui"></div>
     <script type="module" src="./src/main.ts"></script>

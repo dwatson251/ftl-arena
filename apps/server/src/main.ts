@@ -33,7 +33,9 @@ function serveFile(root: string, rel: string, res: import("node:http").ServerRes
   const p = normalize(join(root, rel));
   if (!p.startsWith(root) || !existsSync(p) || !statSync(p).isFile()) return false;
   res.writeHead(200, {
-    "content-type": MIME[extname(p)] ?? "application/octet-stream", "content-length": statSync(p).size, "cache-control": "max-age=3600",
+    "content-type": MIME[extname(p)] ?? "application/octet-stream", "content-length": statSync(p).size,
+    // The page and the service worker must never be stale after a rebuild (built scripts have hashed names).
+    "cache-control": /\.html$|sw\.js$|manifest\.json$/.test(p) ? "no-cache" : "max-age=3600",
   });
   // HEAD gets headers only: streaming a body to a HEAD request makes proxies (Vite's) abort it.
   if (head) res.end();
