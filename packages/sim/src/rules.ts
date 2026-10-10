@@ -152,6 +152,12 @@ export const RULES = {
   /** The Rebel flagship's crew (its blueprints don't list one; est). */
   flagshipCrew: 8,
   maxCrew: 8,
+  /**
+   * How sensed crew (in rooms you can't see) are shown: "dot" = a pulsing dot, location only; "silhouette" = the
+   * crew member's outline, race and what they're doing. One setting per source; with both aboard, the more
+   * telling one wins. (From the owner's memory of FTL; the wiki says the scanner works like the Slugs.)
+   */
+  senseStyle: { slug: "dot", scanner: "silhouette" } as Record<"slug" | "scanner", "dot" | "silhouette">,
   /** Hazards (wiki + xftl): flare every 28-34 s, pulsar every 11-18 s, both warned 5 s ahead; ASB every 20-30 s;
    * asteroid and ASB flight times (est). */
   flareEvery: [28, 34],

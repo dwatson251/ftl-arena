@@ -208,7 +208,7 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | 3 | Enemy weapons' charge | wiki |
 | 4 (manned 3) | Enemy systems' power, bars, ion and repair or sabotage progress (shown as bars over their icons) | wiki |
 | Flagship | Holds sensors to level 2 | wiki |
-| Telepathy (Slug, Lifeform Scanner) | Live crew in unseen rooms show as silhouettes (race and action, no name or health); drones give off no life signs | wiki ("functions exactly like the slugs' ability") |
+| Telepathy (Slug, Lifeform Scanner) | Live crew in unseen rooms are sensed (never drones): Slugs as dots, the scanner as silhouettes with race and action; set per source in `RULES.senseStyle` | owner's memory (the wiki says they match) |
 | Slug | Also sees into every room touching its own, walls or not, on whichever ship it stands | wiki |
 
 ## Round 16

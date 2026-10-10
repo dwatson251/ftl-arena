@@ -6,7 +6,7 @@
 import { geometry } from "./geometry.ts";
 import type { Match } from "./match.ts";
 import type { HazardKind, MatchEvent, MatchState, Projectile, ShipState } from "./state.ts";
-import { raceOf } from "./rules.ts";
+import { raceOf, RULES } from "./rules.ts";
 
 export interface ShipView extends ShipState {
   /** Room ids the viewer can see inside; null = all. */
@@ -55,7 +55,11 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   if (st.hazard?.kind === "nebula" || st.hazard?.kind === "storm") sensors = 0;
   if (/^BOSS_/.test(enemy.bp)) sensors = Math.min(2, sensors);
   const mine = m.crewOf(you).filter((c) => !c.dead && c.dying === undefined);
-  const telepath = mine.some((c) => raceOf(c.race).telepathic) || (own.augments ?? []).includes("LIFE_SCANNER");
+  const slugSense = mine.some((c) => raceOf(c.race).telepathic);
+  const scanner = (own.augments ?? []).includes("LIFE_SCANNER");
+  const telepath = slugSense || scanner;
+  const styles = [...(slugSense ? [RULES.senseStyle.slug] : []), ...(scanner ? [RULES.senseStyle.scanner] : [])];
+  const senseStyle: "dot" | "silhouette" = styles.includes("silhouette") ? "silhouette" : "dot";
   const cloaked = (enemy.cloak?.t ?? 0) > 0;
 
   /** Rooms the viewer sees into on a ship: where their crew stand, and every room touching a Slug's. */
@@ -83,7 +87,13 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     return list.flatMap((c) => {
       if ((c.mind?.owner ?? c.owner) === you || seen.has(g.tiles.get(c.tile)?.room ?? -1)) return [c];
       if (!telepath || c.dead || c.dying !== undefined || c.drone !== undefined) return [];
+      // A dot is where they are and nothing else.
+      if (senseStyle === "dot") return [{
+        id: c.id, name: "", race: "", hp: 1, maxHp: 1, x: c.x, y: c.y, tile: c.tile, path: [], home: c.tile, task: "idle" as const,
+        xp: { pilot: 0, engines: 0, shields: 0, weapons: 0, repair: 0, combat: 0 }, stun: 0, dead: false, blip: true, sense: "dot" as const, owner: c.owner,
+      }];
       return [{
+        sense: "silhouette" as const,
         id: c.id, name: "", race: c.race, hp: 1, maxHp: 1, x: c.x, y: c.y, tile: c.tile, path: c.path.slice(0, 1), home: c.home, task: c.task,
         face: c.face, punch: c.punch, atk: c.atk, atkDur: c.atkDur, aim: c.aim, beam: c.beam,
         xp: { pilot: 0, engines: 0, shields: 0, weapons: 0, repair: 0, combat: 0 }, stun: 0, dead: false, blip: true, owner: c.owner,

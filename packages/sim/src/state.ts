@@ -113,6 +113,8 @@ export interface CrewState {
   clone?: number;
   /** Sensed only (telepathy / life scanner): a location with no race, health or action. */
   blip?: boolean;
+  /** How a sensed crew member is drawn (RULES.senseStyle): a dot, or a silhouette with race and action. */
+  sense?: "dot" | "silhouette";
   /** Which player this crew member belongs to (ships hold whoever is aboard, boarders included). */
   owner: 0 | 1;
   /** Drone units: the owner's drone slot that launched it. */

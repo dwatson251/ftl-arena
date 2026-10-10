@@ -581,6 +581,12 @@ export class ShipRenderer {
     const t = animFrame(this.db, anim, fr) ?? animFrame(this.db, `${race}_walk_down`, 0);
     const key = `cr${c.id}`;
     const rot = this.upright;
+    if (c.blip && c.sense === "dot") {
+      // Sensed as a dot (RULES.senseStyle): a pulsing marker, no race or action.
+      const pulse = 0.65 + 0.35 * Math.sin(time * 4 + c.id);
+      d.gfx(`${key}blip`).circle(px, py, 8).fill({ color: 0xff7aa0, alpha: 0.25 * pulse }).circle(px, py, 4.5).fill({ color: 0xffb0c8, alpha: pulse });
+      return;
+    }
     if (c.blip) {
       // Sensed by telepathy (a Slug, the Lifeform Scanner): FTL's silhouette of the crew member, moving as they
       // do, in a pulsing glow; no name or health.

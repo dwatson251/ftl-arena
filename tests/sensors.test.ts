@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placeholderDb } from "@ftl/data";
-import { baseLoadout, DEFAULT_CONFIG, Match, viewFor } from "@ftl/sim";
+import { baseLoadout, DEFAULT_CONFIG, Match, RULES, viewFor } from "@ftl/sim";
 
 const db = placeholderDb();
 const lo = (sensors: number) => {
@@ -69,5 +69,16 @@ describe("sensors (FTL's levels)", () => {
     const v = viewFor(m, 0).ships[0];
     for (const r of touching) expect(v.visibleRooms).toContain(r);
     expect(v.visibleRooms!.length).toBeLessThan(s.rooms.length);
+  });
+  it("Slugs sense crew as dots and the Lifeform Scanner as silhouettes (RULES.senseStyle)", () => {
+    const slug = new Match(db, DEFAULT_CONFIG, [{ ...lo(1), crew: [{ name: "Sly", race: "slug" }] }, lo(1)], ["a", "b"]);
+    slug.step();
+    const dots = viewFor(slug, 0).ships[1].crew;
+    expect(dots.length).toBeGreaterThan(0);
+    expect(dots.every((c) => c.blip && c.sense === RULES.senseStyle.slug && (c.sense !== "dot" || c.race === ""))).toBe(true);
+    const scan = new Match(db, DEFAULT_CONFIG, [lo(1), lo(1)], ["a", "b"]);
+    scan.state.ships[0].augments = ["LIFE_SCANNER"];
+    scan.step();
+    expect(viewFor(scan, 0).ships[1].crew.every((c) => c.sense === RULES.senseStyle.scanner)).toBe(true);
   });
 });
