@@ -5,7 +5,7 @@
  */
 import { geometry } from "./geometry.ts";
 import type { Match } from "./match.ts";
-import type { MatchEvent, MatchState, Projectile, ShipState } from "./state.ts";
+import type { HazardKind, MatchEvent, MatchState, Projectile, ShipState } from "./state.ts";
 import { raceOf } from "./rules.ts";
 
 export interface ShipView extends ShipState {
@@ -33,6 +33,8 @@ export interface MatchView {
   pause: MatchState["pause"];
   pauseBank?: MatchState["pauseBank"];
   nextTactical?: number;
+  /** The battle's hazard and the time to its next strike (no asteroid internals). */
+  hazard?: { kind: HazardKind; next: number; warned: boolean; asbTarget?: 0 | 1 };
 }
 
 /**
@@ -49,6 +51,8 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   const enemy = st.ships[1 - you];
   const over = st.winner !== null || reveal;
   let sensors = m.eff(own.systems.sensors);
+  // A nebula (and an ion storm, which is one) blinds sensors altogether.
+  if (st.hazard?.kind === "nebula" || st.hazard?.kind === "storm") sensors = 0;
   if (/^BOSS_/.test(enemy.bp)) sensors = Math.min(2, sensors);
   const mine = m.crewOf(you).filter((c) => !c.dead && c.dying === undefined);
   const telepath = mine.some((c) => raceOf(c.race).telepathic) || (own.augments ?? []).includes("LIFE_SCANNER");
@@ -148,5 +152,6 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     you, tick: st.tick, config: st.config, ships: you === 0 ? [ownView, ev] : [ev, ownView],
     projectiles: st.projectiles, events, winner: st.winner, endReason: st.endReason,
     pause: st.pause ?? null, pauseBank: st.pauseBank, nextTactical: st.nextTactical,
+    hazard: st.hazard ? { kind: st.hazard.kind, next: st.hazard.next, warned: st.hazard.warned, asbTarget: st.hazard.asbTarget } : undefined,
   };
 }

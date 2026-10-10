@@ -418,7 +418,9 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
   const pause = c.pause === "tactical" || c.pause === "clock" ? c.pause : "off";
   // An unlimited pause clock (0) is for practice only: against a person it would stop the game for good.
   const bank = clamp(Math.round(Number(c.pauseBank ?? RULES.pauseBank) || 0), 0, 600);
+  const hazards = ["none", "sun", "pulsar", "asteroids", "nebula", "storm", "asb", "random"];
   return {
+    hazard: hazards.includes(String(c.hazard)) ? c.hazard : "none",
     pause,
     tacticalEvery: clamp(Math.round(Number(c.tacticalEvery ?? RULES.tacticalEvery) || RULES.tacticalEvery), 15, 600),
     tacticalLength: clamp(Math.round(Number(c.tacticalLength ?? RULES.tacticalLength) || RULES.tacticalLength), 3, 60),

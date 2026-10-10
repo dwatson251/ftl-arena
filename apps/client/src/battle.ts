@@ -124,7 +124,8 @@ export class Battle {
     ownProj.mask = ownClip;
     this.winLayer.addChild(this.enemyBox, this.projWin, this.fxWin);
     this.world.addChild(this.ownBox, ownClip, ownProj, this.winLayer);
-    this.stage.addChild(this.bgLayer, this.world, this.pauseTint, this.hudRoot);
+    this.stage.addChild(this.bgLayer, this.world, this.pauseTint, this.flash, this.hudRoot);
+    this.flash.alpha = 0;
     this.stage.eventMode = "static";
     this.stage.hitArea = { contains: () => true };
     this.stage.on("pointerdown", (e) => this.onDown(e));
@@ -157,6 +158,7 @@ export class Battle {
       s.height = H;
       this.bgLayer.addChild(s);
     }
+    this.hazardScenery(v);
     const frameTex = texNow("combatUI/box_hostiles2.png");
     const at = this.world.getChildIndex(this.winLayer);
     if (frameTex) {
@@ -177,6 +179,42 @@ export class Battle {
     this.winLayer.mask = mask;
     this.fit(enemyNative);
   }
+
+  /** The hazard's backdrop, FTL's art: the red giant, the pulsar, asteroids drifting past, nebula clouds. */
+  private hazardScenery(v: MatchView): void {
+    const k = v.hazard?.kind;
+    const add = (file: string, x: number, y: number, o: { scale?: number; alpha?: number; tint?: number } = {}) => {
+      const t = texNow(file);
+      if (!t) return null;
+      const s = new Sprite(t);
+      s.anchor.set(0.5);
+      s.position.set(x, y);
+      s.scale.set(o.scale ?? 1);
+      s.alpha = o.alpha ?? 1;
+      if (o.tint !== undefined) s.tint = o.tint;
+      this.bgLayer.addChild(s);
+      return s;
+    };
+    // In the background's corners, clear of both ships.
+    if (k === "sun") add("stars/planet_sun1.png", 40, 700, { scale: 0.55, alpha: 0.9 });
+    else if (k === "pulsar") {
+      add("effects/pulsar_backL.png", 640, 660, { scale: 0.8, alpha: 0.55 });
+      add("effects/pulsar_frontL.png", 640, 660, { scale: 0.8, alpha: 0.8 });
+    } else if (k === "asteroids") {
+      for (const [i, [x, y]] of [[300, 150], [900, 560], [640, 360]].entries()) {
+        const s = add(`asteroids/asteroid_back${i + 1}.png`, x, y, { scale: 1.4, alpha: 0.7 });
+        if (s) this.drift.push(s);
+      }
+    } else if (k === "nebula" || k === "storm") {
+      for (let i = 0; i < 9; i++) add(`stars/nebula_large_${"abc"[i % 3]}.png`, 100 + ((i * 397) % 1100), 80 + ((i * 251) % 560), { scale: 4, alpha: 0.55, tint: k === "storm" ? 0xc070ff : 0x9080ff });
+    }
+  }
+  /** Background rocks that drift slowly across. */
+  private drift: Sprite[] = [];
+  /** A full-screen flash: a flare's white-orange, a pulse's blue. */
+  private flash = new Graphics().rect(0, 0, W, H).fill({ color: 0xffffff });
+  private flashAt = -9;
+  private flashColor = 0xffffff;
 
   private fit(enemyNative: boolean): void {
     const o = this.own.bounds();
@@ -332,6 +370,23 @@ export class Battle {
         break;
       case "hackPulse":
         play(this.db, ["hackStart"], 1);
+        break;
+      case "hazard":
+        if (e.kind === "warn") {
+          play(this.db, ["environWarning"], 1.2);
+          this.say(v.hazard?.kind === "pulsar" ? `Ion pulse in ${e.in} s` : `Solar flare in ${e.in} s`, 0xffc070);
+        } else if (e.kind === "asb") {
+          play(this.db, ["warning"], 1.2);
+          this.say(e.ship === v.you ? "Anti-ship batteries locked on to you!" : "Anti-ship batteries locked on to the enemy", 0xff8060);
+        } else if (e.kind === "flare" && e.ship === v.you) {
+          this.flashAt = this.time;
+          this.flashColor = 0xffd8a0;
+          play(this.db, ["solarFlare"], 1);
+        } else if (e.kind === "pulse" && e.ship === v.you) {
+          this.flashAt = this.time;
+          this.flashColor = 0x80b0ff;
+          play(this.db, ["pulsar"], 1);
+        }
         break;
       case "pauseWarn":
         // FTL's flagship power-surge warning: something big is coming.
@@ -535,6 +590,10 @@ export class Battle {
     const v = this.view;
     if (!v) return;
     if (!v.pause) this.animTime += dt;
+    for (const [i, s] of this.drift.entries()) if (!v.pause) s.x = ((s.x + dt * (6 + i * 4) + 300) % (W + 600)) - 300;
+    const fk = (this.time - this.flashAt) / 0.9;
+    this.flash.tint = this.flashColor;
+    this.flash.alpha = fk >= 0 && fk < 1 ? 0.55 * (1 - fk) : 0;
     this.pauseTint.alpha += ((v.pause ? 0.28 : 0) - this.pauseTint.alpha) * Math.min(1, dt * 6);
     for (const m of [this.flashTiles, this.flashTilesEnemy]) for (const [k, left] of m) left - dt <= 0 ? m.delete(k) : m.set(k, left - dt);
     const k = Math.min(1, (performance.now() - this.snapAt) / (1000 / SNAP_HZ));
@@ -692,6 +751,10 @@ export class Battle {
         this.drawBeam(v, p, dtSnap);
         continue;
       }
+      if (p.hazard) {
+        this.drawHazardShot(v, p, dtSnap);
+        continue;
+      }
       if (p.delay - dtSnap > 0) continue;
       if ((p.kind === "BOARDER" || p.kind === "HACK") && !this.launched.has(p.id)) {
         this.launched.add(p.id);
@@ -847,6 +910,39 @@ export class Battle {
     }
   }
 
+  /** An asteroid tumbling in (FTL's asteroid art), or an ASB shell streaking down, from beyond the target view. */
+  private drawHazardShot(v: MatchView, p: MatchView["projectiles"][number], dtSnap: number): void {
+    const target = 1 - p.from;
+    const r = target === v.you ? this.own : this.enemy;
+    const k = Math.min(1, (p.t + dtSnap) / (p.flight || 1));
+    const to = this.stage.toLocal(r.root.toGlobal({ x: p.px, y: p.py }));
+    const ang = hash01(p.id) * Math.PI * 2;
+    const R = 650 * (1 - k);
+    const x = to.x + Math.cos(ang) * R;
+    const y = to.y + Math.sin(ang) * R;
+    const layer = target === v.you ? this.projOwn : this.projWin;
+    if (p.weapon === "__ASTEROID") {
+      const t = texNow(`asteroids/asteroid${p.id % 10}.png`);
+      if (t) {
+        const s = new Sprite(t);
+        s.anchor.set(0.5);
+        s.position.set(x, y);
+        s.rotation = this.animTime * 3 + p.id;
+        layer.addChild(s);
+      } else layer.addChild(new Graphics().circle(x, y, 7).fill({ color: 0x8a7a6a }));
+      return;
+    }
+    if (!this.launched.has(p.id)) {
+      this.launched.add(p.id);
+      play(this.db, ["fleetFireHeavy"], 0.9);
+    }
+    const g = new Graphics();
+    const dx = Math.cos(ang) * 26;
+    const dy = Math.sin(ang) * 26;
+    g.moveTo(x + dx, y + dy).lineTo(x, y).stroke({ color: 0xff7030, width: 9, alpha: 0.5 }).moveTo(x + dx, y + dy).lineTo(x, y).stroke({ color: 0xfff0c0, width: 3 });
+    layer.addChild(g);
+  }
+
   private drawShot(layer: Container, image: string | undefined, x: number, y: number, ang: number, kind: string, alpha: number): void {
     if (kind === "HACK") {
       const t = texNow("ship/drones/drone_hack_base.png");
@@ -929,6 +1025,7 @@ export class Battle {
       t.alpha = Math.min(1, (this.message.until - this.time) / 0.4);
     }
     this.pauseHud(v);
+    this.hazardHud(v);
     this.tooltip(v);
     // The selection box, in screen space above everything (both ships and the hostiles window).
     if (this.drag) {
@@ -944,6 +1041,17 @@ export class Battle {
       h.text("clock", `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, 640, 8, fstyle("HL2", 0xffffff, { stroke: 0x101010 }), [0.5, 0]);
     }
     h.end();
+  }
+
+  /** The hazard's name and, for timed ones, the seconds to the next strike (under the pause clock). */
+  private hazardHud(v: MatchView): void {
+    const hz = v.hazard;
+    if (!hz || hz.kind === "none") return;
+    const name = { sun: "RED GIANT: solar flares", pulsar: "PULSAR: ion pulses", asteroids: "ASTEROID FIELD", nebula: "NEBULA: sensors down", storm: "ION STORM: reactors at half, sensors down", asb: "ANTI-SHIP BATTERIES", none: "" }[hz.kind];
+    const timed = hz.kind === "sun" || hz.kind === "pulsar" || hz.kind === "asb";
+    const soon = timed && hz.next <= 5;
+    const txt = timed ? `${name}  ·  ${Math.ceil(hz.next)} s` : name;
+    this.hud.text("hzT", txt, 640, 44, fstyle("JustinFont10", soon ? 0xff9060 : 0xd8c8a8, { stroke: 0x101010 }), [0.5, 0]);
   }
 
   private pauseBox: Box | null = null;

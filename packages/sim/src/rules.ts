@@ -152,6 +152,14 @@ export const RULES = {
   /** The Rebel flagship's crew (its blueprints don't list one; est). */
   flagshipCrew: 8,
   maxCrew: 8,
+  /** Hazards (wiki + xftl): flare every 28-34 s, pulsar every 11-18 s, both warned 5 s ahead; ASB every 20-30 s;
+   * asteroid and ASB flight times (est). */
+  flareEvery: [28, 34],
+  pulsarEvery: [11, 18],
+  hazardWarn: 5,
+  asbEvery: [20, 30],
+  asteroidFlight: 2.2,
+  asbFlight: 2.5,
   /** Autonomous ships repair each damaged system at a third of an untrained human's speed (wiki: "1/3 the speed
    * of a human", whose 12.5 s a bar makes this 37.5 s). */
   autoRepair: 1 / 37.5,

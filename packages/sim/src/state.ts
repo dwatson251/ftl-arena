@@ -27,6 +27,7 @@ export interface MatchConfig {
    * only), regaining `pauseRegen` seconds per minute of play.
    */
   pause?: PauseMode;
+  hazard?: HazardKind | "random";
   tacticalEvery?: number;
   tacticalLength?: number;
   pauseBank?: number;
@@ -34,6 +35,13 @@ export interface MatchConfig {
 }
 
 export type PauseMode = "off" | "tactical" | "clock";
+
+/**
+ * FTL's environmental hazards, on both ships alike: a red giant's solar flares, a pulsar's ion pulses, an
+ * asteroid field, a nebula (sensors down), an ion (plasma) storm (nebula, and reactors at half), or the
+ * Rebels' anti-ship batteries (taking turns at each ship). "random" picks one of the first five.
+ */
+export type HazardKind = "none" | "sun" | "pulsar" | "asteroids" | "nebula" | "storm" | "asb";
 
 export const DEFAULT_CONFIG: MatchConfig = { winCondition: "hull", scrap: 400, shipPool: [], timeLimit: 0, seed: 1 };
 
@@ -240,6 +248,8 @@ export interface Projectile {
   px: number;
   py: number;
   damageBonus: number;
+  /** Fired by the hazard (an asteroid, an ASB shot), not by the other ship. */
+  hazard?: boolean;
 }
 
 export type MatchEvent =
@@ -265,6 +275,8 @@ export type MatchEvent =
   | { e: "battery"; ship: 0 | 1; on: boolean }
   /** `ship` mind-controlled (on) or released (off) crew member `crew`. */
   | { e: "mind"; ship: 0 | 1; crew: number; on: boolean }
+  /** The hazard: a flare or pulsar coming in `in` s (warn), a flare or pulse hitting `ship`, an ASB lock on `ship`. */
+  | { e: "hazard"; kind: "warn" | "flare" | "pulse" | "asb"; ship?: 0 | 1; in?: number }
   /** A tactical timeout is coming in `in` seconds. */
   | { e: "pauseWarn"; in: number }
   | { e: "pause"; on: boolean; kind: "tactical" | "player"; by?: 0 | 1 }
@@ -287,4 +299,10 @@ export interface MatchState {
   pauseBank?: [number, number];
   /** Tick of the next tactical timeout. */
   nextTactical?: number;
+  /**
+   * The battle's hazard (random already resolved): seconds to its next strike and whether that was warned; the
+   * ASB's next target; each ship's asteroid wave (phase 0 = a lull, 1 and 2 = waves), time left in it and to
+   * its next rock.
+   */
+  hazard?: { kind: HazardKind; next: number; warned: boolean; asbTarget?: 0 | 1; rocks?: { phase: 0 | 1 | 2; left: number; spawn: number }[] };
 }

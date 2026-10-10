@@ -32,6 +32,14 @@ export class Match {
         stun: 0, image: "crystal_1", weaponArt: "", rarity: 0, chargeLevels: 1,
       };
     }
+    // The hazards' own "weapons": an asteroid (1 damage, a little fire and breach) and the ASB's shot
+    // (3 damage through any shields, always a breach).
+    const hz = (id: string, title: string, damage: number, sp: number, fireChance: number, breachChance: number) => ({
+      id, title, type: "LASER" as const, damage, shots: 1, sp, fireChance, breachChance, stunChance: 0, ion: 0, sysDamage: 0, persDamage: 0,
+      hullBust: false, cooldown: 1, power: 0, cost: 0, missiles: 0, length: 0, radius: 0, speed: 0, stun: 0, image: "", weaponArt: "", rarity: 0, chargeLevels: 1,
+    });
+    db.weapons.__ASTEROID ??= hz("__ASTEROID", "Asteroid", 1, 0, 1, 1);
+    db.weapons.__ASB ??= hz("__ASB", "Anti-ship battery", 3, 10, 0, 10);
     const used = new Set<string>();
     const pick = (n: string[]) => {
       const free = n.filter((x) => !used.has(x));
@@ -49,6 +57,11 @@ export class Match {
       this.state.pauseBank = [bank, bank];
     }
     if (config.pause === "tactical") this.state.nextTactical = Math.round((config.tacticalEvery ?? RULES.tacticalEvery) * TICK_HZ);
+    const hk = config.hazard === "random" ? this.rng.pick(["sun", "pulsar", "asteroids", "nebula", "storm"] as const) : config.hazard ?? "none";
+    if (hk !== "none") {
+      this.state.hazard = { kind: hk, next: this.hazardDelay(hk), warned: false, asbTarget: this.rng.int(2) as 0 | 1 };
+      if (hk === "asteroids") this.state.hazard.rocks = [0, 1].map(() => ({ phase: 0 as const, left: 5 + this.rng.next() * 5, spawn: 0 }));
+    }
     for (const s of ships) this.updateDerived(s);
   }
 
@@ -85,6 +98,7 @@ export class Match {
       st.rng = this.rng.s;
       return;
     }
+    this.hazardTick();
     // Alternate which ship is processed first so simultaneous events don't always favour one side.
     const order = st.tick % 2 ? [st.ships[1], st.ships[0]] : st.ships;
     for (const s of st.ships) {
@@ -455,7 +469,7 @@ export class Match {
         }
         const lasersToo = bp.id !== "DEFENSE_1";
         const incoming = st.projectiles
-          .filter((p) => p.from === enemy.idx && p.delay <= 0 && p.flight - p.t > RULES.interceptMin && (p.kind === "MISSILES" || p.kind === "BOARDER" || p.kind === "HACK" || (lasersToo && (p.kind === "LASER" || p.kind === "BURST"))))
+          .filter((p) => p.from === enemy.idx && p.delay <= 0 && p.flight - p.t > RULES.interceptMin && p.weapon !== "__ASB" && (p.kind === "MISSILES" || p.kind === "BOARDER" || p.kind === "HACK" || p.weapon === "__ASTEROID" || (lasersToo && (p.kind === "LASER" || p.kind === "BURST"))))
           .sort((a, b) => a.flight - a.t - (b.flight - b.t))[0];
         if (incoming) {
           st.projectiles = st.projectiles.filter((p) => p !== incoming);
@@ -767,7 +781,8 @@ export class Match {
 
   private resolve(p: Projectile): void {
     const st = this.state;
-    const src = st.ships[p.from];
+    // A hazard's shot belongs to no one: it's tallied against a throwaway copy of the stats.
+    const src = p.hazard ? { ...st.ships[p.from], stats: { ...st.ships[p.from].stats } } : st.ships[p.from];
     const T = st.ships[1 - p.from];
     const g = this.geo(T);
     if (p.kind === "BOARDER") return this.landBoarder(src, T, p);
@@ -777,7 +792,8 @@ export class Match {
     if (p.target.kind !== "room") return;
     const room = p.kind === "BURST" ? roomAt(g, p.px, p.py) : p.target.room;
     // Zoltan Shield absorbs anything that would reach the ship (bombs included) until it's used up.
-    const bypass = p.kind === "BOMB" && augCount(src, "ZOLTAN_BYPASS") > 0;
+    // (ASB shots go straight through a Zoltan shield without touching it.)
+    const bypass = (p.kind === "BOMB" && augCount(src, "ZOLTAN_BYPASS") > 0) || p.weapon === "__ASB";
     if (!bypass && (T.superShield ?? 0) > 0 && room >= 0 && (p.kind === "BOMB" || !this.rng.chance(T.evasion / 100))) {
       T.superShield = Math.max(0, (T.superShield ?? 0) - Math.max(1, bp.damage + bp.ion));
       src.stats.blocked++;
@@ -1289,7 +1305,139 @@ export class Match {
 
   /** Reactor bars available now: the reactor plus the battery (a hacked battery takes two away). */
   cap(ship: ShipState): number {
-    return Math.max(0, ship.reactor + (ship.reactorBonus ?? 0));
+    // An ion storm halves the reactor (rounded up); the battery's bars come on top, as in FTL.
+    const reactor = this.state.hazard?.kind === "storm" ? Math.ceil(ship.reactor / 2) : ship.reactor;
+    return Math.max(0, reactor + (ship.reactorBonus ?? 0));
+  }
+
+  // ---------------------------------------------------------------- hazards
+
+  private hazardDelay(k: string): number {
+    const r = (a: number[]) => a[0] + this.rng.next() * (a[1] - a[0]);
+    return k === "sun" ? r(RULES.flareEvery) : k === "pulsar" ? r(RULES.pulsarEvery) : k === "asb" ? r(RULES.asbEvery) : 0;
+  }
+
+  private hazardTick(): void {
+    const st = this.state;
+    const hz = st.hazard;
+    if (!hz || st.winner !== null) return;
+    if (hz.kind === "asteroids") return this.asteroidTick(hz);
+    if (hz.kind !== "sun" && hz.kind !== "pulsar" && hz.kind !== "asb") return;
+    hz.next -= DT;
+    if (!hz.warned && hz.next <= RULES.hazardWarn) {
+      hz.warned = true;
+      if (hz.kind === "asb") st.events.push({ e: "hazard", kind: "asb", ship: hz.asbTarget, in: RULES.hazardWarn });
+      else st.events.push({ e: "hazard", kind: "warn", in: RULES.hazardWarn });
+    }
+    if (hz.next > 0) return;
+    hz.next = this.hazardDelay(hz.kind);
+    hz.warned = false;
+    if (hz.kind === "sun") for (const s of st.ships) this.solarFlare(s);
+    else if (hz.kind === "pulsar") for (const s of st.ships) this.pulsarPulse(s);
+    else {
+      // The batteries take turns: this shot at one ship, the next at the other.
+      const T = st.ships[hz.asbTarget ?? 0];
+      hz.asbTarget = (1 - T.idx) as 0 | 1;
+      this.hazardShot(T, "__ASB", RULES.asbFlight);
+    }
+  }
+
+  /** A red giant's flare (wiki/xftl): 1-2 fires with shields up, 3-6 without, 1-2 per room; 33/66 % of 1 damage there. */
+  private solarFlare(ship: ShipState): void {
+    const st = this.state;
+    const g = this.geo(ship);
+    const shielded = ship.shieldLayers > 0 || (ship.superShield ?? 0) > 0;
+    let left = shielded ? 1 + this.rng.int(2) : 3 + this.rng.int(4);
+    st.events.push({ e: "hazard", kind: "flare", ship: ship.idx });
+    while (left > 0) {
+      const rs = this.rng.pick(ship.rooms);
+      const n = left === 1 ? 1 : 1 + this.rng.int(2);
+      left -= n;
+      const tiles = g.roomTiles.get(rs.id)!;
+      for (let i = 0; i < n; i++) {
+        const t = this.rng.pick(tiles);
+        if (!(t in rs.fires)) st.events.push({ e: "fireStart", ship: ship.idx, room: rs.id });
+        rs.fires[t] = RULES.fireHp;
+      }
+      if (this.god.has(ship.idx) || !this.rng.chance(n === 1 ? 0.33 : 0.66)) continue;
+      ship.hull = Math.max(0, ship.hull - 1);
+      const sys = Object.values(ship.systems).find((s) => s && s.room === rs.id);
+      if (sys) {
+        sys.damage = Math.min(sys.level, sys.damage + 1);
+        sys.repair = 0;
+      }
+    }
+  }
+
+  /**
+   * A pulsar's ion pulse (wiki): two random systems ionised by 1 + half their power (subsystems by their level),
+   * the shields always one of them while powered; a Zoltan shield soaks the whole pulse (3-4 off it), and
+   * Reverse Ion Field can resist it all.
+   */
+  private pulsarPulse(ship: ShipState): void {
+    const st = this.state;
+    st.events.push({ e: "hazard", kind: "pulse", ship: ship.idx });
+    if ((ship.superShield ?? 0) > 0 && ship.systems.shields) {
+      ship.superShield = Math.max(0, (ship.superShield ?? 0) - (3 + this.rng.int(2)));
+      return;
+    }
+    if (this.ionNegated(ship)) return;
+    const all = Object.values(ship.systems).filter((s): s is SystemState => !!s && s.level > 0);
+    const picks: SystemState[] = [];
+    const sh = ship.systems.shields;
+    if (sh && sh.power > 0) picks.push(sh);
+    while (picks.length < 2 && picks.length < all.length) {
+      const s = this.rng.pick(all);
+      if (!picks.includes(s)) picks.push(s);
+    }
+    for (const s of picks) {
+      const n = isSubsystem(s.id) ? usable(s) + (s.manBonus ?? 0) : s.power > 0 ? 1 + Math.floor(0.5 * s.power) : 1;
+      this.addIon(s, Math.max(1, n));
+    }
+  }
+
+  /** A hazard's projectile (an asteroid, an ASB shot) flying at a random room of `ship`. */
+  private hazardShot(ship: ShipState, weapon: string, flight: number): void {
+    const st = this.state;
+    const g = this.geo(ship);
+    const room = this.rng.pick(ship.rooms).id;
+    const [tx, ty] = unkey(this.rng.pick(g.roomTiles.get(room)!));
+    st.projectiles.push({
+      id: st.nextId++, from: (1 - ship.idx) as 0 | 1, weapon, slot: -1, kind: "LASER", delay: 0, t: 0, flight,
+      target: { kind: "room", room }, px: (tx + 0.5) * TILE, py: (ty + 0.5) * TILE, damageBonus: 0, hazard: true,
+    });
+  }
+
+  /**
+   * Asteroid field (xftl's AsteroidGenerator): lulls and two kinds of wave, timed by each ship's own shield
+   * bubbles (more shields, more rocks). FTL alternates one stream between both ships; here each ship has its own
+   * at half the rate, which comes to the same.
+   */
+  private asteroidTick(hz: NonNullable<MatchState["hazard"]>): void {
+    const T = [
+      { idle: [5, 10], w1: [8, 16], p1: [1.8, 2.2], w2: [5, 8], p2: [1.4, 1.6] },
+      { idle: [5, 10], w1: [10, 20], p1: [1.0, 1.8], w2: [5, 10], p2: [0.9, 1.3] },
+      { idle: [12, 15], w1: [16, 28], p1: [0.9, 1.4], w2: [8, 13], p2: [0.9, 1.3] },
+      { idle: [12, 15], w1: [16, 30], p1: [0.72, 1.35], w2: [8, 11], p2: [0.54, 0.95] },
+    ];
+    const r = (a: number[]) => a[0] + this.rng.next() * (a[1] - a[0]);
+    for (const ship of this.state.ships) {
+      const g = hz.rocks![ship.idx];
+      const bubbles = Math.floor((ship.systems.shields?.level ?? 0) / 2);
+      const t = T[Math.max(0, Math.min(3, bubbles - 1))];
+      g.left -= DT;
+      if (g.phase > 0) {
+        g.spawn -= DT;
+        if (g.spawn <= 0) {
+          g.spawn = 2 * r(g.phase === 1 ? t.p1 : t.p2);
+          this.hazardShot(ship, "__ASTEROID", RULES.asteroidFlight);
+        }
+      }
+      if (g.left > 0) continue;
+      g.phase = g.phase === 0 ? 1 : g.phase === 1 ? 2 : 0;
+      g.left = r(g.phase === 0 ? t.idle : g.phase === 1 ? t.w1 : t.w2);
+      g.spawn = 0;
+    }
   }
 
   private startBattery(ship: ShipState): boolean {

@@ -206,6 +206,9 @@ export class Hangar {
       <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="note">${cfg.winCondition === "auto" ? "Only destroying the ship wins: with its crew dead a ship runs itself, like FTL's drone ships and the flagship (systems repair on their own, the helm flies itself)." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
+      <div class="kv"><span>Hazard</span><select data-cfg="hazard" ${host ? "" : "disabled"}>
+        ${([["none", "None"], ["random", "Random"], ["sun", "Red giant (solar flares)"], ["pulsar", "Pulsar (ion pulses)"], ["asteroids", "Asteroid field"], ["nebula", "Nebula (no sensors)"], ["storm", "Ion storm (half reactor)"], ["asb", "Anti-ship batteries"]] as const).map(([v, l]) => `<option value="${v}" ${(cfg.hazard ?? "none") === v ? "selected" : ""}>${l}</option>`).join("")}
+      </select></div>
       ${this.pauseRules(cfg, host, !!pc)}
       <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""} ${host ? "" : "disabled"}></label>
       <div class="kv"><span>Battle music</span><select data-music>
@@ -668,7 +671,7 @@ export class Hangar {
       this.sfx("hoverBeep");
     } else if (t.dataset.cfg) {
       const k = t.dataset.cfg as keyof MatchConfig;
-      const v = k === "winCondition" || k === "pause" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : Number(t.value);
+      const v = k === "winCondition" || k === "pause" || k === "hazard" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : Number(t.value);
       this.hooks.setConfig({ [k]: v } as Partial<MatchConfig>);
     } else if (t.dataset.prac) {
       const k = t.dataset.prac as keyof PracticeConfig;

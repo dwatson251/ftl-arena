@@ -223,3 +223,14 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Bot difficulty | Caps fitted weapons (1-4), shield layers (1-4) and engines by difficulty; everything is bought within the match scrap plus the difficulty's bonus (single-player hulls too) | user |
 | Sounds | Each weapon's own hit, shield and miss sounds; beams sizzle on contact; a weapon coming ready chimes (FTL's weaponReady) unless it's on autofire | game data |
 | Beams | Drawn as a continuous beam from beyond the target view, its tip sweeping the aimed line, FTL's contact flare at the tip, stopped at the bubble by shields it can't pierce; aiming shows the line following the mouse | FTL |
+
+## Hazards (lobby rule "Hazard"; wiki + xftl)
+| Hazard | Effect, on both ships alike |
+|---|---|
+| Red giant | A solar flare every 28-34 s, warned 5 s ahead: 1-2 fires with shields up (any layer, or a Zoltan shield), 3-6 without, 1-2 per room; each such room has a 33 % (1 fire) / 66 % (2 fires) chance of 1 hull and system damage |
+| Pulsar | An ion pulse every 11-18 s, warned 5 s ahead: 2 systems ionised by 1 + half their power (subsystems by their level), the shields always one while powered; a Zoltan shield soaks it (3-4 off it); Reverse Ion Field can resist it |
+| Asteroid field | FTL's wave machine (lulls and two wave kinds) timed by each ship's own shield bubbles; each rock can be dodged, takes a shield layer, can be shot down by defense drones, else 1 hull and system damage with a small fire or breach chance |
+| Nebula | Sensors off (Slugs and the Lifeform Scanner still sense crew) |
+| Ion storm | A nebula, and both reactors at half (rounded up); battery and Zoltan power unaffected |
+| Anti-ship batteries | Every 20-30 s, warned 5 s ahead, a 3-damage shot that pierces shields, goes through a Zoltan shield untouched and always breaches; evadable, can't be shot down. In 1v1 they take turns at each ship (left out of Random) |
+| Random | One of the first five |
