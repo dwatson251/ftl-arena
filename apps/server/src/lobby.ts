@@ -268,9 +268,15 @@ export class Lobby {
 
   setReady(c: Client, ready: boolean): string | null {
     const p = this.players.find((q) => q.id === c.id);
-    if (!p || this.phase !== "lobby") return "can't ready now";
+    // Unready also works during the countdown: it calls the launch off.
+    const calling = !ready && this.phase === "countdown";
+    if (!p || (this.phase !== "lobby" && !calling)) return "can't ready now";
     if (ready && !p.priced?.ok) return p.priced?.errors.join("; ") || "loadout invalid";
     p.ready = ready;
+    if (calling) {
+      this.phase = "lobby";
+      this.countdown = 0;
+    }
     if (this.players.length === 2 && this.players.every((q) => q.ready)) {
       this.phase = "countdown";
       this.countdown = COUNTDOWN;
@@ -395,7 +401,7 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
     pauseBank: bank === 0 && !practice ? RULES.pauseBank : bank,
     pauseRegen: clamp(Math.round(Number(c.pauseRegen ?? RULES.pauseRegen) || 0), 0, 60),
     winCondition: c.winCondition === "crew" ? "crew" : "hull",
-    scrap: clamp(Math.round(Number(c.scrap) || 0), 0, 5000),
+    scrap: clamp(Math.round(Number(c.scrap) || 0), 0, 10000),
     shipPool: (Array.isArray(c.shipPool) ? c.shipPool : []).filter((s) => db.hangar.includes(s)),
     timeLimit: clamp(Math.round(Number(c.timeLimit) || 0), 0, 3600),
     seed: Number(c.seed) | 0,

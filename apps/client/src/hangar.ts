@@ -36,6 +36,7 @@ export class Hangar {
     this.el.addEventListener("change", (e) => this.onChange(e));
     this.el.addEventListener("input", (e) => this.onInput(e));
     this.el.addEventListener("focusout", () => this.pendingRender && setTimeout(() => this.render(), 0));
+    window.addEventListener("keydown", (e) => this.onKey(e));
     // Drag and drop: store cards and equipped weapons can be dropped on a slot; equipped ones dropped
     // back on the store are sold.
     this.el.addEventListener("dragstart", (e) => {
@@ -202,7 +203,7 @@ export class Hangar {
       <div class="kv"><span>Win</span><select data-cfg="winCondition" ${host ? "" : "disabled"}>
         <option value="hull" ${cfg.winCondition === "hull" ? "selected" : ""}>Destroy the ship</option>
         <option value="crew" ${cfg.winCondition === "crew" ? "selected" : ""}>Kill the crew</option></select></div>
-      <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="5000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
+      <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="note">${cfg.winCondition === "crew" ? "Hulls can't drop below 1: only a dead crew ends it." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
       ${this.pauseRules(cfg, host, !!pc)}
@@ -590,6 +591,61 @@ export class Hangar {
     const down = !!(d.sell || d.fire || d.unaug || d.undrone || (d.parts && Number(d.parts) < 0) || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
     this.sfx(down ? "powerDownSystem" : "powerUpSystem");
     this.change(l);
+  }
+
+  /**
+   * Builder shortcuts. Enter in a text box submits it (it loses focus); otherwise Enter moves to the next
+   * page, and on the last page it's the only key that readies up. Tab moves forward, Shift+Tab, Backspace
+   * and Escape go back; Escape unreadies first if you're ready.
+   */
+  private onKey(e: KeyboardEvent): void {
+    if (!this.el.isConnected || !this.loadout || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    const typing = !!t && ["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) && this.el.contains(t);
+    const i = STEPS.indexOf(this.step);
+    const go = (d: number) => {
+      const n = Math.max(0, Math.min(STEPS.length - 1, i + d));
+      if (n === i) return;
+      this.step = STEPS[n];
+      this.confirming = false;
+      this.sfx("hoverBeep");
+      this.render();
+    };
+    const me = this.lobby?.players.find((p) => p.id === this.me());
+    const press = (sel: string) => this.el.querySelector<HTMLButtonElement>(`${sel}:not(:disabled)`)?.click();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (typing) return t!.blur();
+      if (i < STEPS.length - 1) return go(1);
+      // The last page: ready (or, past a warning, "Ready anyway").
+      if (!me?.ready) press('button[data-ready="1"]');
+      return;
+    }
+    if (e.key === "Tab") {
+      e.preventDefault();
+      if (typing) t!.blur();
+      return go(e.shiftKey ? -1 : 1);
+    }
+    if (typing) {
+      if (e.key === "Escape") t!.blur();
+      return;
+    }
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      return go(-1);
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (this.confirming) {
+        this.confirming = false;
+        return this.render();
+      }
+      if (me?.ready) {
+        this.sfx("undoUpgrades");
+        return this.hooks.ready(false);
+      }
+      return go(-1);
+    }
   }
 
   private onInput(e: Event): void {
