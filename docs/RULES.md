@@ -75,3 +75,20 @@ Driving the real game needs the owner's go-ahead, because it takes over their mo
 | Station refill | An idle crew member in the room steps onto a station when it's left empty | FTL behaviour |
 | Telepathy / life scanner | Enemy crew appear as anonymous dots: location only, no race, health or action | FTL behaviour |
 | Medbay / clone bay | Share one room; installing one removes the other, and removing a swapped-in bay restores the hull's original | FTL |
+
+## Boarding (round 7, estimates unless noted)
+| Rule | Value | Source |
+|---|---|---|
+| Teleporter recharge | 20 / 15 / 10 s at levels 1-3; drains when unpowered | est (wiki) |
+| Teleport | Up to 4 own crew standing on the pad, into free tiles of the target room; retrieve brings own crew back from a room | FTL |
+| Zoltan super shield | Blocks teleporting and boarding drones | FTL text ("super shields prevent teleporting") |
+| Tiles | One crew member per side per tile, so a defender and an intruder can share a tile | FTL |
+| Melee | 6 HP/s × race combat (Mantis 1.5, Engi 0.5) × (1 + 10%/20% combat skill) | est |
+| Sabotage | A boarder alone in a system room breaks a bar every ~8 s (×race combat); boarding drones 2×; ion intruders ionise instead | est |
+| Doors | Intruders break closed doors: 2 / 4 / 7 / 11 / 16 s for no doors system / levels 1-3 / super doors | est |
+| Medbay | Heals only its own ship's crew | assumption |
+| Dead boarders | Go home to their owner's ship, where its clone bay can bring them back | FTL |
+| Crew-kill win | Counts a player's crew aboard either ship; drone units don't count | |
+| Anti-personnel drone | 150 HP unit, hunts intruders on its own ship | est |
+| System repair drone | 70 HP unit, repairs damaged systems, can't fight | est |
+| Boarding drone | Flies 2.4 s (defense drones can shoot it down), breaches its landing room, then a 150 HP unit wrecks systems | est |

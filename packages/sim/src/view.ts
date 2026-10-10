@@ -34,12 +34,12 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   const enemy = st.ships[1 - you];
   const sensors = m.eff(own.systems.sensors);
   const over = st.winner !== null || reveal;
-  const telepath = own.crew.some((c) => !c.dead && raceOf(c.race).telepathic) || (own.augments ?? []).includes("LIFE_SCANNER");
+  const telepath = m.crewOf(you).some((c) => !c.dead && raceOf(c.race).telepathic) || (own.augments ?? []).includes("LIFE_SCANNER");
 
   const ownView: ShipView = { ...structuredClone(own), visibleRooms: null, interior: true, weaponsKnown: true };
   if (sensors <= 0 && !over) {
     const g = geometry(m.db.layouts[own.layout]);
-    ownView.visibleRooms = [...new Set(own.crew.filter((c) => !c.dead).map((c) => g.tiles.get(c.tile)!.room))];
+    ownView.visibleRooms = [...new Set(own.crew.filter((c) => !c.dead && c.owner === you).map((c) => g.tiles.get(c.tile)!.room))];
   }
 
   const ev = structuredClone(enemy) as ShipView;
@@ -47,15 +47,22 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   ev.interior = over || sensors >= 2;
   ev.weaponsKnown = over || sensors >= 3;
   if (!ev.interior) {
-    // Telepathy (Slug crew, the life scanner) senses where crew are, nothing else: anonymous blips.
-    ev.crew = !telepath
-      ? []
-      : ev.crew.filter((c) => !c.dead && c.dying === undefined).map((c) => ({
-          id: c.id, name: "", race: "", hp: 1, maxHp: 1, x: c.x, y: c.y, tile: c.tile, path: [], home: c.tile, task: "idle",
-          xp: { pilot: 0, engines: 0, shields: 0, weapons: 0, repair: 0, combat: 0 }, stun: 0, dead: false, blip: true,
-        }));
-    ev.visibleRooms = [];
+    // Without sensors you still see the rooms your boarders stand in, and everyone in them.
+    const eg = geometry(m.db.layouts[enemy.layout]);
+    const roomOf = (c: { tile: string }) => eg.tiles.get(c.tile)!.room;
+    const seen = new Set(ev.crew.filter((c) => c.owner === you && !c.dead).map(roomOf));
+    // Telepathy (Slug crew, the life scanner) senses where the others are, nothing else: anonymous blips.
+    ev.crew = ev.crew.flatMap((c) => {
+      if (c.owner === you || seen.has(roomOf(c))) return [c];
+      if (!telepath || c.dead || c.dying !== undefined) return [];
+      return [{
+        id: c.id, name: "", race: "", hp: 1, maxHp: 1, x: c.x, y: c.y, tile: c.tile, path: [], home: c.tile, task: "idle" as const,
+        xp: { pilot: 0, engines: 0, shields: 0, weapons: 0, repair: 0, combat: 0 }, stun: 0, dead: false, blip: true, owner: c.owner,
+      }];
+    });
+    ev.visibleRooms = [...seen];
     for (const r of ev.rooms) {
+      if (seen.has(r.id)) continue;
       r.o2 = -1;
       r.fires = {};
       r.breaches = {};

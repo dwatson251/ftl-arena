@@ -161,6 +161,18 @@
     drones.
   - SHIP_REPAIR heals 5 hull, then expires.
 
+## Round 7: boarding
+- **Data model:** each ship's `crew` list holds whoever is physically aboard, and each crew member has an
+  `owner`. O2, fire, weapon hits and melee stay per ship; manning, crew lists, telepathy and the crew-kill
+  win use ownership.
+- **Not in FTL's data:** no teleporter or melee numbers exist in blueprints.xml; all are estimates
+  (RULES.md). The interior drones have no `droneImage`. Their art is the crew sheets `battle`, `repair`
+  and `boarder_ion` (people/), and the store icon is `systemUI/weapbox_icon_D_<iconImage>.png`.
+- **Renderer bug found on the way:** crew drawing sat inside the `if (interior)` hazards block, so nothing
+  was drawn on an enemy ship without sensors. Visibility is now per room (`visibleRooms`).
+- **HUD:** FTL's tray fits five main systems; each extra system pushes the weapons and drone trays right
+  by one system width.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

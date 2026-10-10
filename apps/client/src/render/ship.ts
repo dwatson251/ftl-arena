@@ -20,6 +20,8 @@ export interface CrewDraw {
   x: number;
   y: number;
   selected: boolean;
+  /** Belongs to the other player (intruders on your ship, defenders on theirs). */
+  hostile?: boolean;
 }
 
 export interface ShipDrawOpts {
@@ -200,12 +202,13 @@ export class ShipRenderer {
     }
     this.gibRoot.visible = false;
     d.begin();
-    const visible = (room: number) => v.visibleRooms === null || v.visibleRooms.includes(room);
+    // A room is seen when the server listed it (boarders, no-sensor rooms with own crew), else by sensors.
+    const visible = (room: number) => (v.visibleRooms ? v.visibleRooms.includes(room) : v.interior);
     const g = d.gfx("rooms");
     // Low O2: pink tint, plus FTL's warning stripes when it's nearly gone.
     for (const rs of v.rooms) {
       const r = L.rooms.find((q) => q.id === rs.id)!;
-      const known = v.interior && rs.o2 >= 0 && visible(rs.id);
+      const known = rs.o2 >= 0 && visible(rs.id);
       if (known && rs.o2 < 66) g.rect(r.x * TILE + 2, r.y * TILE + 2, r.w * TILE - 4, r.h * TILE - 4).fill({ color: 0xff3b6b, alpha: ((66 - rs.o2) / 66) * 0.42 });
       this.stripe(r, known && rs.o2 < 25);
     }
@@ -233,7 +236,7 @@ export class ShipRenderer {
       d.sprite("cgas", gas, r.x * TILE, r.y * TILE, { alpha: 0.5 + 0.3 * Math.sin(time * 4) });
     }
     // Hazards
-    if (v.interior) {
+    {
       for (const rs of v.rooms) {
         if (!visible(rs.id)) continue;
         // A breach is a state, not a loop: the crack shrinks back through its frames as it's repaired.
@@ -351,7 +354,7 @@ export class ShipRenderer {
     }
     const fg = this.fog.clear();
     for (const r of L.rooms) {
-      if (visible(r.id) && v.interior) continue;
+      if (visible(r.id)) continue;
       fg.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).fill({ color: 0x2b2f38, alpha: v.interior ? 0.85 : 0.5 });
     }
     d.end();
@@ -393,7 +396,9 @@ export class ShipRenderer {
       d.gfx(`blip${c.id}`).circle(px, py, 8).fill({ color: 0xff7aa0, alpha: 0.25 * pulse }).circle(px, py, 4.5).fill({ color: 0xffb0c8, alpha: pulse });
       return;
     }
-    const race = this.db.animSheets[c.race] ? c.race : "human";
+    // The boarding drone has no sheet of its own: it uses the anti-personnel drone's.
+    const sheet = c.race === "boarder" ? "battle" : c.race;
+    const race = this.db.animSheets[sheet] ? sheet : "human";
     let anim = `${race}_walk_down`;
     let fr = 0;
     if (c.task === "walk" && c.path.length) {
@@ -412,6 +417,11 @@ export class ShipRenderer {
       // Half the speed of the other work animations, so extinguishing reads as steady spraying.
       anim = `${race}_fire_down`;
       fr = Math.floor(time * 5);
+    } else if (c.task === "fight" || c.task === "sabotage") {
+      // Melee (punch) for crew, guns for drones; side-on toward the room's centre for drones.
+      const punch = this.db.anims[`${race}_punch_up`];
+      anim = punch ? (Math.floor(time * 2 + c.id) % 2 ? `${race}_punch_up` : `${race}_punch_down`) : this.db.anims[`${race}_attack`] ? `${race}_attack` : `${race}_shoot_right`;
+      fr = Math.floor(time * 8);
     } else if (c.task === "man") {
       // Face the station's computer (the blueprint's slot <direction>).
       anim = `${race}_type_${facing.get(c.tile) ?? "up"}`;
@@ -432,9 +442,11 @@ export class ShipRenderer {
         const sil = animFrame(this.db, anim, fr, `people/${race}_color.png`) ?? t;
         d.sprite(`${key}sel`, sil, px, py, { anchor: 0.5, rotation: rot, tint: 0x30ff30, scale: 1.14 });
       }
-      d.sprite(key, t, px, py, { anchor: 0.5, rotation: rot, tint: this.enemy ? 0xffe0dc : 0xffffff });
+      // Hostile crew get FTL's red cast; drone units keep their own colours.
+      d.sprite(key, t, px, py, { anchor: 0.5, rotation: rot, tint: cd.hostile && c.drone === undefined ? 0xffb0a8 : 0xffffff });
+      if (cd.hostile) d.gfx(`${key}foe`).rect(px - 12, py + 12, 24, 2).fill({ color: 0xff4a3a, alpha: 0.9 });
     } else {
-      d.gfx(key).circle(px, py, 9).fill({ color: this.enemy ? 0xe05555 : 0x5fa8ff }).stroke({ color: cd.selected ? 0x30ff30 : 0x000000, width: 2 });
+      d.gfx(key).circle(px, py, 9).fill({ color: cd.hostile ? 0xe05555 : 0x5fa8ff }).stroke({ color: cd.selected ? 0x30ff30 : 0x000000, width: 2 });
     }
     // Health box (shown when hurt or selected), kept above the sprite on screen.
     if (c.dying === undefined && (cd.selected || c.hp < c.maxHp)) {

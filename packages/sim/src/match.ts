@@ -2,7 +2,7 @@
  * The authoritative simulation. Pure: no clocks, no I/O. `step()` advances one tick (1/30 s); commands are
  * applied at the start of the tick they're queued for. Same seed + same commands = same state.
  */
-import { SPACE_DRONES, type GameDB, type SystemId, type WeaponBP } from "@ftl/data";
+import { SPACE_DRONES, UNIT_DRONES, type GameDB, type SystemId, type WeaponBP } from "@ftl/data";
 import type { Command } from "./commands.ts";
 import { findPath, geometry, key, roomAt, roomCentre, unkey, type Geometry } from "./geometry.ts";
 import { augCount, autoPower, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
@@ -79,6 +79,7 @@ export class Match {
     for (const s of order) this.systemsTick(s);
     for (const s of order) this.weaponsTick(s);
     for (const s of order) this.dronesTick(s);
+    for (const s of order) this.teleTick(s);
     this.projectilesTick(order[0].idx);
     for (const s of order) this.crewTick(s);
     for (const s of order) this.environmentTick(s);
@@ -141,14 +142,19 @@ export class Match {
         return true;
       }
       case "moveCrew": {
-        const g = this.geo(ship);
+        // Crew walk inside whichever ship they're aboard: own crew at home, or boarders on the enemy ship.
+        const aboard = cmd.enemy ? this.state.ships[1 - ship.idx] : ship;
+        const g = this.geo(aboard);
         if (!g.roomTiles.has(cmd.room)) return false;
         for (const id of cmd.crew) {
-          const c = ship.crew.find((q) => q.id === id && !q.dead);
-          if (c) this.sendCrew(ship, g, c, cmd.room);
+          const c = aboard.crew.find((q) => q.id === id && !q.dead && q.dying === undefined && q.owner === ship.idx && q.drone === undefined);
+          if (c) this.sendCrew(aboard, g, c, cmd.room);
         }
         return true;
       }
+      case "teleport":
+      case "retrieve":
+        return this.teleport(ship, cmd.room, cmd.c === "teleport");
       case "dronePower": {
         const d = ship.drones?.[cmd.slot];
         const ds = ship.systems.drones;
@@ -158,6 +164,7 @@ export class Match {
           if (!d.powered) return false;
           d.powered = false;
           d.deployed = false;
+          this.removeUnit(ship.idx, cmd.slot);
           ds.power = Math.max(0, ds.power - bp.power);
           return true;
         }
@@ -210,7 +217,8 @@ export class Match {
 
   private sendCrew(ship: ShipState, g: Geometry, c: CrewState, room: number): void {
     const tiles = g.roomTiles.get(room)!;
-    const claimed = new Set(ship.crew.filter((q) => !q.dead && q !== c).map((q) => q.home));
+    // A tile holds one crew member per side (FTL lets a defender and an intruder share it).
+    const claimed = new Set(ship.crew.filter((q) => !q.dead && q !== c && q.owner === c.owner).map((q) => q.home));
     const sys = Object.values(ship.systems).find((s) => s && s.room === room && s.station);
     let dest = "";
     if (sys && !claimed.has(sys.station)) dest = sys.station;
@@ -253,6 +261,7 @@ export class Match {
       ds[i].powered = false;
       if (ds[i].deployed) this.state.events.push({ e: "droneLost", ship: ship.idx, drone: i });
       ds[i].deployed = false;
+      this.removeUnit(ship.idx, i);
     }
   }
 
@@ -268,11 +277,13 @@ export class Match {
       if (!d.deployed) {
         // Launching uses a drone part.
         if ((ship.droneParts ?? 0) <= 0) continue;
+        if (UNIT_DRONES.includes(bp.type) && !this.launchUnit(ship, enemy, d, bp.id, bp.type)) continue;
         ship.droneParts = (ship.droneParts ?? 0) - 1;
         d.deployed = true;
         d.cd = 1.2;
         d.repairLeft = bp.type === "SHIP_REPAIR" ? RULES.shipRepairAmount : undefined;
       }
+      if (UNIT_DRONES.includes(bp.type)) continue;
       d.angle += DT * (0.25 + bp.speed * 0.02) * boost;
       d.cd -= DT * boost;
       if (d.cd > 0) continue;
@@ -284,7 +295,7 @@ export class Match {
         if (scrambled) continue;
         if (bp.antiDrone) {
           // Anti-drone: knocks out one enemy space drone.
-          const target = (enemy.drones ?? []).find((x) => x.deployed);
+          const target = (enemy.drones ?? []).find((x) => x.deployed && !UNIT_DRONES.includes(this.db.droneBPs?.[x.bp]?.type ?? "COMBAT"));
           if (target) {
             target.deployed = false;
             st.events.push({ e: "droneLost", ship: enemy.idx, drone: target.slot });
@@ -293,10 +304,11 @@ export class Match {
         }
         const lasersToo = bp.id !== "DEFENSE_1";
         const incoming = st.projectiles
-          .filter((p) => p.from === enemy.idx && p.delay <= 0 && p.flight - p.t > RULES.interceptMin && (p.kind === "MISSILES" || (lasersToo && (p.kind === "LASER" || p.kind === "BURST"))))
+          .filter((p) => p.from === enemy.idx && p.delay <= 0 && p.flight - p.t > RULES.interceptMin && (p.kind === "MISSILES" || p.kind === "BOARDER" || (lasersToo && (p.kind === "LASER" || p.kind === "BURST"))))
           .sort((a, b) => a.flight - a.t - (b.flight - b.t))[0];
         if (incoming) {
           st.projectiles = st.projectiles.filter((p) => p !== incoming);
+          if (incoming.boarder !== undefined) this.loseDrone(enemy, incoming.boarder);
           st.events.push({ e: "intercept", ship: ship.idx, projectile: incoming.id, drone: d.slot });
         } else d.cd = 0.1;
       } else if (bp.type === "SHIP_REPAIR") {
@@ -347,7 +359,7 @@ export class Match {
   mannedBy(ship: ShipState, id: SystemId): CrewState | undefined {
     const s = ship.systems[id];
     if (!s || !s.station || this.eff(s) <= 0) return undefined;
-    return ship.crew.find((c) => !c.dead && !c.dying && c.stun <= 0 && c.path.length === 0 && c.tile === s.station);
+    return ship.crew.find((c) => !c.dead && !c.dying && c.owner === ship.idx && c.drone === undefined && c.stun <= 0 && c.path.length === 0 && c.tile === s.station);
   }
 
   skill(c: CrewState | undefined, sk: SkillId): number {
@@ -367,11 +379,11 @@ export class Match {
       s.bonus = 0;
       s.manBonus = 0;
       if ((s.id === "sensors" || s.id === "doors") && s.station && usable(s) > 0) {
-        if (ship.crew.some((c) => !c.dead && !c.dying && c.stun <= 0 && c.path.length === 0 && c.tile === s.station)) s.manBonus = 1;
+        if (this.mannedBy(ship, s.id)) s.manBonus = 1;
       }
       for (const c of ship.crew) {
         const p = raceOf(c.race).power;
-        if (p && !c.dead && c.path.length === 0 && g.tiles.get(c.tile)?.room === s.room) s.bonus += p;
+        if (p && !c.dead && c.owner === ship.idx && c.path.length === 0 && g.tiles.get(c.tile)?.room === s.room) s.bonus += p;
       }
       if (s.ion > 0) {
         s.ionTimer -= DT;
@@ -534,6 +546,7 @@ export class Match {
     const src = st.ships[p.from];
     const T = st.ships[1 - p.from];
     const g = this.geo(T);
+    if (p.kind === "BOARDER") return this.landBoarder(src, T, p);
     const bp = this.wbp(p.weapon);
     if (p.kind === "BEAM" && p.target.kind === "beam") return this.resolveBeam(src, T, g, bp, p.target);
     if (p.target.kind !== "room") return;
@@ -676,13 +689,16 @@ export class Match {
   // ---------------------------------------------------------------- crew
 
   private crewTick(ship: ShipState): void {
+    const st = this.state;
     const g = this.geo(ship);
     const medbay = ship.systems.medbay;
     const heal = RULES.medbayHeal[Math.min(3, this.eff(medbay))];
-    const god = this.god.has(ship.idx);
     const cb = ship.systems.clonebay;
     const dna = augCount(ship, "BACKUP_DNA") > 0;
+    const doorLevel = Math.min(RULES.doorBreak.length - 1, this.eff(ship.systems.doors));
     this.refillStations(ship, g);
+    /** Boarders who died here go home to their owner's ship (its clone bay may bring them back). */
+    const leaving: CrewState[] = [];
     for (const c of ship.crew) {
       if (c.dead && c.clone !== undefined) {
         // Clone bay: progress while powered; without power the queue is lost unless Backup DNA keeps it.
@@ -693,30 +709,34 @@ export class Match {
         continue;
       }
       if (c.dead) continue;
+      const home = st.ships[c.owner];
       if (c.dying !== undefined) {
         // The death animation plays out before the crew member counts as dead.
         c.dying -= DT;
         if (c.dying <= 0) {
           c.dead = true;
           c.dying = undefined;
-          if (cb && cb.level > 0) c.clone = 0;
-          this.state.events.push({ e: "death", ship: ship.idx, crew: c.id });
+          const ocb = home.systems.clonebay;
+          if (c.drone === undefined && ocb && ocb.level > 0) c.clone = 0;
+          st.events.push({ e: "death", ship: ship.idx, crew: c.id });
+          if (c.drone !== undefined || c.owner !== ship.idx) leaving.push(c);
         }
         continue;
       }
       const room = g.tiles.get(c.tile)!.room;
       const rs = ship.rooms.find((r) => r.id === room)!;
+      const ownShip = c.owner === ship.idx;
       // Hazards
       const tr = raceOf(c.race);
       if (c.tile in rs.fires && !tr.fireImmune) c.hp -= RULES.fireCrewDps * DT;
-      // Emergency Respirators halve suffocation damage.
-      const masks = augCount(ship, "O2_MASKS") ? (this.db.augments?.O2_MASKS?.value ?? 0.5) : 1;
+      // Emergency Respirators (the owner's augment) halve suffocation damage.
+      const masks = augCount(home, "O2_MASKS") ? (this.db.augments?.O2_MASKS?.value ?? 0.5) : 1;
       if (rs.o2 < RULES.suffocateAt) c.hp -= RULES.suffocateDps * tr.suffocation * masks * DT;
-      // Engi Med-bot Dispersal: slow healing anywhere outside the medbay.
-      if (augCount(ship, "NANO_MEDBAY") && !(medbay && medbay.room === room) && c.hp < c.maxHp) c.hp = Math.min(c.maxHp, c.hp + RULES.nanoMedbay * DT);
+      // Engi Med-bot Dispersal: slow healing anywhere aboard your own ship outside the medbay.
+      if (ownShip && augCount(ship, "NANO_MEDBAY") && !(medbay && medbay.room === room) && c.hp < c.maxHp) c.hp = Math.min(c.maxHp, c.hp + RULES.nanoMedbay * DT);
       if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - tr.drainO2 * DT);
-      if (god) c.hp = c.maxHp;
-      if (medbay && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
+      if (this.god.has(c.owner)) c.hp = c.maxHp;
+      if (ownShip && medbay && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
       if (c.hp <= 0) {
         c.hp = 0;
         c.path = [];
@@ -729,13 +749,29 @@ export class Match {
         c.stun -= DT;
         continue;
       }
-      // Movement
+      const hostiles = ship.crew.filter((q) => q.owner !== c.owner && !q.dead && q.dying === undefined && g.tiles.get(q.tile)?.room === room);
+      // Drone units think for themselves (players can't order them).
+      if (c.drone !== undefined && !c.path.length && !hostiles.length) this.unitThink(ship, g, c, room);
+      // Movement. Intruders have to break closed doors first (longer for better doors).
       if (c.path.length) {
+        if (!ownShip) {
+          const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
+          if (edge && edge.door >= 0 && !ship.doors[edge.door]) {
+            c.bash = (c.bash ?? 0) + DT * Math.max(0.5, tr.combat);
+            c.task = "fight";
+            if (c.bash >= RULES.doorBreak[doorLevel]) {
+              ship.doors[edge.door] = true;
+              c.bash = 0;
+              st.events.push({ e: "doorBroken", ship: ship.idx, door: edge.door });
+            }
+            continue;
+          }
+        }
         const [nx, ny] = unkey(c.path[0]);
         const ddx = nx - c.x;
         const ddy = ny - c.y;
         const d = Math.hypot(ddx, ddy);
-        const stepLen = RULES.crewSpeed * tr.speed * (augCount(ship, "CREW_STIMS") ? 1 + (this.db.augments?.CREW_STIMS?.value ?? 0.25) : 1) * DT;
+        const stepLen = RULES.crewSpeed * tr.speed * (augCount(home, "CREW_STIMS") ? 1 + (this.db.augments?.CREW_STIMS?.value ?? 0.25) : 1) * DT;
         if (d <= stepLen) {
           c.x = nx;
           c.y = ny;
@@ -747,21 +783,47 @@ export class Match {
         c.task = "walk";
         continue;
       }
+      const sys = Object.values(ship.systems).find((s) => s && s.room === room);
+      // Fighting comes first: anyone who can fight attacks a hostile in the same room.
+      if (hostiles.length && tr.combat > 0) {
+        const foe = hostiles.reduce((a, b) => (Math.hypot(a.x - c.x, a.y - c.y) <= Math.hypot(b.x - c.x, b.y - c.y) ? a : b));
+        foe.hp -= RULES.meleeDps * tr.combat * (1 + RULES.combatSkillBonus[this.skill(c, "combat")]) * DT;
+        if (foe.hp <= 0) this.gainXp(c, "combat", 2);
+        c.task = "fight";
+        continue;
+      }
+      if (!ownShip) {
+        // Boarders wreck the system in their room (ion intruders ionise it instead).
+        if (sys && (tr.ionBoarder ? sys.level > 0 : sys.damage < sys.level)) {
+          c.bash = (c.bash ?? 0) + RULES.sabotageRate * Math.max(0.5, tr.combat) * (tr.sabotage ?? 1) * DT;
+          if (c.bash >= 1) {
+            c.bash = 0;
+            if (tr.ionBoarder) this.addIon(sys, 1);
+            else {
+              sys.damage = Math.min(sys.level, sys.damage + 1);
+              sys.repair = 0;
+              this.gainXp(c, "combat");
+            }
+          }
+          c.task = "sabotage";
+        } else c.task = "idle";
+        continue;
+      }
       // Work in the current room, FTL's priority order: fire, breach, system repair, station.
       const fires = Object.keys(rs.fires);
       const breaches = Object.keys(rs.breaches);
-      const sys = Object.values(ship.systems).find((s) => s && s.room === room);
-      if (fires.length) {
+      const drone = c.drone !== undefined;
+      if (fires.length && !drone) {
         const t = fires.includes(c.tile) ? c.tile : fires[0];
         rs.fires[t] -= RULES.firefight * tr.repair * DT;
         if (rs.fires[t] <= 0) delete rs.fires[t];
         c.task = "fire";
-      } else if (breaches.length) {
+      } else if (breaches.length && !drone) {
         const t = breaches[0];
         rs.breaches[t] -= RULES.breachRepair * tr.repair * DT;
         if (rs.breaches[t] <= 0) delete rs.breaches[t];
         c.task = "breach";
-      } else if (sys && sys.damage > 0) {
+      } else if (sys && sys.damage > 0 && tr.repair > 0) {
         sys.repair += RULES.repairRate * tr.repair * (1 + RULES.repairSkillBonus[this.skill(c, "repair")]) * DT;
         if (sys.repair >= 1) {
           sys.repair = 0;
@@ -769,10 +831,165 @@ export class Match {
           this.gainXp(c, "repair");
         }
         c.task = "repair";
-      } else if (sys && sys.station === c.tile && MANNABLE.includes(sys.id)) c.task = "man";
-      else if (medbay && medbay.room === room && c.hp < c.maxHp) c.task = "heal";
+      } else if (!drone && sys && sys.station === c.tile && MANNABLE.includes(sys.id)) c.task = "man";
+      else if (!drone && medbay && medbay.room === room && c.hp < c.maxHp) c.task = "heal";
       else c.task = "idle";
     }
+    for (const c of leaving) {
+      ship.crew = ship.crew.filter((q) => q !== c);
+      if (c.drone !== undefined) this.loseDrone(st.ships[c.owner], c.drone);
+      else st.ships[c.owner].crew.push(c);
+    }
+  }
+
+  /** Drone unit AI: anti-personnel hunts intruders, repair drones go to damaged systems, boarders to systems. */
+  private unitThink(ship: ShipState, g: Geometry, c: CrewState, room: number): void {
+    const race = c.race;
+    let target = -1;
+    if (race === "battle") {
+      const intruder = ship.crew.find((q) => q.owner !== c.owner && !q.dead && q.dying === undefined);
+      if (intruder) target = g.tiles.get(intruder.tile)!.room;
+    } else if (race === "repair") {
+      const broken = Object.values(ship.systems).find((s) => s && s.damage > 0 && s.room !== room);
+      const here = Object.values(ship.systems).find((s) => s && s.room === room && s.damage > 0);
+      if (broken && !here) target = broken.room;
+    } else {
+      const here = Object.values(ship.systems).find((s) => s && s.room === room);
+      const done = !here || (raceOf(race).ionBoarder ? false : here.damage >= here.level);
+      if (done) {
+        const options = Object.values(ship.systems).filter((s) => s && s.level > 0 && s.damage < s.level && s.room !== room);
+        if (options.length) target = this.rng.pick(options)!.room;
+      }
+    }
+    if (target >= 0 && target !== room) this.sendCrew(ship, g, c, target);
+  }
+
+  // ---------------------------------------------------------------- boarding
+
+  /** Every crew member a player owns, aboard either ship (drone units excluded). */
+  crewOf(idx: 0 | 1): CrewState[] {
+    return this.state.ships.flatMap((s) => s.crew.filter((c) => c.owner === idx && c.drone === undefined));
+  }
+
+  private teleTick(ship: ShipState): void {
+    const t = ship.systems.teleporter;
+    if (!t) return;
+    const lv = Math.min(3, this.eff(t));
+    // Losing power drains the charge, as in FTL.
+    ship.tele = lv > 0 ? Math.min(RULES.teleCooldown[lv], (ship.tele ?? 0) + DT) : 0;
+  }
+
+  teleReady(ship: ShipState): boolean {
+    const t = ship.systems.teleporter;
+    const lv = Math.min(3, this.eff(t));
+    return !!t && lv > 0 && (ship.tele ?? 0) >= RULES.teleCooldown[lv];
+  }
+
+  private moveAboard(c: CrewState, from: ShipState, to: ShipState, tile: string): void {
+    from.crew = from.crew.filter((q) => q !== c);
+    const [x, y] = unkey(tile);
+    Object.assign(c, { tile, home: tile, x, y, path: [], task: "idle", bash: 0 });
+    to.crew.push(c);
+  }
+
+  /** Send crew standing in the teleporter room to an enemy room, or bring own crew back from one. */
+  private teleport(ship: ShipState, room: number, out: boolean): boolean {
+    const st = this.state;
+    const enemy = st.ships[1 - ship.idx];
+    const ts = ship.systems.teleporter;
+    const g = this.geo(ship);
+    const eg = this.geo(enemy);
+    if (!ts || !this.teleReady(ship) || !eg.roomTiles.has(room)) return false;
+    // A Zoltan super shield blocks teleporting (FTL's "super shields prevent teleporting").
+    if ((enemy.superShield ?? 0) > 0) return false;
+    const held = (s: ShipState) => new Set(s.crew.filter((q) => q.owner === ship.idx && !q.dead).flatMap((q) => [q.tile, q.home]));
+    let moved: CrewState[] = [];
+    if (out) {
+      const going = ship.crew
+        .filter((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined && c.path.length === 0 && g.tiles.get(c.tile)?.room === ts.room)
+        .slice(0, RULES.teleMax);
+      const taken = held(enemy);
+      const free = eg.roomTiles.get(room)!.filter((t) => !taken.has(t));
+      moved = going.slice(0, free.length);
+      moved.forEach((c, i) => this.moveAboard(c, ship, enemy, free[i]));
+    } else {
+      const coming = enemy.crew.filter((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined && eg.tiles.get(c.tile)?.room === room);
+      const taken = held(ship);
+      const pad = g.roomTiles.get(ts.room)!.filter((t) => !taken.has(t));
+      const rest = [...g.tiles.keys()].filter((t) => !taken.has(t) && !pad.includes(t));
+      const free = [...pad, ...rest];
+      moved = coming.slice(0, free.length);
+      moved.forEach((c, i) => this.moveAboard(c, enemy, ship, free[i]));
+    }
+    if (!moved.length) return false;
+    ship.tele = 0;
+    st.events.push({ e: "teleport", ship: ship.idx, crew: moved.map((c) => c.id), out, room });
+    return true;
+  }
+
+  /** Interior drones step out of the drone room; boarding drones fly over (and can be shot down). */
+  private launchUnit(ship: ShipState, enemy: ShipState, d: DroneState, bpId: string, type: string): boolean {
+    const st = this.state;
+    if (type === "BOARDER") {
+      if ((enemy.superShield ?? 0) > 0) return false;
+      const eg = this.geo(enemy);
+      const rooms = Object.values(enemy.systems).filter((s) => s && s.level > 0).map((s) => s!.room);
+      const room = rooms.length ? this.rng.pick(rooms) : this.rng.pick(enemy.rooms).id;
+      const [tx, ty] = unkey(eg.roomTiles.get(room)![0]);
+      st.projectiles.push({
+        id: st.nextId++, boarder: d.slot, from: ship.idx, weapon: bpId, slot: -1, kind: "BOARDER", delay: 0, t: 0,
+        flight: RULES.boarderFlight, target: { kind: "room", room }, px: (tx + 0.5) * TILE, py: (ty + 0.5) * TILE, damageBonus: 0,
+      });
+      return true;
+    }
+    const room = ship.systems.drones?.room ?? ship.rooms[0].id;
+    return !!this.spawnUnit(ship, ship, d.slot, type === "BATTLE" ? "battle" : "repair", room);
+  }
+
+  private spawnUnit(owner: ShipState, aboard: ShipState, slot: number, race: string, room: number): CrewState | null {
+    const g = this.geo(aboard);
+    const taken = new Set(aboard.crew.filter((q) => q.owner === owner.idx && !q.dead).map((q) => q.tile));
+    const tile = (g.roomTiles.get(room) ?? []).find((t) => !taken.has(t)) ?? [...g.tiles.keys()].find((t) => !taken.has(t));
+    if (!tile) return null;
+    const [x, y] = unkey(tile);
+    const t = raceOf(race);
+    const c: CrewState = {
+      id: 100000 + this.state.nextId++, name: "", race, hp: t.hp, maxHp: t.hp, x, y, tile, path: [], home: tile, task: "idle",
+      xp: Object.fromEntries(Object.keys(RULES.skillXp).map((k) => [k, 0])) as CrewState["xp"], stun: 0, dead: false, owner: owner.idx, drone: slot,
+    };
+    aboard.crew.push(c);
+    return c;
+  }
+
+  /** A boarding drone lands: it punches a breach into the room and starts wrecking systems. */
+  private landBoarder(src: ShipState, T: ShipState, p: Projectile): void {
+    const d = p.boarder !== undefined ? src.drones?.[p.boarder] : undefined;
+    if (!d || !d.powered || p.target.kind !== "room") return;
+    if ((T.superShield ?? 0) > 0) return this.loseDrone(src, d.slot);
+    const room = p.target.room;
+    const rs = T.rooms.find((r) => r.id === room)!;
+    const tiles = this.geo(T).roomTiles.get(room)!;
+    if (!Object.keys(rs.breaches).length) {
+      rs.breaches[this.rng.pick(tiles)] = 100;
+      this.state.events.push({ e: "breach", ship: T.idx, room });
+    }
+    if (!this.spawnUnit(src, T, d.slot, p.weapon === "BOARDER_ION" ? "boarder_ion" : "boarder", room)) this.loseDrone(src, d.slot);
+  }
+
+  /** Remove a drone unit (its drone was unpowered or lost). */
+  private removeUnit(owner: 0 | 1, slot: number): void {
+    for (const s of this.state.ships) s.crew = s.crew.filter((c) => !(c.owner === owner && c.drone === slot));
+    this.state.projectiles = this.state.projectiles.filter((p) => !(p.from === owner && p.boarder === slot));
+  }
+
+  /** A deployed drone was destroyed: it relaunches (using another part) while still powered. */
+  private loseDrone(ship: ShipState, slot: number): void {
+    const d = ship.drones?.[slot];
+    if (!d) return;
+    if (d.deployed) this.state.events.push({ e: "droneLost", ship: ship.idx, drone: slot });
+    d.deployed = false;
+    d.cd = 3;
+    this.removeUnit(ship.idx, slot);
   }
 
   /**
@@ -780,7 +997,7 @@ export class Match {
    * standing in the same room steps onto it.
    */
   private refillStations(ship: ShipState, g: Geometry): void {
-    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined);
+    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === ship.idx && c.drone === undefined);
     for (const sys of Object.values(ship.systems)) {
       if (!sys?.station || !MANNABLE.includes(sys.id)) continue;
       if (alive.some((c) => c.home === sys.station || c.tile === sys.station)) continue;
@@ -794,7 +1011,7 @@ export class Match {
   }
 
   private respawn(ship: ShipState, g: Geometry, c: CrewState, room: number): void {
-    const taken = new Set(ship.crew.filter((q) => !q.dead && q !== c).map((q) => q.tile));
+    const taken = new Set(ship.crew.filter((q) => !q.dead && q !== c && q.owner === c.owner).map((q) => q.tile));
     const tiles = g.roomTiles.get(room) ?? [];
     const tile = tiles.find((t) => !taken.has(t)) ?? tiles[0];
     const [x, y] = unkey(tile);
@@ -904,7 +1121,7 @@ export class Match {
     const st = this.state;
     const lost = st.ships.map((s) => {
       if (st.config.winCondition === "hull" && s.hull <= 0) return "ship destroyed";
-      if (s.crew.every((c) => c.dead)) return "crew lost";
+      if (!this.crewOf(s.idx).some((c) => !c.dead)) return "crew lost";
       return "";
     });
     if (lost[0] || lost[1]) {
@@ -912,7 +1129,7 @@ export class Match {
       st.endReason = lost[0] && lost[1] ? `both: ${lost[0]} / ${lost[1]}` : (lost[0] || lost[1]);
     } else if (st.config.timeLimit > 0 && st.tick >= st.config.timeLimit * TICK_HZ) {
       const score = (s: ShipState) =>
-        st.config.winCondition === "crew" ? s.crew.filter((c) => !c.dead).length : s.hull / s.maxHull;
+        st.config.winCondition === "crew" ? this.crewOf(s.idx).filter((c) => !c.dead).length : s.hull / s.maxHull;
       const a = score(st.ships[0]);
       const b = score(st.ships[1]);
       st.winner = a === b ? -1 : a > b ? 0 : 1;

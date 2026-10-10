@@ -123,8 +123,11 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
   also lasers); anti-drone drones knock out drones; ship-repair drones patch the hull. Launching uses a
   drone part, and unpowering a drone loses it.
 
-Planned next: cloaking, teleporter/boarding with crew combat (and interior drones), hacking, mind control,
-battery.
+- **Boarding:** the teleporter sends up to four crew from its pad into an enemy room and brings them back.
+  Crew fight hostiles in the same room, boarders wreck systems and break closed doors, and dead boarders
+  can be cloned at home. Anti-personnel, system repair and boarding drones work as units inside ships.
+
+Planned next: hacking, cloaking, mind control, battery.
 
 ## Layout
 | Path | What |

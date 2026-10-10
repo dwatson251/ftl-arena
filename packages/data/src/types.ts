@@ -52,11 +52,13 @@ export type SystemId =
   | "drones" | "teleporter" | "cloaking" | "battery" | "mind" | "hacking" | "clonebay" | "artillery";
 
 /** Systems the arena simulates. Others are parsed but not installable yet. */
-export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "drones", "medbay", "clonebay", "pilot", "sensors", "doors"];
+export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "drones", "teleporter", "medbay", "clonebay", "pilot", "sensors", "doors"];
 
 export type DroneType = "COMBAT" | "DEFENSE" | "SHIP_REPAIR" | "REPAIR" | "BATTLE" | "BOARDER" | "HACKING" | "SHIELD";
-/** Drone types the arena flies (space drones). The rest need boarding/hacking (later). */
-export const SPACE_DRONES: DroneType[] = ["COMBAT", "DEFENSE", "SHIP_REPAIR"];
+/** Drone types the arena flies: space drones, plus interior and boarding drones (hacking and the shield drone come later). */
+export const SPACE_DRONES: DroneType[] = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER"];
+/** Drones that act as units inside a ship (anti-personnel, system repair, boarding). */
+export const UNIT_DRONES: DroneType[] = ["BATTLE", "REPAIR", "BOARDER"];
 
 export interface DroneBP {
   id: string;

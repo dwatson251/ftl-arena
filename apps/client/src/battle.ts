@@ -10,7 +10,7 @@ import { Application, Container, FederatedPointerEvent, Graphics, Sprite } from 
 import type { GameDB, SystemId } from "@ftl/data";
 import { SUBSYSTEMS } from "@ftl/data";
 import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
-import { animFrame, texNow } from "./assets.ts";
+import { animFrame, frame, texNow } from "./assets.ts";
 import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, setSound, soundOn, stopLoops } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
 import { ShipRenderer, type CrewDraw } from "./render/ship.ts";
@@ -22,7 +22,9 @@ const OWN = { cx: 467, cy: 346, w: 700, h: 470, clipX: 868 };
 /** FTL's hostiles window (box_hostiles2) and the part of it the enemy ship is fitted into. */
 const WIN = { x: 870, y: 45, w: 410, h: 555 };
 const WIN_SHIP = { x: WIN.x + 18, y: WIN.y + 104, w: 366, h: 372 };
-const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "weapons", "drones"];
+const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "weapons", "drones", "teleporter"];
+const ACTIVE_DRONES = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER"];
+const UNIT_DRONES = ["BATTLE", "REPAIR", "BOARDER"];
 const SUB_SYS: SystemId[] = ["pilot", "sensors", "doors"];
 /** Bottom-left system icons: s_<sys>_*1.png (64 px) top-left corners, 36 px apart. */
 const SYS_X0 = 58;
@@ -197,8 +199,10 @@ export class Battle {
     this.snapAt = performance.now();
     for (const e of v.events) this.onEvent(e);
     const own = v.ships[v.you];
-    for (const id of [...this.selected]) if (!own.crew.find((c) => c.id === id && !c.dead)) this.selected.delete(id);
+    const mine = this.myCrew(v);
+    for (const id of [...this.selected]) if (!mine.find((c) => c.id === id && !c.dead && c.dying === undefined)) this.selected.delete(id);
     for (const c of own.crew) {
+      if (c.owner !== v.you) continue;
       const was = this.walking.get(c.id);
       if (c.path.length) this.walking.set(c.id, c.home);
       else if (was) {
@@ -269,6 +273,14 @@ export class Battle {
         play(this.db, ["lightLaser1", "smallExplosion"], 0.6);
         break;
       }
+      case "teleport":
+        play(this.db, ["teleport"], e.ship === v.you ? 1 : 0.6);
+        if (e.ship === v.you) this.say(e.out ? "Crew teleported" : "Crew retrieved", 0x9ff0ff);
+        else if (e.out) this.say("Intruders aboard!", 0xff5a50);
+        break;
+      case "doorBroken":
+        play(this.db, ["doorOpen"], 1);
+        break;
       case "droneLost":
         if (e.ship === v.you) this.say("Drone destroyed", 0xff8a70);
         break;
@@ -452,11 +464,20 @@ export class Battle {
     return Math.floor(Math.min(0.999, w.charge / (bp.cooldown || 1)) * anim.chargedFrame);
   }
 
-  private crewDraw(s: ShipView, prev: ShipView | undefined, k: number, mine: boolean): CrewDraw[] {
+  private crewDraw(s: ShipView, prev: ShipView | undefined, k: number, _own: boolean): CrewDraw[] {
+    const you = this.view!.you;
     return s.crew.map((c) => {
       const p = prev?.crew.find((q) => q.id === c.id);
-      return { c, x: p ? p.x + (c.x - p.x) * k : c.x, y: p ? p.y + (c.y - p.y) * k : c.y, selected: mine && this.selected.has(c.id) };
+      return {
+        c, x: p ? p.x + (c.x - p.x) * k : c.x, y: p ? p.y + (c.y - p.y) * k : c.y,
+        selected: c.owner === you && this.selected.has(c.id), hostile: c.owner !== you,
+      };
     });
+  }
+
+  /** The viewer's own crew wherever they are (boarders included), drone units excluded. */
+  private myCrew(v: MatchView): ShipView["crew"] {
+    return [...v.ships[v.you].crew, ...v.ships[1 - v.you].crew].filter((c) => c.owner === v.you && c.drone === undefined);
   }
 
   /**
@@ -535,6 +556,10 @@ export class Battle {
       }
       if (p.kind === "BEAM") continue;
       if (p.delay - dtSnap > 0) continue;
+      if (p.kind === "BOARDER" && !this.launched.has(p.id)) {
+        this.launched.add(p.id);
+        play(this.db, ["droneLaunch"], mine ? 0.8 : 0.5);
+      }
       const src = mine ? this.own : this.enemy;
       const dst = mine ? this.enemy : this.own;
       const t = p.t + Math.max(0, dtSnap - Math.max(0, p.delay));
@@ -606,6 +631,21 @@ export class Battle {
   }
 
   private drawShot(layer: Container, image: string | undefined, x: number, y: number, ang: number, kind: string, alpha: number): void {
+    if (kind === "BOARDER") {
+      // A boarding drone in flight: its engine flare behind the drone body, nose first.
+      const eng = texNow("ship/drones/boarder_engine.png");
+      const body = animFrame(this.db, "battle_walk_right", 0);
+      for (const t of [eng, body]) {
+        if (!t) continue;
+        const s = new Sprite(t);
+        s.anchor.set(0.5);
+        s.position.set(x, y);
+        s.rotation = t === eng ? ang + Math.PI / 2 : ang;
+        s.alpha = alpha;
+        layer.addChild(s);
+      }
+      if (body) return;
+    }
     const f = image ? animFrame(this.db, image, Math.floor(this.time * 10)) : null;
     if (f) {
       const s = new Sprite(f);
@@ -638,7 +678,7 @@ export class Battle {
     const en = v.ships[1 - v.you];
     this.topLeft(own);
     this.target(en, v);
-    this.crewList(own);
+    this.crewList(own, this.myCrew(v));
     this.systemsBar(own);
     this.subsystems(own);
     this.weaponsTray(own);
@@ -833,7 +873,7 @@ export class Battle {
 
     // (Enemy weapon charge is drawn beside each gun on the enemy ship; see ShipRenderer.)
     // Enemy systems along the bottom of the window.
-    const order: SystemId[] = ["pilot", "oxygen", "shields", "engines", "weapons", "medbay", "sensors", "doors"];
+    const order: SystemId[] = ["pilot", "oxygen", "shields", "engines", "weapons", "drones", "teleporter", "medbay", "clonebay", "sensors", "doors"];
     order.filter((id) => en.systems[id]).forEach((id, i) => {
       const s = en.systems[id]!;
       const state = s.damage >= s.level ? "red" : s.damage > 0 ? "orange" : s.ion > 0 ? "blue" : en.weaponsKnown && s.power === 0 && !SUBSYSTEMS.includes(id) ? "grey" : "green";
@@ -844,12 +884,13 @@ export class Battle {
   }
 
   /** Crew boxes as in FTL: portrait, name, health bar; green when selected. */
-  private crewList(s: ShipView): void {
+  private crewList(s: ShipView, crew: ShipView["crew"]): void {
     const h = this.hud;
     this.crewHit = [];
     const g = h.gfx("crewBoxes");
     let y = 155;
-    for (const c of s.crew) {
+    const away = new Set(crew.filter((c) => !s.crew.includes(c)).map((c) => c.id));
+    for (const c of crew) {
       if (c.dead && c.clone !== undefined) {
         // Being cloned: a greyed box with the clone bar (FTL's clonebar).
         g.rect(10, y, 86, 26).fill({ color: 0x14202a, alpha: 0.95 }).stroke({ color: 0x6ab4d0, width: 2 });
@@ -877,6 +918,8 @@ export class Battle {
       }
       const hp = Math.max(0, c.hp / c.maxHp);
       g.rect(44, y + 18, 46 * hp, 4).fill({ color: hp > 0.5 ? 0x78ff78 : hp > 0.25 ? 0xffe050 : 0xff5040 });
+      // Boarders: a small teleport mark on the box.
+      if (away.has(c.id)) g.poly([84, y + 3, 92, y + 3, 92, y + 11]).fill({ color: 0xffd040 });
       this.crewHit.push({ id: c.id, box: { x: 10, y, w: 86, h: 26 } });
       y += 30;
     }
@@ -977,6 +1020,8 @@ export class Battle {
       else g.rect(13.5, yy + 0.5, 26, 5).stroke({ color: 0xe8ece8, width: 1 });
     }
     const systems = MAIN_SYS.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
+    // FTL's tray fits five main systems; each extra one pushes the weapons (and drones) tray right.
+    this.trayDx = Math.max(0, systems.length - 5) * SYS_DX;
     const right = SYS_X0 + 32 + (systems.length - 1) * SYS_DX + 20;
     for (let yy = 627; yy < 690; yy += 6) g.moveTo(44, yy + 6).lineTo(50, yy).stroke({ color: 0x8a948c, width: 2 });
     g.moveTo(46, 690).lineTo(58, 704).lineTo(right, 704).stroke({ color: 0xe8ece8, width: 2.5 });
@@ -989,7 +1034,53 @@ export class Battle {
       if (icon) h.sprite(`si${sys.id}`, icon, SYS_X0 + i * SYS_DX, SYS_ICON_Y);
       else h.text(`si${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SYS_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
       this.sysHit.push({ id: sys.id, box: { x: cx - 16, y: 657 - sys.level * this.pitch(sys.level) - 4, w: 32, h: sys.level * this.pitch(sys.level) + 60 } });
+      if (sys.id === "teleporter") this.telePanel(s, sys, cx, 657 - sys.level * this.pitch(sys.level) - 8);
     });
+  }
+
+  private trayDx = 0;
+  private teleBtns: { out: boolean; box: Box }[] = [];
+  private teleMode: "send" | "return" | null = null;
+
+  /** FTL's teleporter panel above its bars: the charge gauge, then send (top) and return (bottom) buttons. */
+  private telePanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
+    const h = this.hud;
+    this.teleBtns = [];
+    const x = cx - 20;
+    const y = bottom - 79;
+    const lv = Math.min(3, usable(sys));
+    const cd = RULES.teleCooldown[lv] || 1;
+    const k = lv > 0 ? Math.min(1, (s.tele ?? 0) / cd) : 0;
+    const ready = k >= 1;
+    const base = texNow("systemUI/button_teleport_base.png");
+    if (!base) return;
+    h.sprite("tpB", base, x, y);
+    if (!ready) {
+      // Charging: the striped gauge fills from the bottom.
+      h.sprite("tpC0", texNow("systemUI/button_teleport_charging_off.png"), x, y);
+      const on = texNow("systemUI/button_teleport_charging_on.png");
+      if (on) {
+        const top = 10 + Math.round(43 * (1 - k));
+        h.sprite("tpC1", frame(on, 0, top, 40, 53 - top), x, y + top);
+      }
+      return;
+    }
+    const anyAway = this.myCrew(this.view!).some((c) => !c.dead && !s.crew.includes(c));
+    const sel = (m: "send" | "return") => (this.teleMode === m ? "select2" : "on");
+    h.sprite("tpT", texNow(`systemUI/button_teleport_top_${sel("send")}.png`), x, y);
+    h.sprite("tpBt", texNow(`systemUI/button_teleport_bottom_${anyAway ? sel("return") : "off"}.png`), x, y);
+    this.teleBtns.push({ out: true, box: { x: x + 4, y: y + 4, w: 32, h: 32 } }, { out: false, box: { x: x + 4, y: y + 27, w: 32, h: 32 } });
+    if (this.teleMode) h.text("tpHint", this.teleMode === "send" ? "Click an enemy room to board" : "Click the enemy room to retrieve from", OWN.cx, 588, fstyle("JustinFont10", 0x9ff0ff, { stroke: 0x101010 }), [0.5, 0]);
+  }
+
+  private teleClick(own: ShipView, out: boolean): void {
+    const ts = own.systems.teleporter;
+    if (!ts) return;
+    const g = this.own.geo;
+    if (out && !own.crew.some((c) => c.owner === own.idx && !c.dead && c.drone === undefined && g.tiles.get(c.tile)?.room === ts.room))
+      return this.fail("Move crew onto the teleporter pad first");
+    play(this.db, ["powerUpSystem"]);
+    this.teleMode = out ? "send" : "return";
   }
 
   /** Bottom right: piloting, sensors and doors with the SUBSYSTEMS tab and FTL's door button. */
@@ -1036,11 +1127,11 @@ export class Battle {
     const slots = Math.max(2, Math.min(4, this.db.ships[s.bp]?.weaponSlots ?? 4));
     const boxT = texNow(`box_weapons_bottom${slots}.png`);
     const g = h.gfx("weap");
-    if (boxT) h.sprite("wbox", boxT, TRAY.x, TRAY.y);
-    else g.roundRect(TRAY.x + 6, TRAY.y + 6, 20 + slots * SLOT.dx, 64, 4).fill({ color: 0x1a1f22, alpha: 0.9 }).stroke({ color: 0xe8ece8, width: 2 });
-    this.label("wlabT", "WEAPONS", 252, 667);
+    if (boxT) h.sprite("wbox", boxT, TRAY.x + this.trayDx, TRAY.y);
+    else g.roundRect(TRAY.x + this.trayDx + 6, TRAY.y + 6, 20 + slots * SLOT.dx, 64, 4).fill({ color: 0x1a1f22, alpha: 0.9 }).stroke({ color: 0xe8ece8, width: 2 });
+    this.label("wlabT", "WEAPONS", 252 + this.trayDx, 667);
     for (let i = 0; i < slots; i++) {
-      const bx = SLOT.x + i * SLOT.dx;
+      const bx = SLOT.x + this.trayDx + i * SLOT.dx;
       const by = SLOT.y;
       const w = s.weapons[i];
       if (!w) {
@@ -1096,7 +1187,7 @@ export class Battle {
     }
     // AUTOFIRE: a tab under the right end of the tray, lit when any weapon autofires.
     const anyAuto = this.autoMode;
-    const ax = 527;
+    const ax = 527 + this.trayDx;
     const ay = 668;
     const ab = h.gfx("autoBtn");
     ab.poly([ax + 6, ay, ax + 112, ay, ax + 118, ay + 6, ax + 118, ay + 24, ax + 112, ay + 29, ax + 6, ay + 29, ax, ay + 24, ax, ay + 6])
@@ -1116,7 +1207,7 @@ export class Battle {
     const slots = this.db.ships[s.bp]?.droneSlots ?? 0;
     if (!slots || !s.systems.drones) return;
     const n = Math.max(2, Math.min(4, slots));
-    const x0 = 660;
+    const x0 = 660 + this.trayDx;
     const boxT = texNow(`box_weapons_bottom${n}.png`);
     const g = h.gfx("dtray");
     if (boxT) h.sprite("dbox", boxT, x0, TRAY.y);
@@ -1131,7 +1222,7 @@ export class Battle {
         g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).stroke({ color: 0x8a8e8a, width: 2 });
         continue;
       }
-      const usableHere = ["COMBAT", "DEFENSE", "SHIP_REPAIR"].includes(bp.type);
+      const usableHere = ACTIVE_DRONES.includes(bp.type);
       const edge = d.deployed ? 0x78ff78 : d.powered ? 0xffd040 : 0x8a8e8a;
       g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).fill({ color: d.deployed ? 0x1d3a1f : 0x0f1414, alpha: 0.9 }).stroke({ color: edge, width: 2 });
       for (let p = 0; p < bp.power; p++) {
@@ -1141,7 +1232,7 @@ export class Battle {
       }
       const short = bp.title.replace(/ Drone/, "").replace("Mark ", "").trim();
       h.text(`dn${i}`, short.length > 14 ? `${short.slice(0, 13)}.` : short, bx + 54, by + 4, fstyle("JustinFont10", usableHere ? (d.powered ? 0xffffff : 0x9aa09a) : 0x707070), [0.5, 0]);
-      const status = !usableHere ? "boarding only" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
+      const status = !usableHere ? "coming later" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
       if (status) h.text(`ds${i}`, status, bx + 26, by + SLOT.h - 12, fstyle("JustinFont8", d.deployed ? 0x9fe89f : 0xffd040));
       this.droneHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
     }
@@ -1171,7 +1262,7 @@ export class Battle {
     for (const owner of [0, 1] as const) {
       for (const d of v.ships[owner].drones ?? []) {
         const bp = this.db.droneBPs[d.bp];
-        if (!bp || !d.deployed) continue;
+        if (!bp || !d.deployed || UNIT_DRONES.includes(bp.type)) continue;
         const p = this.dronePos(owner, d.slot);
         if (!p) continue;
         const t = texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
@@ -1253,7 +1344,7 @@ export class Battle {
         return;
       }
       if (d.powered) return;
-      if (!["COMBAT", "DEFENSE", "SHIP_REPAIR"].includes(bp.type)) return this.fail("Interior drones need boarding (coming later)");
+      if (!ACTIVE_DRONES.includes(bp.type)) return this.fail("This drone isn't in the arena yet");
       const ds = own.systems.drones;
       if (!ds || ds.ion > 0) return this.fail(ds ? "Drones are locked by ion damage" : "No drone system");
       const load = (own.drones ?? []).filter((q) => q.powered).reduce((a, q) => a + (this.db.droneBPs[q.bp]?.power ?? 1), 0);
@@ -1267,7 +1358,7 @@ export class Battle {
       if (!inBox(p, b.box)) continue;
       const g = this.own.geo;
       if (b.kind === "assign") {
-        for (const c of own.crew) if (!c.dead) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
+        for (const c of own.crew) if (!c.dead && c.owner === v.you && c.drone === undefined) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
         play(this.db, ["powerUpSystem"]);
         this.say("Crew positions saved");
       } else {
@@ -1284,8 +1375,21 @@ export class Battle {
       this.selected.add(c.id);
       return;
     }
+    for (const b of this.teleBtns) {
+      if (!inBox(p, b.box)) continue;
+      if (right) return void (this.teleMode = null);
+      return this.teleClick(own, b.out);
+    }
     const ep = this.enemy.root.toLocal(e.global);
     const eh = inBox(p, WIN) ? this.enemy.pick(ep.x, ep.y) : { room: -1, door: -1 };
+    if (this.teleMode) {
+      const out = this.teleMode === "send";
+      this.teleMode = null;
+      if (right) return;
+      if (eh.room < 0) return this.fail("Pick a room on the enemy ship");
+      play(this.db, ["teleport"]);
+      return this.send({ c: out ? "teleport" : "retrieve", room: eh.room });
+    }
     if (this.armed !== null) {
       if (right) return this.disarm();
       const bp = this.db.weapons[own.weapons[this.armed].bp];
@@ -1310,8 +1414,20 @@ export class Battle {
     }
     const op = this.own.root.toLocal(e.global);
     const oh = this.own.pick(op.x, op.y);
+    const enV = v.ships[1 - v.you];
     if (right) {
-      if (oh.room >= 0 && this.selected.size) this.send({ c: "moveCrew", crew: [...this.selected], room: oh.room });
+      // Selected crew move within the ship they're aboard: boarders on the enemy, the rest at home.
+      const aboardEnemy = [...this.selected].filter((id) => enV.crew.some((c) => c.id === id));
+      const atHome = [...this.selected].filter((id) => own.crew.some((c) => c.id === id));
+      if (eh.room >= 0 && aboardEnemy.length) this.send({ c: "moveCrew", crew: aboardEnemy, room: eh.room, enemy: true });
+      else if (oh.room >= 0 && atHome.length) this.send({ c: "moveCrew", crew: atHome, room: oh.room });
+      return;
+    }
+    // Clicking own boarders on the enemy ship selects them.
+    const boarder = eh.room >= 0 ? enV.crew.find((c) => c.owner === v.you && c.drone === undefined && !c.dead && Math.hypot(c.x + 0.5 - ep.x / 35, c.y + 0.5 - ep.y / 35) < 0.45) : undefined;
+    if (boarder) {
+      if (!e.shiftKey) this.selected.clear();
+      this.selected.add(boarder.id);
       return;
     }
     if (oh.door >= 0) {
@@ -1319,7 +1435,7 @@ export class Battle {
       this.send({ c: "door", door: oh.door, open });
       return;
     }
-    const hit = own.crew.find((c) => !c.dead && Math.hypot(c.x + 0.5 - op.x / 35, c.y + 0.5 - op.y / 35) < 0.45);
+    const hit = own.crew.find((c) => !c.dead && c.owner === v.you && c.drone === undefined && Math.hypot(c.x + 0.5 - op.x / 35, c.y + 0.5 - op.y / 35) < 0.45);
     if (hit) {
       if (!e.shiftKey) this.selected.clear();
       this.selected.add(hit.id);
@@ -1350,7 +1466,7 @@ export class Battle {
       // Like weapons: the next drone in slot order launches; right-click recalls the last powered one.
       const ds = own.drones ?? [];
       if (delta > 0) {
-        const i = ds.findIndex((d) => !d.powered && ["COMBAT", "DEFENSE", "SHIP_REPAIR"].includes(this.db.droneBPs[d.bp]?.type ?? ""));
+        const i = ds.findIndex((d) => !d.powered && ACTIVE_DRONES.includes(this.db.droneBPs[d.bp]?.type ?? ""));
         if (i < 0) return this.fail("No drone ready to launch");
         const hit = this.droneHit.find((x) => x.slot === i);
         if (hit) return this.onDown({ global: this.stage.toGlobal({ x: hit.box.x + 5, y: hit.box.y + 5 }), button: 0, shiftKey: false } as unknown as FederatedPointerEvent);
@@ -1408,7 +1524,7 @@ export class Battle {
       const d = this.weaponDrag;
       const own = this.view?.ships[this.view.you];
       for (let i = 0; i < 4; i++) {
-        const box = { x: SLOT.x + i * SLOT.dx, y: SLOT.y, w: SLOT.w, h: SLOT.h };
+        const box = { x: SLOT.x + this.trayDx + i * SLOT.dx, y: SLOT.y, w: SLOT.w, h: SLOT.h };
         if (!inBox(p, box) || i === d.slot || !own?.weapons[i]) continue;
         this.send({ c: "swapWeapons", a: d.slot, b: i });
         if (this.armed === d.slot) this.armed = i;
@@ -1446,7 +1562,7 @@ export class Battle {
     for (const c of v.ships[v.you].crew) {
       const cx = (c.x + 0.5) * 35;
       const cy = (c.y + 0.5) * 35;
-      if (!c.dead && cx >= a.x && cx <= b.x && cy >= a.y && cy <= b.y) this.selected.add(c.id);
+      if (!c.dead && c.owner === v.you && c.drone === undefined && cx >= a.x && cx <= b.x && cy >= a.y && cy <= b.y) this.selected.add(c.id);
     }
   }
 
@@ -1510,7 +1626,7 @@ export class Battle {
       this.send({ c: "doorsAll", open: false });
     } else if (e.key === "Tab") {
       e.preventDefault();
-      this.selected = new Set(own.crew.filter((c) => !c.dead).map((c) => c.id));
+      this.selected = new Set(this.myCrew(this.view!).filter((c) => !c.dead).map((c) => c.id));
     }
   }
 }

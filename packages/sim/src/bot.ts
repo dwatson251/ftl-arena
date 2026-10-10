@@ -125,7 +125,7 @@ export class Bot {
       const used = Object.values(ship.systems).reduce((a, x) => a + (x && !["pilot", "sensors", "doors"].includes(x.id) ? x.power : 0), 0);
       const need = m.db.droneBPs?.[d.bp]?.power ?? 1;
       if (used + need > ship.reactor) {
-        const hurt = ship.crew.some((c) => !c.dead && c.hp < c.maxHp * 0.6);
+        const hurt = ship.crew.some((c) => !c.dead && c.owner === ship.idx && c.hp < c.maxHp * 0.6);
         const from = !hurt && (ship.systems.medbay?.power ?? 0) > 0 ? "medbay" : (ship.systems.engines?.power ?? 0) > 1 ? "engines" : null;
         for (let i = 0; from && i < need; i++) out.push({ c: "power", system: from, delta: -1 });
       }
@@ -189,7 +189,7 @@ export class Bot {
 
   private power(m: Match, ship: ShipState, out: Command[]): void {
     const med = ship.systems.medbay;
-    const hurt = this.skills.medbay && ship.crew.some((c) => !c.dead && c.hp < c.maxHp * 0.45);
+    const hurt = this.skills.medbay && ship.crew.some((c) => !c.dead && c.owner === ship.idx && c.hp < c.maxHp * 0.45);
     const order: [SystemId, number][] = [["shields", 99], ["engines", 99], ["oxygen", ship.rooms.some((r) => r.o2 < 60) ? 99 : 1]];
     if (med) order.splice(hurt ? 0 : 3, 0, ["medbay", hurt ? 99 : 0]);
     for (const [id, n] of order) {
@@ -198,10 +198,63 @@ export class Bot {
       if (s.power < Math.min(n, usable(s))) out.push({ c: "power", system: id, delta: 1 });
       if (n === 0 && s.power > 0) out.push({ c: "power", system: id, delta: -1 });
     }
+    // The teleporter takes whatever is left, or the idle medbay's bar when nobody is hurt.
+    const tp = ship.systems.teleporter;
+    if (tp && this.level >= 0.3 && tp.power < usable(tp)) {
+      const used = Object.values(ship.systems).reduce((a, x) => a + (x && !["pilot", "sensors", "doors"].includes(x.id) ? x.power : 0), 0);
+      if (used < ship.reactor) out.push({ c: "power", system: "teleporter", delta: 1 });
+      else if (!hurt && med && med.power > 0) out.push({ c: "power", system: "medbay", delta: -1 }, { c: "power", system: "teleporter", delta: 1 });
+    }
     if (med && hurt && med.power === 0 && (ship.systems.engines?.power ?? 0) > 0) {
       out.push({ c: "power", system: "engines", delta: -1 }, { c: "power", system: "medbay", delta: 1 });
       this.note(m, "engines → medbay");
     }
+  }
+
+  // ---------------------------------------------------------------- boarding
+
+  /** Use the teleporter: gather two healthy crew on the pad, send them at the enemy weapons/shields, pull them home when hurt. */
+  private boarding(m: Match, ship: ShipState, alive: CrewState[], busy: Set<number>, roomOf: (c: CrewState) => number, out: Command[]): void {
+    const tp = ship.systems.teleporter;
+    if (!tp || this.level < 0.3) return;
+    const enemy = m.state.ships[1 - ship.idx];
+    const eg = geometry(m.db.layouts[enemy.layout]);
+    const away = enemy.crew.filter((c) => c.owner === ship.idx && !c.dead && c.dying === undefined && c.drone === undefined);
+    const ready = m.teleReady(ship);
+    // Wounded boarders come home.
+    const hurt = away.find((c) => c.hp < c.maxHp * 0.35);
+    if (hurt && ready) {
+      out.push({ c: "retrieve", room: eg.tiles.get(hurt.tile)!.room });
+      this.note(m, "retrieve boarders");
+      return;
+    }
+    // Boarders with nothing left to wreck move on to another system.
+    for (const c of away) {
+      if (c.path.length || c.task === "fight" || c.task === "sabotage") continue;
+      const next = Object.values(enemy.systems).find((s) => s && s.level > 0 && s.damage < s.level);
+      if (next) out.push({ c: "moveCrew", crew: [c.id], room: next.room, enemy: true });
+    }
+    if (away.length || ship.crew.some((c) => c.owner !== ship.idx && !c.dead)) return;
+    if (alive.length < 3) return;
+    const onPad = alive.filter((c) => roomOf(c) === tp.room && c.path.length === 0 && c.hp > c.maxHp * 0.8);
+    if (ready && onPad.length >= 2) {
+      const target = enemy.systems.weapons ?? enemy.systems.shields;
+      if (target && (enemy.superShield ?? 0) <= 0) {
+        out.push({ c: "teleport", room: target.room });
+        this.note(m, `board → ${target.id}`);
+      }
+      return;
+    }
+    const pilot = ship.systems.pilot;
+    const pick = alive
+      .filter((c) => !busy.has(c.id) && c.home !== pilot?.station && c.hp > c.maxHp * 0.8 && roomOf(c) !== tp.room)
+      .sort((a, b) => (RACES[b.race]?.combat ?? 1) - (RACES[a.race]?.combat ?? 1));
+    for (let i = onPad.length; i < 2 && pick.length; i++) {
+      const c = pick.shift()!;
+      busy.add(c.id);
+      out.push({ c: "moveCrew", crew: [c.id], room: tp.room });
+    }
+    onPad.forEach((c) => busy.add(c.id));
   }
 
   // ---------------------------------------------------------------- crew
@@ -212,7 +265,7 @@ export class Bot {
     const g = geometry(m.db.layouts[ship.layout]);
     const roomOf = (c: CrewState) => g.tiles.get(c.home)!.room;
     const busy = new Set<number>();
-    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined);
+    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === ship.idx && c.drone === undefined);
     const send = (c: CrewState, room: number, why: string) => {
       busy.add(c.id);
       if (roomOf(c) === room) return;
@@ -222,6 +275,16 @@ export class Bot {
     const pilot = ship.systems.pilot;
     const isPilot = (c: CrewState) => !!pilot && c.home === pilot.station;
     const spare = () => alive.find((c) => !busy.has(c.id) && !isPilot(c) && c.hp > c.maxHp * 0.3);
+    // 0. Intruders: meet them with one more crew member than they have (fighters first), then board back.
+    const intruders = ship.crew.filter((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined);
+    for (const room of [...new Set(intruders.map((c) => g.tiles.get(c.tile)!.room))]) {
+      const n = intruders.filter((c) => g.tiles.get(c.tile)!.room === room).length + 1;
+      const here = alive.filter((c) => roomOf(c) === room && c.hp > c.maxHp * 0.35);
+      here.forEach((c) => busy.add(c.id));
+      const fighters = alive.filter((c) => !busy.has(c.id) && !isPilot(c) && c.hp > c.maxHp * 0.5).sort((a, b) => (RACES[b.race]?.combat ?? 1) - (RACES[a.race]?.combat ?? 1));
+      for (let i = here.length; i < n && fighters.length; i++) send(fighters.shift()!, room, "repel boarders");
+    }
+    this.boarding(m, ship, alive, busy, roomOf, out);
     // 1. Wounded to the medbay; patients stay until healed.
     const med = ship.systems.medbay;
     if (sk.medbay && med && m.eff(med) > 0) {
@@ -285,7 +348,7 @@ export function botLoadout(db: GameDB, shipId: string, scrap: number, level: num
   };
   const weaponsPower = (x: Loadout) => x.weapons.reduce((a, w) => a + (db.weapons[w]?.power ?? 1), 0);
   /** Reactor bars the main systems want: shields, engines, 1 oxygen, 1 medbay, and the weapons in use. */
-  const demand = (x: Loadout) => lv(x, "shields") + lv(x, "engines") + Math.min(1, lv(x, "oxygen")) + Math.min(1, lv(x, "medbay")) + Math.min(lv(x, "weapons"), weaponsPower(x));
+  const demand = (x: Loadout) => lv(x, "shields") + lv(x, "engines") + Math.min(1, lv(x, "oxygen")) + Math.min(1, lv(x, "medbay")) + Math.min(lv(x, "weapons"), weaponsPower(x)) + (level >= 0.3 ? lv(x, "teleporter") : 0);
   const feedReactor = () => {
     while (demand(l) > l.reactor && tryApply((x) => void (x.reactor += 1)));
   };

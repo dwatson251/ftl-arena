@@ -102,6 +102,16 @@ export const RULES = {
   shipRepairAmount: 5,
   /** Defense drones only shoot at projectiles with at least this much flight left (s). */
   interceptMin: 0.15,
+  /** Boarding (est, from play and the wiki): teleporter recharge by level, melee damage per second for a
+   * 1x race, combat skill bonus, sabotage (system damage per second of a 1x boarder), door break times by
+   * door level (0 = no doors system), boarding drone flight. */
+  teleCooldown: [0, 20, 15, 10],
+  teleMax: 4,
+  meleeDps: 6,
+  combatSkillBonus: [0, 0.1, 0.2],
+  sabotageRate: 0.12,
+  doorBreak: [2, 4, 7, 11, 16],
+  boarderFlight: 2.4,
   maxCrew: 8,
   sellRefund: 0.5,
 };
@@ -118,6 +128,12 @@ export interface RaceTraits {
   speed: number;
   repair: number;
   combat: number;
+  /** Drone units: not hireable, don't count as crew. */
+  drone?: boolean;
+  /** Sabotage speed multiplier (boarding drones). */
+  sabotage?: number;
+  /** Ion intruder: ionises the room's system instead of damaging it. */
+  ionBoarder?: boolean;
   fireImmune?: boolean;
   /** Multiplier on suffocation damage (0 = doesn't breathe). */
   suffocation: number;
@@ -139,6 +155,11 @@ export const RACES: Record<string, RaceTraits> = {
   energy: { hp: 70, speed: 1, repair: 1, combat: 1, suffocation: 1, power: 1, blurb: "Powers the system it stands in by 1. 70 HP." },
   crystal: { hp: 125, speed: 0.8, repair: 1, combat: 1, suffocation: 0.5, blurb: "125 HP, half suffocation damage, slow." },
   anaerobic: { hp: 100, speed: 1, repair: 1, combat: 1, suffocation: 0, drainO2: 1.5, blurb: "Doesn't breathe; drains O2 from its room." },
+  // Drone units (not hireable): anti-personnel, system repair, boarding (est stats).
+  battle: { hp: 150, speed: 1, repair: 0, combat: 1, suffocation: 0, fireImmune: true, drone: true, blurb: "Anti-personnel drone." },
+  repair: { hp: 70, speed: 1, repair: 1, combat: 0, suffocation: 0, fireImmune: true, drone: true, blurb: "System repair drone." },
+  boarder: { hp: 150, speed: 1, repair: 0, combat: 1, suffocation: 0, fireImmune: true, drone: true, sabotage: 2, blurb: "Boarding drone." },
+  boarder_ion: { hp: 150, speed: 1, repair: 0, combat: 0.5, suffocation: 0, fireImmune: true, drone: true, sabotage: 1, ionBoarder: true, blurb: "Ion intruder drone." },
 };
 export const raceOf = (r: string): RaceTraits => RACES[r] ?? RACES.human;
 

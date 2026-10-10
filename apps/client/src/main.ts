@@ -304,6 +304,18 @@ function render(): void {
   state: () => (battle ? battle.debugState() : null),
   view: () => lastView,
   toScreen: (x: number, y: number) => (battle ? { x: battle.stage.x + x * battle.stage.scale.x, y: battle.stage.y + y * battle.stage.scale.y } : null),
+  // Test helpers: send a command as this player; read HUD hit boxes.
+  send: (cmd: unknown) => (battle as unknown as { send(c: unknown): void } | null)?.send(cmd),
+  ui: () => (battle ? { tele: (battle as unknown as { teleBtns: unknown }).teleBtns } : null),
+  /** Screen position of an enemy room's centre. */
+  enemyRoom: (room: number) => {
+    const r = (battle as unknown as { enemy?: { root: { toGlobal(p: { x: number; y: number }): { x: number; y: number } }; geo: { roomTiles: Map<number, string[]> } } } | null)?.enemy;
+    const tiles = r?.geo.roomTiles.get(room);
+    if (!r || !tiles?.length) return null;
+    const xs = tiles.map((t) => Number(t.split(",")[0]));
+    const ys = tiles.map((t) => Number(t.split(",")[1]));
+    return r.root.toGlobal({ x: ((Math.min(...xs) + Math.max(...xs)) / 2 + 0.5) * 35, y: ((Math.min(...ys) + Math.max(...ys)) / 2 + 0.5) * 35 });
+  },
 };
 
 net.onStatus = () => render();

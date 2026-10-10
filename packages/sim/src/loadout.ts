@@ -99,7 +99,7 @@ export function buyableDrones(db: GameDB): string[] {
 
 /** Races a player may hire: every race with a blueprint and known traits. */
 export function hireableRaces(db: GameDB): string[] {
-  return Object.keys(RACES).filter((r) => db.crew[r]);
+  return Object.keys(RACES).filter((r) => db.crew[r] && !RACES[r].drone);
 }
 
 export function randomCrewName(db: GameDB, taken: string[], seed: number): string {
@@ -182,7 +182,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     const free = new Map<string, number>();
     for (const c of base.crew) free.set(c.race, (free.get(c.race) ?? 0) + 1);
     for (const c of l.crew) {
-      if (!RACES[c.race] || !db.crew[c.race]) {
+      if (!RACES[c.race] || RACES[c.race].drone || !db.crew[c.race]) {
         errors.push(`unknown race ${c.race}`);
         continue;
       }
@@ -288,10 +288,10 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     const pick = l.crew[i];
     const t = raceOf(pick.race);
     ship.crew.push({
-      id: idx * 100 + i, name: String(pick.name || pickName(NAMES)).slice(0, 16), race: RACES[pick.race] ? pick.race : "human",
+      id: idx * 100 + i, name: String(pick.name || pickName(NAMES)).slice(0, 16), race: RACES[pick.race] && !RACES[pick.race].drone ? pick.race : "human",
       hp: t.hp, maxHp: t.hp, x, y, tile,
       path: [], home: tile, task: "idle", xp: Object.fromEntries(SKILLS.map((s) => [s, 0])) as CrewState["xp"],
-      stun: 0, dead: false,
+      stun: 0, dead: false, owner: idx,
     });
   }
   autoPower(db, ship);
@@ -348,6 +348,8 @@ export function autoPower(db: GameDB, ship: ShipState): void {
     if (ws.power >= used + need) w.powered = true;
   }
   give("medbay", 1);
+  give("clonebay", 1);
+  give("teleporter", 99);
 }
 
 export { key };

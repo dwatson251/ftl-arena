@@ -52,7 +52,7 @@ export interface RoomState {
   breaches: Record<string, number>;
 }
 
-export type CrewTask = "idle" | "walk" | "man" | "repair" | "fire" | "breach" | "heal";
+export type CrewTask = "idle" | "walk" | "man" | "repair" | "fire" | "breach" | "heal" | "fight" | "sabotage";
 
 export interface CrewState {
   id: number;
@@ -78,6 +78,12 @@ export interface CrewState {
   clone?: number;
   /** Sensed only (telepathy / life scanner): a location with no race, health or action. */
   blip?: boolean;
+  /** Which player this crew member belongs to (ships hold whoever is aboard, boarders included). */
+  owner: 0 | 1;
+  /** Drone units: the owner's drone slot that launched it. */
+  drone?: number;
+  /** Seconds of door-bashing / sabotage progress (boarders). */
+  bash?: number;
 }
 
 export type WeaponTarget =
@@ -122,6 +128,8 @@ export interface ShipState {
   augments?: string[];
   drones?: DroneState[];
   droneParts?: number;
+  /** Teleporter charge in seconds (ready at RULES.teleCooldown[level]). */
+  tele?: number;
   /** Stats for the end screen. */
   stats: { shotsFired: number; hits: number; misses: number; blocked: number; damageDealt: number };
 }
@@ -147,7 +155,9 @@ export interface Projectile {
   from: 0 | 1;
   weapon: string;
   slot: number;
-  kind: "LASER" | "MISSILES" | "BURST" | "BOMB" | "BEAM";
+  /** BOARDER: a boarding drone in flight (`boarder` = the owner's drone slot). */
+  kind: "LASER" | "MISSILES" | "BURST" | "BOMB" | "BEAM" | "BOARDER";
+  boarder?: number;
   /** Seconds until launch (shots in a volley are staggered), then flight time remaining. */
   delay: number;
   t: number;
@@ -171,6 +181,9 @@ export type MatchEvent =
   /** A defense drone shot down a projectile (ship = the defender) / an anti-drone killed a drone. */
   | { e: "intercept"; ship: 0 | 1; projectile: number; drone: number }
   | { e: "droneLost"; ship: 0 | 1; drone: number }
+  /** Crew teleported by `ship`'s teleporter: out to the enemy (out) or back home. */
+  | { e: "teleport"; ship: 0 | 1; crew: number[]; out: boolean; room: number }
+  | { e: "doorBroken"; ship: 0 | 1; door: number }
   | { e: "end"; winner: 0 | 1 | -1; reason: string };
 
 export interface MatchState {
