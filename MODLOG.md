@@ -303,6 +303,23 @@
 - **Unchanged detection:** `isSame` compares the chosen parts of a loadout. Saving always makes a new preset,
   named "<name> - Copy" after changes.
 
+## Load from FTL (continue.sav)
+- **Reader:** `apps/server/src/ftlsave.ts`, reimplemented from the field order of Vhati's FTL Profile Editor
+  `SavedGameParser`.
+  - Every value is a 4-byte little-endian int. Bools are 0/1, and strings are a length plus bytes (UTF-8 from
+    format 11).
+  - It reads only up to the end of the player ship. The room and door records are sized from the ship's
+    layout (rooms by id, w×h×3 ints; every door, airlocks included).
+- **Gotcha:** the format-7+ crew record ends with *three* bools before the teleport anim's 5 ints, then one
+  more bool. Dropping one shifts everything, and it shows up a crew member later as "Not a bool: 5" (the
+  next race string's length).
+- **Checked against the real save:** this machine's Kestrel A run gave 8 missiles, 2 parts, Artemis and Burst
+  II, and 3 crew with xp.
+- **Skills:** `CrewPick.xp` carries skills into `buildShip`, clamped to `RULES.skillXp` maxima (FTL's own
+  thresholds). Per the user, they're not priced.
+- **Endpoint:** `/api/ftl-save` answers loopback requests only (`ftlSave` option: desktop and dev on,
+  dedicated off), so LAN players can't read the host's save.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

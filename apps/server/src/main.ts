@@ -12,6 +12,8 @@ const arg = (k: string, d: string) => {
   return i >= 0 ? args[i + 1] : d;
 };
 await startServer({
+  // This is the player's own server (development): offer their FTL save to "Load from FTL".
+  ftlSave: true,
   port: Number(arg("--port", process.env.PORT ?? "8787")),
   assets: arg("--assets", "assets-local"),
   client: resolve("apps/client/dist"),

@@ -1,7 +1,7 @@
 /** The hangar: price a loadout against a base hull, validate it, and build the ship it describes. */
 import { baseSystemId, SUBSYSTEMS, V1_SYSTEMS, type GameDB, type SystemId } from "@ftl/data";
 import { geometry, key } from "./geometry.ts";
-import { raceOf, RACES, RULES, SKILLS } from "./rules.ts";
+import { raceOf, RACES, RULES, SKILLS, type SkillId } from "./rules.ts";
 import type { CrewState, ShipState, SystemState } from "./state.ts";
 
 export interface Loadout {
@@ -26,6 +26,8 @@ export const MAX_AUGMENTS = 3;
 export interface CrewPick {
   name: string;
   race: string;
+  /** Skill experience to start with (imported from an FTL run); clamped to each skill's maximum. */
+  xp?: Partial<Record<SkillId, number>>;
 }
 
 export interface PriceLine {
@@ -330,7 +332,8 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     ship.crew.push({
       id: idx * 100 + i, name: String(pick.name || pickName(NAMES)).slice(0, 16), race: RACES[pick.race] && !RACES[pick.race].drone ? pick.race : "human",
       hp: t.hp, maxHp: t.hp, x, y, tile,
-      path: [], home: tile, task: "idle", xp: Object.fromEntries(SKILLS.map((s) => [s, 0])) as CrewState["xp"],
+      path: [], home: tile, task: "idle",
+      xp: Object.fromEntries(SKILLS.map((s) => [s, Math.max(0, Math.min(RULES.skillXp[s][1], Math.round(Number(pick.xp?.[s]) || 0)))])) as CrewState["xp"],
       stun: 0, dead: false, owner: idx,
     });
   }

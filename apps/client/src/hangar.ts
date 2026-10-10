@@ -41,6 +41,12 @@ export class Hangar {
   /** A preset waiting for "delete?" confirmation; "New ship" waiting for "discard your changes?". */
   private confirmDel: string | null = null;
   private confirmNew = false;
+  /** This machine's FTL save in progress, as the server read it (asked for each time Presets opens). */
+  private ftl: { ok: boolean; loadout?: Loadout; notes?: string[]; shipName?: string; title?: string; className?: string; savedAt?: number } | null = null;
+  private ftlAsked = false;
+  private confirmFtl = false;
+  /** What an FTL import left behind, shown on Launch until the build changes. */
+  private importNotes: { loadout: Loadout; notes: string[] } | null = null;
   private lobby: LobbyState | null = null;
   private pendingRender = false;
 
@@ -190,6 +196,16 @@ export class Hangar {
     const priced = priceLoadout(db, l, cfg.scrap, cfg.shipPool, cfg.unlimited);
     const me = lobby.players.find((p) => p.id === this.me());
     const scrollTop = this.el.querySelector(".hg-main")?.scrollTop ?? 0;
+    if (this.step === "Presets" && !this.ftlAsked) {
+      this.ftlAsked = true;
+      void fetch("/api/ftl-save")
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+        .then((j) => {
+          this.ftl = j;
+          if (this.step === "Presets") this.render();
+        });
+    } else if (this.step !== "Presets") this.ftlAsked = false;
     const body = { Presets: () => this.stepPresets(), Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
     this.el.innerHTML = `
       <div class="hg">
@@ -270,7 +286,7 @@ export class Hangar {
       <div class="note">Hull ${ship.health} · reactor ${l.reactor} · ${l.missiles} missiles</div>
       <div class="note">${h(sys)}</div>
       <h2 style="margin-top:10px">Weapons</h2>${l.weapons.map((w) => `<div class="note">• ${h(db.weapons[w]?.title ?? w)}</div>`).join("") || `<div class="note">none</div>`}
-      <h2 style="margin-top:10px">Crew (${l.crew.length})</h2>${l.crew.map((c) => `<div class="note">• ${h(c.name)} <span style="opacity:.7">${h(db.crew[c.race]?.title ?? c.race)}</span></div>`).join("")}
+      <h2 style="margin-top:10px">Crew (${l.crew.length})</h2>${l.crew.map((c) => `<div class="note">• ${h(c.name)} <span style="opacity:.7">${h(db.crew[c.race]?.title ?? c.race)}</span> ${this.skills(c)}</div>`).join("")}
       <h2 style="margin-top:10px">Drones</h2>${(l.drones ?? []).map((d) => `<div class="note">• ${h(db.droneBPs[d]?.title ?? d)}</div>`).join("") || `<div class="note">none</div>`}<div class="note">${l.droneParts ?? 0} drone parts</div>
       <h2 style="margin-top:10px">Augments</h2>${(l.augments ?? []).map((a) => `<div class="note">• ${h(db.augments[a]?.title ?? a)}</div>`).join("") || `<div class="note">none</div>`}
       <h2 style="margin-top:10px">Bill</h2>
@@ -385,8 +401,55 @@ export class Hangar {
             ? `<div class="preset-confirm"><div>Discard the unsaved changes to this build?</div><div class="note">Save it from Launch first to keep it.</div><div class="row"><button class="small danger" data-preset-new-yes>Discard</button><button class="small" data-preset-new-no>Keep</button></div></div>`
             : ""
         }</div>
+        ${this.ftlCard()}
         ${cards}
       </div>${this.nav(null, "Ship")}`;
+  }
+
+  /** "Load from FTL": only when this machine has an FTL run in progress that reads as an arena ship. */
+  private ftlCard(): string {
+    const f = this.ftl;
+    if (!f?.ok || !f.loadout) return "";
+    const when = f.savedAt ? new Date(f.savedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
+    const confirm = this.confirmFtl
+      ? `<div class="preset-confirm"><div>Discard the unsaved changes to this build?</div><div class="note">Save it from Launch first to keep it.</div><div class="row"><button class="small danger" data-ftl-yes>Discard</button><button class="small" data-ftl-no>Keep</button></div></div>`
+      : "";
+    return `<div class="preset-card preset-new-card"><button class="preset-new preset-ftl" data-ftl-load>
+        <span class="plus">⇩</span><span>Load from FTL</span>
+        <span class="pc-ftl-ship">${h(f.shipName ?? "")}</span>
+        <span class="note">${f.title && f.title !== f.shipName ? `${h(f.title)} · ` : ""}${h(f.className ?? "")}</span>
+        ${when ? `<span class="note">Your run in progress · saved ${h(when)}</span>` : ""}
+      </button>${confirm}</div>`;
+  }
+
+  /** Bring in the FTL run: not a preset and not saved (save it from Launch like any build). */
+  private loadFtl(): void {
+    const f = this.ftl;
+    if (!f?.loadout) return;
+    this.loaded = null;
+    this.savedNote = "";
+    this.saveName = f.shipName || null;
+    this.confirmFtl = false;
+    this.confirmNew = false;
+    this.confirmDel = null;
+    this.importNotes = { loadout: structuredClone(f.loadout), notes: f.notes ?? [] };
+    this.step = "Launch";
+    this.sfx("powerUpSystem");
+    this.change(structuredClone(f.loadout));
+  }
+
+  /** Skill levels as FTL's two-step bars, for crew that have any experience (FTL imports). */
+  private skills(c: Loadout["crew"][number]): string {
+    const names: Record<string, string> = { pilot: "Pilot", engines: "Engines", shields: "Shields", weapons: "Weapons", repair: "Repair", combat: "Combat" };
+    const out = Object.entries(c.xp ?? {})
+      .filter(([, v]) => (v ?? 0) > 0)
+      .map(([k, v]) => {
+        const [a, b] = RULES.skillXp[k as keyof typeof RULES.skillXp] ?? [1, 2];
+        const lv = (v ?? 0) >= b ? 2 : (v ?? 0) >= a ? 1 : 0;
+        return `<span class="skill" title="${names[k] ?? k}: ${v}/${b} experience">${names[k] ?? k} <i class="${lv >= 1 ? "on" : ""}"></i><i class="${lv >= 2 ? "on" : ""}"></i></span>`;
+      })
+      .join("");
+    return out ? `<span class="skills">${out}</span>` : "";
   }
 
   /** "Save as preset" on Launch: hidden while the build is an unchanged loaded preset. */
@@ -591,7 +654,7 @@ export class Hangar {
         const t = RACES[c.race];
         return `<div class="crew-row">${this.portrait(c.race)}
           <input type="text" maxlength="16" value="${h(c.name)}" data-crewname="${i}">
-          <span class="note">${h(db.crew[c.race]?.title ?? c.race)} · ${t?.hp ?? 100} HP</span>
+          <span class="note">${h(db.crew[c.race]?.title ?? c.race)} · ${t?.hp ?? 100} HP ${this.skills(c)}</span>
           <button class="small" data-reroll="${i}" title="Random name">↻</button>
           <button class="small" data-fire="${i}" ${l.crew.length <= 1 ? "disabled" : ""} title="Dismiss">✕</button></div>`;
       })
@@ -695,6 +758,7 @@ export class Hangar {
     const cd = this.lobby?.phase === "countdown" ? `<div class="code launch-count">Launch in ${this.lobby.countdown}…</div>` : "";
     return `<h2>${this.num("Launch")} · Launch</h2>
       <p>${priced.ok ? "Your ship is ready. Press <b>Ready</b> (or Enter); the battle starts when both captains are ready." : "Fix the problems listed on the right first."}</p>
+      ${this.importNotes && isSame(l, this.importNotes.loadout) ? `<div class="import-notes"><b>Loaded from your FTL run.</b> Not saved yet: save it as a preset below to keep it.${this.importNotes.notes.map((n) => `<div class="note">${h(n)}</div>`).join("")}</div>` : ""}
       <div class="launch-ready">${this.readyButton(l, priced, ready)}${cd}</div>
       ${this.saveBox(l)}
       <div class="note">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
@@ -734,6 +798,18 @@ export class Hangar {
       return this.render();
     }
     if ("presetNewYes" in d) return this.newShip();
+    if ("ftlLoad" in d) {
+      if (!this.unsaved(this.loadout)) return this.loadFtl();
+      this.confirmFtl = true;
+      this.confirmNew = false;
+      this.sfx("hoverBeep");
+      return this.render();
+    }
+    if ("ftlYes" in d) return this.loadFtl();
+    if ("ftlNo" in d) {
+      this.confirmFtl = false;
+      return this.render();
+    }
     if ("presetNewNo" in d) {
       this.confirmNew = false;
       return this.render();
@@ -852,10 +928,11 @@ export class Hangar {
       e.preventDefault();
       return go(-1);
     }
-    if (e.key === "Escape" && (this.confirmDel || this.confirmNew)) {
+    if (e.key === "Escape" && (this.confirmDel || this.confirmNew || this.confirmFtl)) {
       e.preventDefault();
       this.confirmDel = null;
       this.confirmNew = false;
+      this.confirmFtl = false;
       return this.render();
     }
     if (e.key === "Escape") {

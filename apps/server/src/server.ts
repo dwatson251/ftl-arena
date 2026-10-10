@@ -15,6 +15,7 @@ import { TICK_HZ } from "@ftl/sim";
 import { Lobby, type Client } from "./lobby.ts";
 import { forwardPort, lanAddresses, publicAddress, unforwardPort } from "./upnp.ts";
 import { LAN_TAG, lanFind, lanResponder } from "./lan.ts";
+import { importFtlSave } from "./ftlsave.ts";
 
 export interface ServerOptions {
   /** TCP port (0 picks a free one). */
@@ -30,6 +31,8 @@ export interface ServerOptions {
   upnp?: boolean;
   /** Answer LAN "who has this code?" questions (default on). */
   lan?: boolean;
+  /** Offer this machine's FTL save in progress to the hangar's "Load from FTL" (players' own app only). */
+  ftlSave?: boolean;
 }
 
 /** How other players reach this server: its port, LAN addresses, public address and whether UPnP worked. */
@@ -100,6 +103,15 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       // Online: the public address too (and the UPnP attempt). LAN: just this computer's network addresses.
       if (query.get("online") === "1") void shareInfo(port).then(json);
       else json({ port, lan: lanAddresses(), public: "", upnp: "off" } satisfies ShareInfo);
+      return;
+    }
+    if (url === "/api/ftl-save") {
+      // Only for the browser on this same machine: the server also listens on the network, and other
+      // players have no business reading the host's save.
+      const from = req.socket.remoteAddress ?? "";
+      if (!opts.ftlSave) return void res.writeHead(404).end();
+      if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(from)) return void res.writeHead(403).end();
+      json(importFtlSave(db));
       return;
     }
     if (url === "/api/lan") {

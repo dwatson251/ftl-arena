@@ -72,7 +72,7 @@ export function randomLook(rnd: () => number = Math.random): PresetLook {
 /** The parts of a loadout a player chose (key order and absent-vs-empty don't matter). */
 function norm(l: Loadout): string {
   const sys = Object.entries(l.systems ?? {}).filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b));
-  return JSON.stringify([l.ship, sys, l.reactor, l.weapons, l.crew.map((c) => [c.name, c.race]), l.missiles, l.augments ?? [], l.drones ?? [], l.droneParts ?? 0]);
+  return JSON.stringify([l.ship, sys, l.reactor, l.weapons, l.crew.map((c) => [c.name, c.race, Object.entries(c.xp ?? {}).filter(([, v]) => v).sort(([a], [b]) => a.localeCompare(b))]), l.missiles, l.augments ?? [], l.drones ?? [], l.droneParts ?? 0]);
 }
 
 export const isSame = (a: Loadout, b: Loadout): boolean => norm(a) === norm(b);

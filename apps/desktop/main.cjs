@@ -44,7 +44,7 @@ async function startGame() {
     for (let port = s.port; port < s.port + 10 && !server; port++) {
       try {
         // UPnP on: the first "Create match" asks the router to open the port for friends on the internet.
-        server = await lib().startServer({ port, assets: ASSETS(), client: CLIENT, upnp: true, log: (m) => console.log(m) });
+        server = await lib().startServer({ port, assets: ASSETS(), client: CLIENT, upnp: true, ftlSave: true, log: (m) => console.log(m) });
       } catch (e) {
         lastErr = e;
       }

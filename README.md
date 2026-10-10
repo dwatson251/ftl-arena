@@ -96,6 +96,10 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 - **Deleting:** the ✕ on a card, after a confirmation.
 - **New ship:** clears the build and any loaded preset, back to the default hull. It asks first if the
   build has unsaved changes.
+- **Load from FTL:** appears on Presets when FTL has a run in progress on this computer (`continue.sav`).
+  It brings in that run's ship: hull, systems, reactor, weapons, drones, augments, missiles, drone parts, and
+  crew with their skills. It isn't saved until you save it from Launch. Scrap, fuel, hull damage and cargo
+  stay in FTL. Only your own app reads your save; the server never offers it to other players.
 - **Where they live:** this computer only: the desktop app's data folder (`presets.json`), or the
   browser's storage.
 
