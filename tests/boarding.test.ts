@@ -128,10 +128,12 @@ describe("boarding", () => {
     run(m, RULES.boarderFlight + 1.5);
     expect(them.crew.some((c) => c.owner === 0 && c.race === "boarder")).toBe(true);
     expect(them.rooms.some((r) => Object.keys(r.breaches).length)).toBe(true);
-    // Unpowering removes the unit.
+    // Unpowering switches the unit off where it stands; it isn't lost.
     m.push(0, { c: "dronePower", slot: 0, on: false });
-    m.step();
-    expect(them.crew.some((c) => c.owner === 0)).toBe(false);
+    run(m, 2);
+    const unit = them.crew.find((c) => c.owner === 0 && c.race === "boarder");
+    expect(unit).toBeDefined();
+    expect(unit!.task).toBe("idle");
     expect(me.droneParts).toBe(2);
   });
 });

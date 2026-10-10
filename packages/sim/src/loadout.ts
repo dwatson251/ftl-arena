@@ -199,7 +199,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   // Drones: like weapons (starting ones free, sold for half), plus drone parts.
   const dr = l.drones ?? [];
   if (dr.length > (ship.droneSlots ?? 0)) errors.push(`only ${ship.droneSlots ?? 0} drone slots`);
-  if (dr.length && !(l.systems.drones ?? 0)) errors.push("drones need the drone control system");
+  // Drones without the drone control system are allowed (the hangar warns): they just can't be launched.
   const leftD = [...(base.drones ?? [])];
   const buyD = new Set(buyableDrones(db));
   for (const d of dr) {
@@ -243,6 +243,11 @@ const NAMES = [
   "Oren", "Pax", "Quill", "Rhea", "Soren", "Tamsin", "Uma", "Vale", "Wren", "Yara", "Zed",
 ];
 
+/** Tiles crew can't be sent to: the medbay's and clone bay's equipment. */
+export function blockedTiles(ship: ShipState): Set<string> {
+  return new Set(Object.values(ship.systems).flatMap((s) => (s?.blocked ? [s.blocked] : [])));
+}
+
 export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pickName: (n: string[]) => string, unlimited = false): ShipState {
   const bp = db.ships[l.ship];
   const layout = db.layouts[bp.layout];
@@ -253,10 +258,15 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     if (level <= 0) continue;
     const slot = bp.systems.find((s) => s.id === h.id)!;
     const tiles = g.roomTiles.get(slot.room) ?? [];
-    const station = slot.station >= 0 && h.id !== "medbay" ? tiles[slot.station] ?? tiles[0] ?? "" : "";
+    const bay = h.id === "medbay" || h.id === "clonebay";
+    const station = slot.station >= 0 && !bay ? tiles[slot.station] ?? tiles[0] ?? "" : "";
+    // The bay's equipment takes one tile, so a 2x2 medbay or clone bay holds three crew (FTL's default slot is 1,
+    // or 0 in a one-tile room).
+    const blocked = bay && slot.station >= 0 && tiles.length > 1 ? tiles[slot.station] ?? tiles[0] : undefined;
     systems[h.id] = {
       id: h.id, room: slot.room, level, power: 0, damage: 0, repair: 0, ion: 0, ionTimer: 0, station, fireDmg: 0, bonus: 0,
       facing: station ? slot.facing ?? "up" : undefined,
+      ...(blocked ? { blocked } : {}),
       ...(slot.weapon && db.weapons[slot.weapon] ? { weapon: slot.weapon, charge: 0 } : {}),
     } satisfies SystemState;
   }
@@ -284,7 +294,8 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
       taken.add(st);
     }
   }
-  for (const k of g.tiles.keys()) if (!taken.has(k)) spots.push(k);
+  const blocked = blockedTiles(ship);
+  for (const k of g.tiles.keys()) if (!taken.has(k) && !blocked.has(k)) spots.push(k);
   for (let i = 0; i < l.crew.length; i++) {
     const tile = spots[i] ?? spots[0];
     const [x, y] = tile.split(",").map(Number);

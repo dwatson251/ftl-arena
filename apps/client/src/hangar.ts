@@ -271,6 +271,8 @@ export class Hangar {
     if (needsMissiles.length && l.missiles < 4) out.push(`${needsMissiles.map((w) => w.short ?? w.title).join(", ")} use missiles, but you only have ${l.missiles}.`);
     const bars = l.systems.weapons ?? 0;
     if (ws.length && !ws.some((w) => w.power <= bars)) out.push(`Weapon system level ${bars} can't power any fitted weapon.`);
+    // Like missiles without a launcher's ammo: drones can be bought, but without the system there's no drone panel.
+    if ((l.drones ?? []).length && !(l.systems.drones ?? 0)) out.push("Drones are fitted but there's no drone control system, so they can't be launched.");
     return out;
   }
 
@@ -454,7 +456,7 @@ export class Hangar {
     const base = baseLoadout(db, l.ship);
     return `<h2>4 · Drones</h2>
       ${slots ? "" : `<p class="note">This hull has no drone slots.</p>`}
-      ${slots && !has ? `<p class="err">Install the drone control system (Systems step) to use drones.</p>` : ""}
+      ${slots && !has ? `<p class="err">No drone control system: you can still buy drones, but they can't be launched until it's installed (Systems step).</p>` : ""}
       <div class="wslots-sticky"><div class="wslots">${fitted}</div>
       <div class="sys-row"><span class="sysicon ph">⚙</span><span class="sys-name">drone parts</span><span><b>${l.droneParts ?? 0}</b></span>
         <button class="small" data-parts="-1" ${(l.droneParts ?? 0) <= 0 ? "disabled" : ""}>−</button>

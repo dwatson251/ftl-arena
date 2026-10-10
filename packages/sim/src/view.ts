@@ -15,6 +15,8 @@ export interface ShipView extends ShipState {
   interior: boolean;
   /** False when weapon charge and system power were stripped. */
   weaponsKnown: boolean;
+  /** Weapon charge is shown even without sensors: the viewer's hacking drone sits on the weapons room. */
+  weaponChargeKnown?: boolean;
 }
 
 export interface MatchView {
@@ -70,12 +72,16 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
       r.breaches = {};
     }
   }
-  if (!ev.weaponsKnown) {
+  // A hacking drone on their weapons room reads the guns' charge (FTL shows a hacked room's full detail).
+  ev.weaponChargeKnown = ev.weaponsKnown || (!!own.hack?.attached && own.hack.room === enemy.systems.weapons?.room);
+  if (!ev.weaponChargeKnown) {
     for (const w of ev.weapons) {
       w.charge = -1;
       w.volleys = 0;
       w.powered = false;
     }
+  }
+  if (!ev.weaponsKnown) {
     for (const s of Object.values(ev.systems)) if (s) s.power = -1;
     ev.reactor = -1;
   }

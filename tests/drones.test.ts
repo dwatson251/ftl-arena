@@ -22,13 +22,16 @@ const armed = (db: GameDB, drone: string, parts = 3) => {
 };
 
 describe("drones", () => {
-  it("are priced like weapons, need the drone system, and parts cost scrap", () => {
+  it("are priced like weapons, can be bought without the drone system (the hangar warns), and parts cost scrap", () => {
     const db = dbWithDrones();
     const l = armed(db, "COMBAT_1", 4);
     const p = priceLoadout(db, l, 9999);
     expect(p.ok).toBe(true);
     expect(p.lines.some((x) => x.item.includes("COMBAT_1"))).toBe(true);
-    expect(priceLoadout(db, { ...l, systems: { ...l.systems, drones: 0 } }, 9999).ok).toBe(false);
+    expect(priceLoadout(db, { ...l, systems: { ...l.systems, drones: 0 } }, 9999).ok).toBe(true);
+    // ...but with no drone system there's nothing to launch them with.
+    const m = new Match(db, DEFAULT_CONFIG, [{ ...l, systems: { ...l.systems, drones: 0 } }, baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    expect(m.apply(m.state.ships[0], { c: "dronePower", slot: 0, on: true })).toBe(false);
   });
   it("launching uses a drone part; a combat drone fires at the enemy", () => {
     const db = dbWithDrones();
@@ -46,12 +49,18 @@ describe("drones", () => {
       for (const p of m.state.projectiles) if (p.drone === 0) shots.add(p.id);
     }
     expect(shots.size).toBeGreaterThan(1);
-    // Unpowering loses the drone; powering again uses another part.
+    // Unpowering leaves the drone out there, offline (it stops firing); powering it again needs no new part.
     m.push(0, { c: "dronePower", slot: 0, on: false });
     m.step();
+    expect(s.drones![0].deployed).toBe(true);
+    const before = m.state.projectiles.filter((p) => p.drone === 0).length;
+    for (let i = 0; i < 30 * 6; i++) m.step();
+    expect(m.state.projectiles.filter((p) => p.drone === 0 && p.t === 0).length).toBe(0);
+    void before;
     m.push(0, { c: "dronePower", slot: 0, on: true });
-    for (let i = 0; i < 30 * (RULES.droneLaunch + 0.2); i++) m.step();
-    expect(s.droneParts).toBe(1);
+    m.step();
+    expect(s.drones![0].powered).toBe(true);
+    expect(s.droneParts).toBe(2);
   });
   it("a defense drone shoots down incoming missiles (unless scrambled)", () => {
     for (const scramble of [false, true]) {

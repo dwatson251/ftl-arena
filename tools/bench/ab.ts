@@ -18,5 +18,5 @@ function score(ov: Partial<BotSkills>, seeds = 40) {
   return Math.round((w / seeds) * 100);
 }
 const half = botSkills(0.5);
-const cases: [string, Partial<BotSkills>][] = [["control 0.5", half], ["1.0", {}], ["1.0 -stations", { stations: false }], ["1.0 -missileRule", { missilesOnShields: false }], ["1.0 -beamRule", { beamAfterShields: false }], ["1.0 -sync", { syncVolleys: false }], ["0.5 +fast", { ...half, thinkEvery: 0.3, mistake: 0 }]];
+const cases: [string, Partial<BotSkills>][] = [["control 0.5", half], ["1.0", {}], ["1.0 -missileRule", { missilesOnShields: false }], ["1.0 -beamRule", { beamAfterShields: false }], ["1.0 -sync", { syncVolleys: false }], ["0.5 +fast", { ...half, thinkEvery: 0.3, mistake: 0 }]];
 for (const [n, o] of cases) console.log(n.padEnd(20), score(o) + "%");

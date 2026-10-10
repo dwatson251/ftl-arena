@@ -13,7 +13,7 @@ import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, ty
 import { animFrame, frame, texNow } from "./assets.ts";
 import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, setSound, soundOn, stopLoops } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
-import { ShipRenderer, type CrewDraw } from "./render/ship.ts";
+import { LOW_HP, ShipRenderer, type CrewDraw } from "./render/ship.ts";
 
 const W = 1280;
 const H = 720;
@@ -22,11 +22,16 @@ const OWN = { cx: 467, cy: 346, w: 700, h: 470, clipX: 868 };
 /** FTL's hostiles window (box_hostiles2) and the part of it the enemy ship is fitted into. */
 const WIN = { x: 870, y: 45, w: 410, h: 555 };
 const WIN_SHIP = { x: WIN.x + 18, y: WIN.y + 104, w: 366, h: 372 };
-const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "weapons", "drones", "teleporter", "cloaking", "hacking", "mind", "artillery"];
+/** FTL's order for the bottom-left system row (its SortingType): the weapons and drone trays sit inline after
+ * their systems, which is why they come last. */
+const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "teleporter", "cloaking", "artillery", "mind", "hacking", "weapons", "drones"];
+/** Systems whose button stands beside their bars, so they take 54 px of the row instead of 36. */
+const BUTTON_SYS: SystemId[] = ["teleporter", "cloaking", "mind", "hacking"];
 const ACTIVE_DRONES = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER", "SHIELD"];
 const UNIT_DRONES = ["BATTLE", "REPAIR", "BOARDER"];
-// The battery leads the subsystems group (its compact panel sits to its left, clear of the target window).
-const SUB_SYS: SystemId[] = ["battery", "pilot", "sensors", "doors"];
+const SUB_SYS: SystemId[] = ["pilot", "sensors", "doors", "battery"];
+/** Each subsystem's fixed spot in FTL's group (icon left edge past SUB_X0); the battery stands right-most. */
+const SUB_OFF: Partial<Record<SystemId, number>> = { pilot: 0, sensors: 36, doors: 72, battery: 123 };
 /** Bottom-left system icons: s_<sys>_*1.png (64 px) top-left corners, 36 px apart. */
 const SYS_X0 = 58;
 const SYS_ICON_Y = 651;
@@ -95,8 +100,9 @@ export class Battle {
   private doorBtns: { open: boolean; box: Box }[] = [];
   private firedAt = new Map<string, number>();
   private shieldHitAt: [number, number] = [-9, -9];
-  private walking = new Map<number, string>();
+  private walking = new Map<string, string>();
   private flashTiles = new Map<string, number>();
+  private flashTilesEnemy = new Map<string, number>();
   private explodedAt = new Map<number, number>();
   private endReadyAt: number | null = null;
   private hullMaskSprite: Sprite | null = null;
@@ -202,13 +208,17 @@ export class Battle {
     const own = v.ships[v.you];
     const mine = this.myCrew(v);
     for (const id of [...this.selected]) if (!mine.find((c) => c.id === id && !c.dead && c.dying === undefined)) this.selected.delete(id);
-    for (const c of own.crew) {
-      if (c.owner !== v.you) continue;
-      const was = this.walking.get(c.id);
-      if (c.path.length) this.walking.set(c.id, c.home);
-      else if (was) {
-        this.flashTiles.set(was, 0.45);
-        this.walking.delete(c.id);
+    // Destination tiles flash as crew arrive, on whichever ship they're walking (boarders too).
+    for (const [ship, flash] of [[own, this.flashTiles], [v.ships[1 - v.you], this.flashTilesEnemy]] as const) {
+      for (const c of ship.crew) {
+        if (c.owner !== v.you || c.drone !== undefined) continue;
+        const key = `${ship.idx}:${c.id}`;
+        const was = this.walking.get(key);
+        if (c.path.length) this.walking.set(key, c.home);
+        else if (was) {
+          flash.set(was, 0.45);
+          this.walking.delete(key);
+        }
       }
     }
   }
@@ -291,6 +301,7 @@ export class Battle {
         if (e.ship !== v.you && e.on) this.say("Enemy cloaked: weapons can't charge", 0xb8c8ff);
         break;
       case "hackLand":
+        this.hackLandAt.set(e.ship, this.time);
         play(this.db, ["hackLand"], e.ship === v.you ? 0.8 : 1);
         if (e.ship !== v.you) this.say("Hacking drone attached!", 0xd070ff);
         break;
@@ -303,8 +314,13 @@ export class Battle {
       case "droneLost":
         if (e.ship === v.you) this.say("Drone destroyed", 0xff8a70);
         break;
-      case "death":
-        play(this.db, ["death1", "death2"], e.ship === v.you ? 1 : 0.5);
+      case "death": {
+        const c = v.ships.flatMap((s) => s.crew).find((q) => q.id === e.crew);
+        play(this.db, this.deathSound(c?.race ?? "human", c?.name ?? ""), e.ship === v.you ? 1 : 0.5);
+        break;
+      }
+      case "clone":
+        play(this.db, ["cloneArrive"], e.ship === v.you ? 1 : 0.5);
         break;
       case "end": {
         const loser = e.winner === -1 ? -1 : 1 - e.winner;
@@ -317,6 +333,17 @@ export class Battle {
       default:
         break;
     }
+  }
+
+  /** FTL's death cry for each race (humans by the name's sex); drones just blow up. */
+  private deathSound(race: string, name: string): string[] {
+    const own: Record<string, string[]> = {
+      engi: ["engiDeath"], mantis: ["mantisDeath"], rock: ["rockDeath"], crystal: ["crystalDeath"], energy: ["energyDeath"],
+      anaerobic: ["shrikeDeath"], battle: ["smallExplosion"], repair: ["smallExplosion"], boarder: ["smallExplosion"], boarder_ion: ["smallExplosion"],
+    };
+    if (own[race]) return own[race];
+    if (race === "human" && this.db.femaleNames?.includes(name)) return ["femaleDeath1", "femaleDeath2", "femaleDeath3"];
+    return ["death1", "death2"];
   }
 
   // ---------------------------------------------------------------- effects
@@ -425,12 +452,18 @@ export class Battle {
 
   // ---------------------------------------------------------------- frame
 
+  /** Share of the way to the next snapshot, and this frame's length (drone motion is smoothed with them). */
+  private snapK = 0;
+  private frameDt = 0;
+
   frame(dt: number): void {
     this.time += dt;
+    this.frameDt = dt;
     const v = this.view;
     if (!v) return;
-    for (const [k, left] of this.flashTiles) left - dt <= 0 ? this.flashTiles.delete(k) : this.flashTiles.set(k, left - dt);
+    for (const m of [this.flashTiles, this.flashTilesEnemy]) for (const [k, left] of m) left - dt <= 0 ? m.delete(k) : m.set(k, left - dt);
     const k = Math.min(1, (performance.now() - this.snapAt) / (1000 / SNAP_HZ));
+    this.snapK = k;
     const ownV = v.ships[v.you];
     const enV = v.ships[1 - v.you];
     const ex = (i: number) => (this.explodedAt.has(i) ? this.time - this.explodedAt.get(i)! : null);
@@ -445,6 +478,7 @@ export class Battle {
     this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.time, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
       shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.weaponsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
+      destinations: true, flashTiles: this.flashTilesEnemy,
     });
     this.drawTargets(ownV);
     this.drawProjectiles(v, k);
@@ -490,6 +524,7 @@ export class Battle {
       return {
         c, x: p ? p.x + (c.x - p.x) * k : c.x, y: p ? p.y + (c.y - p.y) * k : c.y,
         selected: c.owner === you && this.selected.has(c.id), hostile: c.owner !== you,
+        offline: c.drone !== undefined && !this.view!.ships[c.owner].drones?.[c.drone]?.powered,
       };
     });
   }
@@ -532,12 +567,7 @@ export class Battle {
     });
     if (this.beamStart && this.armed !== null) g.circle(this.beamStart.x, this.beamStart.y, 6).fill({ color: 0xffd040 });
     mk.end();
-    const o = this.own.overlay.clear();
-    if (this.drag) {
-      const a = this.own.root.toLocal({ x: this.drag.x, y: this.drag.y }, this.stage);
-      const b = this.own.root.toLocal({ x: this.drag.x2, y: this.drag.y2 }, this.stage);
-      o.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y)).fill({ color: 0x30ff30, alpha: 0.08 }).stroke({ color: 0x30ff30, width: 1.5 });
-    }
+    this.own.overlay.clear();
   }
 
   // ---------------------------------------------------------------- projectiles
@@ -593,6 +623,10 @@ export class Battle {
         const r = dst.layout.rooms.find((q) => q.id === (p.target as { room: number }).room)!;
         tx = (r.x + r.w / 2) * 35;
         ty = (r.y + r.h / 2) * 35;
+      }
+      if (p.kind === "HACK" && p.target.kind === "room") {
+        const spot = this.hackSpot(dst, p.target.room);
+        if (spot) [tx, ty] = [spot.x, spot.y];
       }
       const target = this.stage.toLocal(dst.root.toGlobal({ x: tx, y: ty }));
       if (p.kind === "BOMB") {
@@ -719,9 +753,8 @@ export class Battle {
     for (const id of [...MAIN_SYS, ...SUB_SYS]) {
       const sys = own.systems[id];
       if (!sys) continue;
-      const main = MAIN_SYS.filter((x) => own.systems[x]).indexOf(id);
-      const sub = SUB_SYS.filter((x) => own.systems[x]).indexOf(id);
-      const at = main >= 0 ? { x: SYS_X0 + 32 + main * SYS_DX, y: SYS_ICON_Y + 32 } : sub >= 0 ? { x: this.subX0(own) + 32 + sub * SYS_DX, y: SUB_ICON_Y + 32 } : null;
+      const mx = this.lay.sysX[id];
+      const at = mx !== undefined ? { x: mx + 32, y: SYS_ICON_Y + 32 } : SUB_SYS.includes(id) ? { x: SUB_X0 + (SUB_OFF[id] ?? 0) + 32, y: SUB_ICON_Y + 32 } : null;
       if (!at) continue;
       if (sys.ion > 0) this.ionPie(`ion${id}`, sys, at.x, at.y);
       else this.lockPie(`lock${id}`, this.lockLeft(own, id), at.x, at.y);
@@ -731,6 +764,11 @@ export class Battle {
       t.alpha = Math.min(1, (this.message.until - this.time) / 0.4);
     }
     this.tooltip(v);
+    // The selection box, in screen space above everything (both ships and the hostiles window).
+    if (this.drag) {
+      const d = this.drag;
+      h.gfx("drag").rect(Math.min(d.x, d.x2), Math.min(d.y, d.y2), Math.abs(d.x2 - d.x), Math.abs(d.y2 - d.y)).fill({ color: 0x30ff30, alpha: 0.08 }).stroke({ color: 0x30ff30, width: 1.5 });
+    }
     if (this.armed !== null) {
       const bp = this.db.weapons[own.weapons[this.armed]?.bp];
       if (bp?.type === "BEAM") h.text("hint", this.beamStart ? "Click to aim the beam" : "Click where the beam starts", OWN.cx, 588, fstyle("JustinFont10", 0xffd27a, { stroke: 0x101010 }), [0.5, 0]);
@@ -766,23 +804,37 @@ export class Battle {
 
   /** Ambient loops and event sounds driven by our own ship's state. */
   private lowHpBeep = new Map<number, number>();
+  private hammerAt = -9;
   private soundscape(v: MatchView): void {
     const own = v.ships[v.you];
     const g = this.own.geo;
-    const alive = own.crew.filter((c) => !c.dead && c.dying === undefined);
+    // Our own crew aboard our ship (intruders make none of these sounds for us).
+    const alive = own.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === v.you);
     const roomOf = (c: { tile: string }) => g.tiles.get(c.tile)?.room;
     const over = v.winner !== null;
     loop(this.db, "fire", !over && own.rooms.some((r) => Object.keys(r.fires).length > 0), 0.8);
     const venting = g.doors.some((d, i) => own.doors[i] && (d.roomA < 0 || d.roomB < 0));
     loop(this.db, "airLeak", !over && (venting || own.rooms.some((r) => Object.keys(r.breaches).length > 0)), 1);
-    loop(this.db, "repair", !over && alive.some((c) => c.task === "repair" || c.task === "breach"), 0.8);
+    // Repair sounds by race: Rockmen and Crystals hammer, a Lanius has its own, everyone else FTL's welder.
+    const fixing = alive.filter((c) => c.task === "repair" || c.task === "breach");
+    loop(this.db, "repair", !over && fixing.some((c) => !["rock", "crystal", "anaerobic"].includes(c.race)), 0.8);
+    loop(this.db, "shrikeRepair", !over && fixing.some((c) => c.race === "anaerobic"), 0.8);
+    if (!over && fixing.some((c) => c.race === "rock" || c.race === "crystal") && this.time - this.hammerAt > 0.55) {
+      this.hammerAt = this.time;
+      play(this.db, ["rockThud1", "rockThud2", "rockThud3"], 0.9);
+    }
+    // A switched-off clone bay with someone in its queue groans (FTL's cloneBroken loop).
+    const cbs = own.systems.clonebay;
+    const queued = own.crew.some((c) => c.dead && c.clone !== undefined);
+    loop(this.db, "cloneBroken", !over && !!cbs && queued && (cbs.power + (cbs.bonus ?? 0) <= 0 || cbs.damage >= cbs.level || !!cbs.hacked) && !(own.augments ?? []).includes("BACKUP_DNA"), 0.7);
     loop(this.db, "extinguish", !over && alive.some((c) => c.task === "fire"), 0.8);
     const med = own.systems.medbay;
     loop(this.db, "healing", !over && !!med && alive.some((c) => c.hp < c.maxHp && roomOf(c) === med.room && c.path.length === 0), 0.7);
-    // Low-health beep: once per crew member per threshold crossed (50 %, 25 %), re-armed when healed past it.
-    for (const c of alive) {
+    // Low-health beep for our own crew wherever they are (never for enemies, even aboard our ship): once per
+    // threshold crossed (50 %, then the red-box level), re-armed when healed past it.
+    for (const c of this.myCrew(v).filter((q) => !q.dead && q.dying === undefined && q.owner === v.you)) {
       const k = c.hp / c.maxHp;
-      const level = k < 0.25 ? 2 : k < 0.5 ? 1 : 0;
+      const level = k < LOW_HP ? 2 : k < 0.5 ? 1 : 0;
       const beeped = this.lowHpBeep.get(c.id) ?? 0;
       if (level > beeped) play(this.db, ["lowCrewHealth"]);
       this.lowHpBeep.set(c.id, level);
@@ -861,11 +913,11 @@ export class Battle {
     const mt = texNow(s.missiles > 0 ? "statusUI/top_missiles_on.png" : "statusUI/top_missiles_on_red.png");
     if (mt) h.sprite("msl", mt, 122, 43);
     h.text("mslT", String(s.missiles), 174, 45, fstyle("num_font", s.missiles > 0 ? 0xffffff : 0xff6050), [0.5, 0]);
-    // Drone parts (FTL's drones box, measured at 258,43), when the ship can use drones.
+    // Drone parts, right beside the missiles (no fuel in the arena, so everything shifts one box left).
     if (s.systems.drones || (s.drones ?? []).length) {
       const dt = texNow("statusUI/top_drones_on.png");
-      if (dt) h.sprite("drn", dt, 258, 43);
-      h.text("drnT", String(s.droneParts ?? 0), 310, 45, fstyle("num_font", (s.droneParts ?? 0) > 0 ? 0xffffff : 0xff6050), [0.5, 0]);
+      if (dt) h.sprite("drn", dt, 190, 43);
+      h.text("drnT", String(s.droneParts ?? 0), 242, 45, fstyle("num_font", (s.droneParts ?? 0) > 0 ? 0xffffff : 0xff6050), [0.5, 0]);
     }
     // Evasion and oxygen
     const o2 = Math.round(s.rooms.reduce((a, r) => a + r.o2, 0) / s.rooms.length);
@@ -1090,15 +1142,9 @@ export class Battle {
   private systemsBar(s: ShipView): void {
     const h = this.hud;
     this.sysHit = [];
-    // Panels re-register their buttons as they're drawn; nothing stale stays clickable.
-    this.teleBtns = [];
-    this.telePanelBox = null;
-    this.teleWhy = "";
-    this.cloakBtn = null;
-    this.hackBtns = [];
-    this.mindBtn = null;
+    // Buttons re-register as they're drawn; nothing stale stays clickable.
+    this.btns = [];
     this.artilleryBtn = null;
-    this.batteryBtn = null;
     const used = Object.values(s.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
     const bonus = Math.max(0, s.reactorBonus ?? 0);
     const free = s.reactor + (s.reactorBonus ?? 0) - used;
@@ -1112,205 +1158,256 @@ export class Battle {
       else g.rect(13.5, yy + 0.5, 26, 5).stroke({ color: 0xe8ece8, width: 1 });
     }
     const systems = MAIN_SYS.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
-    const right = SYS_X0 + 32 + (systems.length - 1) * SYS_DX + 20;
+    const lastX = systems.length ? this.lay.sysX[systems[systems.length - 1].id]! : SYS_X0;
+    const right = lastX + 32 + 20;
     for (let yy = 627; yy < 690; yy += 6) g.moveTo(44, yy + 6).lineTo(50, yy).stroke({ color: 0x8a948c, width: 2 });
     g.moveTo(46, 690).lineTo(58, 704).lineTo(right, 704).stroke({ color: 0xe8ece8, width: 2.5 });
-    systems.forEach((sys, i) => {
-      const cx = SYS_X0 + 32 + i * SYS_DX;
+    for (const sys of systems) {
+      const ix = this.lay.sysX[sys.id]!;
+      const cx = ix + 32;
       g.moveTo(cx - 10, 704).lineTo(cx - 2, 696).stroke({ color: 0xe8ece8, width: 2 });
       this.bars(`b${sys.id}`, sys, cx, 657);
       if (this.manned(s, sys.id)) h.sprite(`mn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 657 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`) ?? texNow(`icons/s_${sys.id}_green1.png`);
       if (icon) {
-        if (sys.ion <= 0 && this.lockLeft(s, sys.id) <= 0) h.sprite(`si${sys.id}`, icon, SYS_X0 + i * SYS_DX, SYS_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
+        if (sys.ion <= 0 && this.lockLeft(s, sys.id) <= 0) h.sprite(`si${sys.id}`, icon, ix, SYS_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
       } else if (sys.ion <= 0) h.text(`si${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SYS_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
       this.sysHit.push({ id: sys.id, box: { x: cx - 16, y: 657 - sys.level * this.pitch(sys.level) - 4, w: 32, h: sys.level * this.pitch(sys.level) + 60 } });
       const top = 657 - sys.level * this.pitch(sys.level) - 8;
-      if (sys.id === "teleporter") this.telePanel(s, sys, cx, top);
-      if (sys.id === "cloaking") this.cloakPanel(s, sys, cx, top);
-      if (sys.id === "hacking") this.hackPanel(s, sys, cx, top);
-      if (sys.id === "mind") this.mindPanel(s, sys, cx, top);
+      if (sys.id === "teleporter") this.telePanel(s, sys, ix, SYS_ICON_Y);
+      if (sys.id === "cloaking") this.cloakPanel(s, sys, ix, SYS_ICON_Y);
+      if (sys.id === "hacking") this.hackPanel(s, sys, ix, SYS_ICON_Y);
+      if (sys.id === "mind") this.mindPanel(s, sys, ix, SYS_ICON_Y);
       if (sys.id === "artillery") this.artilleryPanel(s, sys, cx, top);
+      if (sys.id === "clonebay") this.cloneQueue(s, sys, ix);
       // A hacking drone on this system: FTL's purple hacked mark (the icon goes purple while it pulses).
       if (sys.locked) h.sprite(`hk${sys.id}`, texNow("icons/s_hacked.png"), cx + 10, SYS_ICON_Y + 12, { anchor: 0.5 });
-    });
+    }
   }
 
   private trayDx = 0;
-  private telePanelBox: Box | null = null;
-  private teleWhy = "";
-  private teleBtns: { out: boolean; box: Box }[] = [];
   private teleMode: "send" | "return" | "hack" | "mind" | "artillery" | null = null;
+  /** Clickable system buttons drawn this frame; `why` says why a disabled one can't be used. */
+  private btns: { box: Box; act?: () => void; why?: string; right?: () => void }[] = [];
 
-  /** FTL's teleporter panel above its bars: the charge gauge, then send (top) and return (bottom) buttons. */
-  private telePanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
+  /** Power the system really has (reactor + Zoltan), as the button heights read it. */
+  private powerOf(sys: NonNullable<ShipView["systems"][SystemId]>): number {
+    return Math.max(0, Math.min(sys.power + (sys.bonus ?? 0), usable(sys)));
+  }
+
+  /**
+   * FTL's system power button (cloaking, hacking, mind control, the battery), as in its SystemPowerButton:
+   * standing right of the icon on the wire, `n` (1-4) picks the art whose height grows with power. While the
+   * ability runs, the striped timer shows 2 + 3n countdown bars that drop away as its time runs out.
+   */
+  private powerButton(key: string, iconX: number, iconY: number, n: number, o: { base?: string; left?: number; duration?: number; off: boolean; selected?: boolean; why?: string; act: () => void }): void {
     const h = this.hud;
-    this.teleBtns = [];
-    const x = cx - 20;
-    const y = bottom - 79;
-    const lv = Math.min(3, usable(sys));
-    const cd = RULES.teleCooldown[lv] || 1;
-    const k = lv > 0 ? Math.min(1, (s.tele ?? 0) / cd) : 0;
-    const ready = k >= 1;
-    const base = texNow("systemUI/button_teleport_base.png");
-    if (!base) return;
-    h.sprite("tpB", base, x, y);
-    // Clicking a teleporter that isn't ready says why (FTL just greys it out, which reads as "broken").
-    this.telePanelBox = { x, y, w: 40, h: 79 };
-    this.teleWhy = lv <= 0 ? "The teleporter needs power" : !ready ? "The teleporter is charging" : "";
-    if (!ready) {
-      // Charging: the striped gauge fills from the bottom.
-      h.sprite("tpC0", texNow("systemUI/button_teleport_charging_off.png"), x, y);
-      const on = texNow("systemUI/button_teleport_charging_on.png");
-      if (on) {
-        const top = 10 + Math.round(43 * (1 - k));
-        h.sprite("tpC1", frame(on, 0, top, 40, 53 - top), x, y + top);
+    const k = Math.max(1, Math.min(4, n));
+    const x = iconX + 36;
+    const y = iconY - 50;
+    h.sprite(`${key}B`, texNow(o.base ?? `systemUI/button_cloaking${k}_base.png`), x, y);
+    const box = { x: iconX + 46, y: iconY + 16 - (11 + 12 * k), w: 24, h: 11 + 12 * k };
+    if (o.left !== undefined && o.left > 0) {
+      const t = texNow(`systemUI/button_cloaking${k}_charging_on.png`);
+      if (t) {
+        const bars = 2 + 3 * k;
+        const shownBars = Math.ceil(o.left / ((o.duration || 1) / bars));
+        const hh = Math.min(t.height, 26 + Math.min(bars, shownBars) * 4);
+        h.sprite(`${key}T`, frame(t, 0, t.height - hh, t.width, hh), x, y + t.height - hh);
       }
       return;
     }
-    const anyAway = this.myCrew(this.view!).some((c) => !c.dead && !s.crew.includes(c));
-    const sel = (m: "send" | "return") => (this.teleMode === m ? "select2" : "on");
-    h.sprite("tpT", texNow(`systemUI/button_teleport_top_${sel("send")}.png`), x, y);
-    h.sprite("tpBt", texNow(`systemUI/button_teleport_bottom_${anyAway ? sel("return") : "off"}.png`), x, y);
-    this.teleBtns.push({ out: true, box: { x: x + 4, y: y + 4, w: 32, h: 32 } }, { out: false, box: { x: x + 4, y: y + 27, w: 32, h: 32 } });
+    const hover = inBox(this.mouse, box);
+    const img = o.off ? "off" : hover || o.selected ? "select2" : "on";
+    h.sprite(`${key}I`, texNow(`systemUI/button_cloaking${k}_${img}.png`), x, y);
+    this.btns.push(o.off ? { box, why: o.why } : { box, act: o.act });
+  }
+
+  /**
+   * FTL's teleporter button beside its bars: send (top) lights when crew stand on the pad, return (bottom) when
+   * crew are aboard the enemy; while it recharges the striped gauge fills instead.
+   */
+  private telePanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, iconX: number, iconY: number): void {
+    const h = this.hud;
+    const x = iconX + 35;
+    const y = iconY - 36;
+    const lv = Math.min(3, this.powerOf(sys));
+    const cd = RULES.teleCooldown[lv] || 1;
+    const k = lv > 0 ? Math.min(1, (s.tele ?? 0) / cd) : 0;
+    const base = texNow("systemUI/button_teleport_base.png");
+    if (!base) return;
+    h.sprite("tpB", base, x, y);
+    const panel = { x: x + 6, y: y + 6, w: 28, h: 50 };
+    if (lv <= 0 || k < 1) {
+      // Recharging (or unpowered): the striped gauge fills from the bottom.
+      h.sprite("tpC0", texNow("systemUI/button_teleport_charging_off.png"), x, y);
+      const on = texNow("systemUI/button_teleport_charging_on.png");
+      if (on && k > 0) {
+        const top = 10 + Math.round(43 * (1 - k));
+        h.sprite("tpC1", frame(on, 0, top, 40, 53 - top), x, y + top);
+      }
+      this.btns.push({ box: panel, why: lv <= 0 ? "The teleporter needs power" : "The teleporter is charging" });
+      return;
+    }
+    const v = this.view!;
+    const g = this.own.geo;
+    const onPad = s.crew.some((c) => c.owner === v.you && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind && !c.beam && g.tiles.get(c.tile)?.room === sys.room);
+    const away = v.ships[1 - v.you].crew.some((c) => c.owner === v.you && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
+    const sendBox = { x: x + 10, y: y + 10, w: 20, h: 20 };
+    const backBox = { x: x + 10, y: y + 33, w: 20, h: 20 };
+    const img = (ok: boolean, mode: "send" | "return", b: Box) => (!ok ? "off" : this.teleMode === mode || inBox(this.mouse, b) ? "select2" : "on");
+    h.sprite("tpT", texNow(`systemUI/button_teleport_top_${img(onPad, "send", sendBox)}.png`), x, y);
+    h.sprite("tpBt", texNow(`systemUI/button_teleport_bottom_${img(away, "return", backBox)}.png`), x, y);
+    this.btns.push(
+      onPad ? { box: sendBox, act: () => this.teleClick(s, true), right: () => void (this.teleMode = null) } : { box: sendBox, why: "Move crew onto the teleporter pad first" },
+      away ? { box: backBox, act: () => this.teleClick(s, false), right: () => void (this.teleMode = null) } : { box: backBox, why: "No crew aboard the enemy ship to bring back" },
+    );
     if (this.teleMode === "send" || this.teleMode === "return") h.text("tpHint", this.teleMode === "send" ? "Click an enemy room to board" : "Click the enemy room to retrieve from", OWN.cx, 588, fstyle("JustinFont10", 0x9ff0ff, { stroke: 0x101010 }), [0.5, 0]);
   }
 
-  private cloakBtn: Box | null = null;
-  private hackBtns: { kind: "launch" | "pulse"; box: Box }[] = [];
-
-  /** A charge gauge (FTL's striped bar) filled k of the way up, cropped from the "on" art over the "off" art. */
-  private gauge(key: string, off: string, on: string, x: number, y: number, top: number, height: number, k: number): void {
-    const h = this.hud;
-    h.sprite(`${key}0`, texNow(off), x, y);
-    const t = texNow(on);
-    if (!t) return;
-    const from = top + Math.round(height * (1 - Math.max(0, Math.min(1, k))));
-    if (from < top + height) h.sprite(`${key}1`, frame(t, 0, from, t.width, top + height - from), x, y + from);
-  }
-
-  /** FTL's cloak button above its bars: lit when ready, glowing while cloaked, a filling gauge while it recharges. */
-  private cloakPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
-    const h = this.hud;
-    this.cloakBtn = null;
-    const n = Math.max(1, Math.min(3, sys.level));
-    const x = cx - 20;
-    const y = bottom - 92;
-    const base = texNow(`systemUI/button_cloaking${n}_base.png`);
-    if (!base) return;
-    h.sprite("ckB", base, x, y);
+  /** Cloaking: the button's height follows the cloak's power (its duration). */
+  private cloakPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, iconX: number, iconY: number): void {
+    const lv = Math.min(3, this.powerOf(sys));
     const c = s.cloak;
-    const lv = Math.min(3, Math.min(sys.power + (sys.bonus ?? 0), usable(sys)));
-    if ((c?.t ?? 0) > 0) {
-      this.gauge("ckG", `systemUI/button_cloaking${n}_charging_off.png`, `systemUI/button_cloaking${n}_charging_on.png`, x, y, 35, 31, (c!.t) / (RULES.cloakDuration[lv] || 1));
-      return;
-    }
-    const ready = lv > 0 && !sys.hacked && (c?.cd ?? 0) <= 0;
-    h.sprite("ckOn", texNow(`systemUI/button_cloaking${n}_${ready ? "on" : "off"}.png`), x, y);
-    if (ready) this.cloakBtn = { x: x + 4, y: y + 29, w: 32, h: 43 };
+    this.powerButton("ck", iconX, iconY, Math.max(1, lv), {
+      left: c?.t, duration: RULES.cloakDuration[Math.max(1, lv)], off: lv <= 0 || !!sys.hacked || (c?.cd ?? 0) > 0,
+      why: lv <= 0 ? "Cloaking needs power" : sys.hacked ? "Cloaking is hacked" : "Cloaking is recharging",
+      act: () => {
+        play(this.db, ["cloak"]);
+        this.send({ c: "cloak" });
+      },
+    });
   }
 
-  /** FTL's hacking panel: the top button launches the drone (one drone part), the bottom one pulses it. */
-  private hackPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
-    const h = this.hud;
-    this.hackBtns = [];
-    const x = cx - 20;
-    const y = bottom - 81;
-    const top = texNow("systemUI/button_hack2_top_base.png");
-    if (!top) return;
-    h.sprite("hkT", top, x, y);
-    h.sprite("hkBm", texNow("systemUI/button_hack2_bottom_base.png"), x, y);
+  /**
+   * Hacking, one button as in FTL: it launches the drone (one drone part), then pulses it. One power high
+   * until the drone has landed, then as high as the hacking power (the pulse's length).
+   */
+  private hackPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, iconX: number, iconY: number): void {
+    const lv = Math.min(3, this.powerOf(sys));
     const hk = s.hack;
-    const powered = usable(sys) > 0 && (sys.power + (sys.bonus ?? 0)) > 0;
-    const canLaunch = powered && !hk && (s.droneParts ?? 0) > 0;
-    const sel = this.teleMode === "hack" ? "select2" : canLaunch ? "on" : "off";
-    h.sprite("hkD", texNow(`systemUI/button_hack_drone_${sel}.png`), x, y);
-    if (canLaunch) this.hackBtns.push({ kind: "launch", box: { x: x + 10, y: y + 10, w: 20, h: 20 } });
-    const pulsing = (hk?.pulse ?? 0) > 0;
-    const ready = powered && !!hk?.attached && !pulsing && (hk?.cd ?? 0) <= 0;
-    h.sprite("hkG", texNow(pulsing ? "systemUI/button_hack_grid_purple_on.png" : ready ? "systemUI/button_hack_grid_on.png" : "systemUI/button_hack_grid_off.png"), x, y);
-    if (ready) this.hackBtns.push({ kind: "pulse", box: { x: x + 10, y: y + 36, w: 20, h: 20 } });
-    if (this.teleMode === "hack") h.text("hkHint", "Click an enemy room to attach the hacking drone", OWN.cx, 588, fstyle("JustinFont10", 0xd8a0ff, { stroke: 0x101010 }), [0.5, 0]);
+    const attached = !!hk?.attached;
+    const flying = !!hk && !attached;
+    const off = lv <= 0 || !!sys.hacked || flying || (attached && (hk?.cd ?? 0) > 0) || (!hk && (s.droneParts ?? 0) <= 0);
+    this.powerButton("hk", iconX, iconY, attached ? Math.max(1, lv) : 1, {
+      left: hk?.pulse, duration: RULES.hackPulse[Math.max(1, lv)], off, selected: this.teleMode === "hack",
+      why: lv <= 0 ? "Hacking needs power" : flying ? "The hacking drone is on its way" : !hk ? "No drone parts left" : "Hacking is recharging",
+      act: () => {
+        if (!hk) {
+          play(this.db, ["powerUpSystem"]);
+          this.teleMode = "hack";
+        } else {
+          play(this.db, ["hackStart"]);
+          this.send({ c: "hackPulse" });
+        }
+      },
+    });
+    if (this.teleMode === "hack") this.hud.text("hkHint", "Click an enemy room to attach the hacking drone", OWN.cx, 588, fstyle("JustinFont10", 0xd8a0ff, { stroke: 0x101010 }), [0.5, 0]);
   }
 
-  /**
-   * Bottom HUD layout for this frame: the weapons tray slides right for each system past five (FTL's
-   * tray fits five), the drone tray sits flush to its right, and the subsystems move right if they must.
-   */
-  private lay = { trayDx: 0, droneX0: 660, subX0: SUB_X0 };
-  private computeLayout(s: ShipView): void {
-    const main = MAIN_SYS.filter((id) => s.systems[id]).length;
-    const trayDx = Math.max(0, main - 5) * SYS_DX;
-    const boxW = (n: number) => 31 + 97 * n;
-    const wslots = Math.max(2, Math.min(4, this.db.ships[s.bp]?.weaponSlots ?? 4));
-    const weaponsRight = TRAY.x + trayDx + boxW(wslots);
-    const dslots = this.db.ships[s.bp]?.droneSlots ?? 0;
-    const hasDrones = !!s.systems.drones && dslots > 0;
-    const droneX0 = weaponsRight - 3;
-    const droneRight = hasDrones ? droneX0 + boxW(Math.max(2, Math.min(4, dslots))) : 0;
-    const base = s.systems.battery ? SUB_X0 - SYS_DX : SUB_X0;
-    // The battery's side panel needs its own 44 px left of the group.
-    this.lay = { trayDx, droneX0, subX0: Math.max(base, droneRight + 6 + (s.systems.battery ? 44 : 0)) };
-    this.trayDx = trayDx;
-  }
-
-  /** Left edge of the subsystems group. */
-  private subX0(_s: ShipView): number {
-    return this.lay.subX0;
-  }
-
-  private batteryBtn: Box | null = null;
-  private mindBtn: Box | null = null;
-  private artilleryBtn: Box | null = null;
-
-  /** Battery panel: the icon lights when it can be switched on; the gauge shows bonus time, then the lock. */
-  private batteryPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
-    const h = this.hud;
-    this.batteryBtn = null;
-    // FTL's battery frame without its pointer, standing beside the battery rather than above it.
-    const x = cx - 20;
-    const y = bottom - 92;
-    const base = texNow("systemUI/button_battery3_base.png");
-    if (!base) return;
-    h.sprite("btB", frame(base, 0, 13, 40, 79), x, y + 13);
-    const b = s.battery;
-    const g = h.gfx("btG");
-    if ((b?.t ?? 0) > 0) {
-      // Bonus power left: the warm-up bar drains.
-      const k = b!.t / RULES.batteryDuration;
-      g.rect(x + 12, y + 30 + Math.round(48 * (1 - k)), 16, Math.round(48 * k)).fill({ color: 0xffd040 });
-      return;
-    }
-    const ready = usable(sys) > 0 && !sys.hacked && (b?.cd ?? 0) <= 0;
-    h.sprite("btI", texNow(`icons/s_battery_${ready ? "green" : "grey"}1.png`), cx, y + 52, { anchor: 0.5, scale: 0.7 });
-    if (ready) this.batteryBtn = { x: x + 4, y: y + 28, w: 32, h: 50 };
-  }
-
-  /**
-   * Mind control panel, cloak-style: FTL's button (not the system icon) when it can be used; while someone
-   * is controlled the warm-up bar shows the control time left. The recharge after shows on the icon.
-   */
-  private mindPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
-    const h = this.hud;
-    this.mindBtn = null;
-    const x = cx - 20;
-    const y = bottom - 92;
-    const base = texNow("systemUI/button_cloaking2_base.png");
-    if (!base) return;
-    h.sprite("mdB", base, x, y);
+  /** Mind control: FTL draws its button at the two-power height whatever the level; the timer shows control left. */
+  private mindPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, iconX: number, iconY: number): void {
+    const lv = Math.min(3, this.powerOf(sys));
     const v = this.view!;
     const held = [...v.ships[0].crew, ...v.ships[1].crew].find((c) => c.mind?.by === s.idx);
-    if (held?.mind) {
-      const lv = Math.max(1, Math.min(3, sys.level));
-      this.gauge("mdG", "systemUI/button_cloaking2_charging_off.png", "systemUI/button_cloaking2_charging_on.png", x, y, 35, 31, held.mind.t / RULES.mindDuration[lv]);
-      return;
-    }
-    const powered = Math.min(sys.power + (sys.bonus ?? 0), usable(sys)) > 0 && !sys.hacked;
-    const ready = powered && (s.mindCd ?? 0) <= 0;
-    h.sprite("mdOn", texNow(`systemUI/button_cloaking2_${this.teleMode === "mind" ? "select2" : ready ? "on" : "off"}.png`), x, y);
-    if (ready) this.mindBtn = { x: x + 4, y: y + 29, w: 32, h: 43 };
-    if (this.teleMode === "mind") h.text("mdHint", "Click a room with enemy crew (theirs, or intruders here)", OWN.cx, 588, fstyle("JustinFont10", 0xd8a0ff, { stroke: 0x101010 }), [0.5, 0]);
+    this.powerButton("md", iconX, iconY, 2, {
+      left: held?.mind?.t, duration: RULES.mindDuration[Math.max(1, lv)], off: lv <= 0 || !!sys.hacked || (s.mindCd ?? 0) > 0,
+      selected: this.teleMode === "mind", why: lv <= 0 ? "Mind control needs power" : "Mind control is recharging",
+      act: () => {
+        play(this.db, ["powerUpSystem"]);
+        this.teleMode = "mind";
+      },
+    });
+    if (this.teleMode === "mind") this.hud.text("mdHint", "Click a room with enemy crew (theirs, or intruders here)", OWN.cx, 588, fstyle("JustinFont10", 0xd8a0ff, { stroke: 0x101010 }), [0.5, 0]);
   }
+
+  /** The battery: FTL's three-high power button (its own base art), right of the right-most subsystem. */
+  private batteryPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, iconX: number, iconY: number): void {
+    const b = s.battery;
+    this.powerButton("bt", iconX, iconY, 3, {
+      base: "systemUI/button_battery3_base.png", left: b?.t, duration: RULES.batteryDuration,
+      off: usable(sys) <= 0 || !!sys.hacked || sys.ion > 0 || (b?.cd ?? 0) > 0, why: usable(sys) <= 0 ? "The battery is damaged" : "The battery is recharging",
+      act: () => {
+        play(this.db, ["batteryStart"]);
+        this.send({ c: "battery" });
+      },
+    });
+  }
+
+  /**
+   * The clone bay's queue, stacked above its bars as FTL draws it (clonebar_small_*): up to three boxes with the
+   * dead crew members' portraits; the first fills green as it's cloned. Switched off, the top one fills from
+   * the top in red as it's about to be lost.
+   */
+  private cloneQueue(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, iconX: number): void {
+    const h = this.hud;
+    const queue = s.crew.filter((c) => c.dead && c.clone !== undefined).sort((a, b) => (a.diedAt ?? 0) - (b.diedAt ?? 0) || a.id - b.id);
+    if (!queue.length) return;
+    const qx = iconX + 6;
+    let bottom = 657 - (sys.level - 1) * this.pitch(sys.level) - 7;
+    const n = Math.min(3, queue.length);
+    const on = this.powerOf(sys) > 0 && !sys.hacked;
+    const fill = texNow("systemUI/clonebar_small_fill.png");
+    for (let i = 0; i < n; i++) {
+      const part = n === 1 ? "solo" : i === 0 ? "bottom" : i === n - 1 ? "top" : "middle";
+      const img = texNow(`systemUI/clonebar_small_${part}.png`);
+      const off = i === n - 1 ? 29 : 23;
+      if (img) h.sprite(`cq${i}`, img, qx, bottom - off);
+      else h.gfx(`cqg${i}`).rect(qx + 8, bottom - 21, 36, 22).stroke({ color: 0xe8ece8, width: 2 });
+      const wx = qx + 9;
+      const wy = bottom - 20;
+      if (i === 0 && on && fill) {
+        const hh = Math.round((queue[0].clone ?? 0) * 20);
+        if (hh > 0) h.sprite(`cqf${i}`, frame(fill, 0, 20 - hh, 34, hh), wx, wy + 20 - hh, { tint: 0x40ff40 });
+      }
+      if (i === n - 1 && queue.length > n) h.text(`cqn${i}`, `+${queue.length - (n - 1)}`, wx + 17, wy + 3, fstyle("JustinFont10", 0xffffff), [0.5, 0]);
+      else {
+        const c = queue[i];
+        const race = this.db.animSheets[c.race] ? c.race : "human";
+        const por = animFrame(this.db, `${race}_portrait`, 0);
+        if (por) h.sprite(`cqp${i}`, por, wx + 17, wy + 10, { anchor: 0.5 });
+      }
+      if (i === n - 1 && !on && fill && (s.cloneDying ?? 0) > 0) {
+        const hh = Math.round((s.cloneDying ?? 0) * 20);
+        if (hh > 0) h.sprite(`cqd${i}`, frame(fill, 0, 0, 34, hh), wx, wy, { tint: 0xff3020, alpha: 0.85 });
+      }
+      bottom -= 23;
+    }
+  }
+
+  /**
+   * Bottom HUD layout for this frame, FTL's own (PlayerShipUI): from x 58, each main system takes 36 px, 54 if it
+   * has a button beside it, and weapons / drones take 48 + 97 per slot because their trays sit right after
+   * them. If a big build would run into the subsystems, the plain systems squeeze up (never the trays).
+   */
+  private lay: { sysX: Partial<Record<SystemId, number>>; weaponsBox: number; droneBox: number } = { sysX: {}, weaponsBox: TRAY.x, droneBox: 660 };
+  private computeLayout(s: ShipView): void {
+    const present = MAIN_SYS.filter((id) => s.systems[id]);
+    const wslots = Math.max(2, Math.min(4, this.db.ships[s.bp]?.weaponSlots ?? 4));
+    const dslots = Math.max(2, Math.min(4, this.db.ships[s.bp]?.droneSlots ?? 2));
+    const tray = (id: SystemId) => id === "weapons" || id === "drones";
+    const step = (id: SystemId) => (id === "weapons" ? 48 + wslots * 97 : id === "drones" ? 48 + dslots * 97 : BUTTON_SYS.includes(id) ? 54 : 36);
+    const width = (id: SystemId) => (id === "weapons" ? 32 + 31 + 97 * wslots : id === "drones" ? 32 + 31 + 97 * dslots : BUTTON_SYS.includes(id) ? 80 : 64);
+    const plain = present.slice(0, -1).filter((id) => !tray(id)).reduce((a, id) => a + step(id), 0);
+    const fixed = present.slice(0, -1).filter(tray).reduce((a, id) => a + step(id), 0);
+    const last = present[present.length - 1];
+    const rightEdge = SYS_X0 + plain + fixed + (last ? width(last) : 0);
+    const limit = SUB_X0 - 6;
+    const f = rightEdge > limit && plain > 0 ? Math.max(0.55, 1 - (rightEdge - limit) / plain) : 1;
+    const sysX: Partial<Record<SystemId, number>> = {};
+    let x = SYS_X0;
+    for (const id of present) {
+      sysX[id] = Math.round(x);
+      x += tray(id) ? step(id) : step(id) * f;
+    }
+    // A ship without a weapons system still shows its tray, after the last system.
+    const weaponsBox = sysX.weapons !== undefined ? sysX.weapons + 32 : Math.round(x) + 32;
+    const droneBox = sysX.drones !== undefined ? sysX.drones + 32 : weaponsBox + 31 + 97 * wslots;
+    this.lay = { sysX, weaponsBox, droneBox };
+    this.trayDx = weaponsBox - TRAY.x;
+  }
+
+  private artilleryBtn: Box | null = null;
 
   /** Artillery: FTL's tall charge frame filling up; click it, then an enemy room to aim (right-click: random). */
   private artilleryPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
@@ -1342,31 +1439,32 @@ export class Battle {
     this.teleMode = out ? "send" : "return";
   }
 
-  /** Bottom right: piloting, sensors and doors with the SUBSYSTEMS tab and FTL's door button. */
+  /** Bottom right: piloting, sensors, doors and the battery at FTL's fixed spots, with the SUBSYSTEMS tab and door buttons. */
   private subsystems(s: ShipView): void {
     const h = this.hud;
-    const subs = SUB_SYS.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
     const tab = texNow("box_subsystems4.png");
-    // The tab sits under piloting, sensors and doors (the battery, when fitted, stands to its left).
-    const tabX = this.subX0(s) + (s.systems.battery ? SYS_DX : 0) + 7;
+    const tabX = SUB_X0 + 7;
     if (tab) h.sprite("subTab", tab, tabX, 664);
     else h.gfx("subTabG").roundRect(1024, 666, 165, 34, 4).fill({ color: 0xd8e4dc });
     this.label("subT", "SUBSYSTEMS", tabX + 12, 669);
-    subs.forEach((sys, i) => {
-      const cx = this.subX0(s) + 32 + i * SYS_DX;
+    for (const id of SUB_SYS) {
+      const sys = s.systems[id];
+      if (!sys) continue;
+      const ix = SUB_X0 + (SUB_OFF[id] ?? 0);
+      const cx = ix + 32;
       this.bars(`sb${sys.id}`, sys, cx, 639);
       if (this.manned(s, sys.id)) h.sprite(`smn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 639 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`);
       if (sys.locked) h.sprite(`hk${sys.id}`, texNow("icons/s_hacked.png"), cx + 10, SUB_ICON_Y + 12, { anchor: 0.5 });
-      if (sys.id === "battery") this.batteryPanel(s, sys, cx - 36, 690);
+      if (sys.id === "battery") this.batteryPanel(s, sys, ix, SUB_ICON_Y);
       if (icon) {
-        if (sys.ion <= 0 && this.lockLeft(s, sys.id) <= 0) h.sprite(`ssi${sys.id}`, icon, this.subX0(s) + i * SYS_DX, SUB_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
+        if (sys.ion <= 0 && this.lockLeft(s, sys.id) <= 0) h.sprite(`ssi${sys.id}`, icon, ix, SUB_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
       } else if (sys.ion <= 0) h.text(`ssi${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SUB_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
-    });
+    }
     this.doorBtns = [];
     if (s.systems.doors) {
       // FTL's door controls stand over the doors subsystem.
-      const bx = this.subX0(s) + SUB_SYS.filter((x) => s.systems[x]).indexOf("doors") * SYS_DX + 35;
+      const bx = SUB_X0 + (SUB_OFF.doors ?? 72) + 35;
       const by = 597;
       const base = texNow("systemUI/button_door_base.png");
       if (base) {
@@ -1421,19 +1519,11 @@ export class Battle {
       const ceil = Math.max(4, Math.round((full * Math.min(1, cd / baseCd)) / 2) * 2);
       const k = ready ? 1 : Math.min(1, Math.max(0, w.charge) / cd);
       const fill = Math.floor((ceil * k) / 2) * 2;
-      g.rect(bx + 4.5, by + 4.5, 5, full + 1).stroke({ color: w.powered ? 0x506a50 : 0x5a5e5a, width: 1 });
-      g.rect(bx + 4.5, by + 4.5 + (full - ceil), 5, ceil + 1).stroke({ color: w.powered ? 0x78ff78 : 0x8a8e8a, width: 1 });
+      // FTL draws the bar's border white, and the part manning and chain boosts cut off the top (the bonus) as
+      // a white block; chain weapons show their boosts as lights on the gun, not here.
+      g.rect(bx + 4.5, by + 4.5, 5, full + 1).stroke({ color: w.powered ? 0xe8ece8 : 0x8a8e8a, width: 1 });
+      if (ceil < full) g.rect(bx + 5, by + 5, 4, full - ceil).fill({ color: w.powered ? 0xe8ece8 : 0x8a8e8a });
       if (fill > 0) g.rect(bx + 5, by + 5 + full - fill, 4, fill).fill({ color: 0x78ff78 });
-      // Chain weapons: one pip per possible boost, lit as charges build up.
-      if (bp?.boost) {
-        const on = texNow("combatUI/icon_chain_on.png");
-        const off = texNow("combatUI/icon_chain_off.png");
-        for (let c = 0; c < bp.boost.count; c++) {
-          const lit = c < w.boost;
-          if (on && off) h.sprite(`ch${i}_${c}`, lit ? on : off, bx + 34 + c * 12, by + SLOT.h - 13);
-          else g.rect(bx + 34 + c * 10, by + SLOT.h - 12, 8, 6).fill({ color: lit ? 0xffd040 : 0x303030 });
-        }
-      }
       // Power bars, bottom left, one per power the weapon needs.
       const pw = bp?.power ?? 1;
       for (let p = 0; p < pw; p++) {
@@ -1452,7 +1542,8 @@ export class Battle {
     }
     // AUTOFIRE: a tab under the right end of the tray, lit when any weapon autofires.
     const anyAuto = this.autoMode;
-    const ax = 527 + this.trayDx;
+    // Under the right end of the tray, whatever its size.
+    const ax = TRAY.x + this.trayDx + 31 + 97 * slots - 126;
     const ay = 668;
     const ab = h.gfx("autoBtn");
     ab.poly([ax + 6, ay, ax + 112, ay, ax + 118, ay + 6, ax + 118, ay + 24, ax + 112, ay + 29, ax + 6, ay + 29, ax, ay + 24, ax, ay + 6])
@@ -1473,7 +1564,7 @@ export class Battle {
     if (!slots || !s.systems.drones) return;
     const n = Math.max(2, Math.min(4, slots));
     // Flush to the right of the weapons tray, as in FTL.
-    const x0 = this.lay.droneX0;
+    const x0 = this.lay.droneBox;
     const dy = 0;
     const boxT = texNow(`box_weapons_bottom${n}.png`);
     const g = h.gfx("dtray");
@@ -1490,8 +1581,8 @@ export class Battle {
         continue;
       }
       const usableHere = ACTIVE_DRONES.includes(bp.type);
-      const edge = d.deployed ? 0x78ff78 : d.powered ? 0xffd040 : 0x8a8e8a;
-      g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).fill({ color: d.deployed ? 0x1d3a1f : 0x0f1414, alpha: 0.9 }).stroke({ color: edge, width: 2 });
+      const edge = d.deployed && d.powered ? 0x78ff78 : d.powered ? 0xffd040 : 0x8a8e8a;
+      g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).fill({ color: d.deployed && d.powered ? 0x1d3a1f : 0x0f1414, alpha: 0.9 }).stroke({ color: edge, width: 2 });
       for (let p = 0; p < bp.power; p++) {
         const py = by + SLOT.h - 11 - p * 8;
         if (d.powered) g.rect(bx + 5, py, 16, 6).fill({ color: 0x78ff78 });
@@ -1499,7 +1590,7 @@ export class Battle {
       }
       const short = bp.title.replace(/ Drone/, "").replace("Mark ", "").trim();
       h.text(`dn${i}`, short.length > 14 ? `${short.slice(0, 13)}.` : short, bx + 54, by + 4, fstyle("JustinFont10", usableHere ? (d.powered ? 0xffffff : 0x9aa09a) : 0x707070), [0.5, 0]);
-      const status = (d.rebuild ?? 0) > 0 ? `rebuilding ${Math.ceil(d.rebuild ?? 0)}s` : !usableHere ? "coming later" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
+      const status = (d.rebuild ?? 0) > 0 ? `rebuilding ${Math.ceil(d.rebuild ?? 0)}s` : !usableHere ? "coming later" : d.deployed && !d.powered ? "offline" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
       if (status) h.text(`ds${i}`, status, bx + 26, by + SLOT.h - 12, fstyle("JustinFont8", d.deployed ? 0x9fe89f : 0xffd040));
       this.droneHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
     }
@@ -1516,37 +1607,115 @@ export class Battle {
     const r = (owner === v.you) !== aroundEnemy ? this.own : this.enemy;
     const b = r.bounds();
     const c = r.gridCentre();
-    const lx = c.x + Math.cos(d.angle) * (b.w / 2 + 30);
-    const ly = c.y + Math.sin(d.angle) * (b.h / 2 + 24);
+    // Between snapshots the orbit angle is interpolated, so drones glide instead of stepping at 15 Hz.
+    const was = this.prev?.ships[owner].drones?.[slot]?.angle ?? d.angle;
+    const ang = was + (d.angle - was) * this.snapK;
+    const lx = c.x + Math.cos(ang) * (b.w / 2 + 30);
+    const ly = c.y + Math.sin(ang) * (b.h / 2 + 24);
     return this.stage.toLocal(r.root.toGlobal({ x: lx, y: ly }));
+  }
+
+  /** When each ship's hacking drone last landed (the probe extends over a moment). */
+  private hackLandAt = new Map<number, number>();
+
+  /**
+   * Where a hacking drone clamps on (ship grid pixels) and its turn (the art's probe points down): the outer
+   * wall of the target room, if the room reaches the outside on some side, else the nearest outer wall to it.
+   */
+  private hackSpot(r: ShipRenderer, room: number): { x: number; y: number; rot: number } | null {
+    const g = r.geo;
+    const own = g.roomTiles.get(room);
+    if (!own?.length) return null;
+    const dirs: [number, number, number][] = [[0, -1, 0], [-1, 0, -Math.PI / 2], [0, 1, Math.PI], [1, 0, Math.PI / 2]];
+    const outer = (tiles: string[]) =>
+      tiles.flatMap((t) => {
+        const [tx, ty] = t.split(",").map(Number);
+        return dirs
+          .filter(([dx, dy]) => {
+            for (let i = 1; i < 40; i++) if (g.tiles.has(`${tx + dx * i},${ty + dy * i}`)) return false;
+            return true;
+          })
+          .map(([dx, dy, rot]) => ({ x: (tx + 0.5 + dx * 0.5) * 35, y: (ty + 0.5 + dy * 0.5) * 35, rot }));
+      });
+    const xs = own.map((t) => Number(t.split(",")[0]));
+    const ys = own.map((t) => Number(t.split(",")[1]));
+    const cx = ((Math.min(...xs) + Math.max(...xs)) / 2 + 0.5) * 35;
+    const cy = ((Math.min(...ys) + Math.max(...ys)) / 2 + 0.5) * 35;
+    const cands = outer(own);
+    const pool = cands.length ? cands : outer([...g.tiles.keys()]);
+    if (!pool.length) return null;
+    return pool.reduce((a, b) => (Math.hypot(b.x - cx, b.y - cy) < Math.hypot(a.x - cx, a.y - cy) - 0.01 ? b : a));
   }
 
   /** Where each drone (`ship:slot`) last aimed, in stage coordinates. */
   private droneAim = new Map<string, { x: number; y: number }>();
+  private droneRot = new Map<string, number>();
+
+  /** Ease a sprite's rotation toward `target` at `rate` (per second; 0 holds it), the short way round. */
+  private turn(key: string, target: number, rate: number): number {
+    const cur = this.droneRot.get(key);
+    if (cur === undefined) {
+      this.droneRot.set(key, target);
+      return target;
+    }
+    let diff = (target - cur) % (Math.PI * 2);
+    if (diff > Math.PI) diff -= Math.PI * 2;
+    if (diff < -Math.PI) diff += Math.PI * 2;
+    const next = cur + diff * Math.min(1, this.frameDt * rate);
+    this.droneRot.set(key, next);
+    return next;
+  }
 
   private drawDrones(v: MatchView): void {
-    // Hacking drones sit on the room they hacked (FTL's landing strip, last frame), lights blinking while pulsing.
+    // Hacking drones clamp onto the hull just outside the room they hacked (never over a room), probe in; while
+    // a pulse runs, purple lightning crackles across the room.
     for (const s of v.ships) {
       if (!s.hack?.attached) continue;
       const r = s.idx === v.you ? this.enemy : this.own;
-      const tiles = r.geo.roomTiles.get(s.hack.room);
-      const strip = texNow("ship/drones/drone_hack_land.png");
-      if (!tiles?.length || !strip) continue;
-      const xs = tiles.map((t) => Number(t.split(",")[0]));
-      const ys = tiles.map((t) => Number(t.split(",")[1]));
-      const c = this.stage.toLocal(r.root.toGlobal({ x: ((Math.min(...xs) + Math.max(...xs)) / 2 + 0.5) * 35, y: ((Math.min(...ys) + Math.max(...ys)) / 2 + 0.5) * 35 }));
-      const sp = new Sprite(frame(strip, 4 * 31, 0, 31, 49));
-      sp.anchor.set(0.5);
-      sp.position.set(c.x, c.y);
-      (s.idx === v.you ? this.projWin : this.projOwn).addChild(sp);
-      if (s.hack.pulse > 0) {
-        const lt = texNow(Math.floor(this.time * 6) % 2 ? "ship/drones/drone_hack_light1.png" : "ship/drones/drone_hack_light2.png");
-        if (lt) {
-          const l = new Sprite(frame(lt, 4 * 31, 0, Math.min(31, lt.width), Math.min(49, lt.height)));
-          l.anchor.set(0.5);
-          l.position.set(c.x, c.y);
-          (s.idx === v.you ? this.projWin : this.projOwn).addChild(l);
+      const spot = this.hackSpot(r, s.hack.room);
+      const strip = texNow("ship/drones/drone_hack_extend.png");
+      if (!spot) continue;
+      const layer = s.idx === v.you ? this.projWin : this.projOwn;
+      const at = this.stage.toLocal(r.root.toGlobal({ x: spot.x, y: spot.y }));
+      const landed = this.time - (this.hackLandAt.get(s.idx) ?? -9);
+      const fr = Math.min(4, Math.floor(landed / 0.1));
+      if (strip) {
+        const sp = new Sprite(frame(strip, fr * 31, 0, 31, 49));
+        sp.anchor.set(0.5, 0.92);
+        sp.position.set(at.x, at.y);
+        sp.rotation = spot.rot + r.root.rotation;
+        layer.addChild(sp);
+        if (s.hack.pulse > 0) {
+          const lt = texNow(Math.floor(this.time * 6) % 2 ? "ship/drones/drone_hack_light1.png" : "ship/drones/drone_hack_light2.png");
+          if (lt) {
+            const l = new Sprite(lt);
+            l.anchor.set(0.5, 0.92);
+            l.position.set(at.x, at.y);
+            l.rotation = sp.rotation;
+            layer.addChild(l);
+          }
         }
+      }
+      if (s.hack.pulse > 0) {
+        const tiles = r.geo.roomTiles.get(s.hack.room) ?? [];
+        const seed = Math.floor(this.time * 12);
+        const g = new Graphics();
+        for (let i = 0; i < 3 && tiles.length; i++) {
+          const [tx, ty] = tiles[Math.floor(hash01(seed * 7 + i) * tiles.length)].split(",").map(Number);
+          const end = this.stage.toLocal(r.root.toGlobal({ x: (tx + 0.2 + 0.6 * hash01(seed + i * 3)) * 35, y: (ty + 0.2 + 0.6 * hash01(seed + i * 5)) * 35 }));
+          const pts: [number, number][] = [[at.x, at.y]];
+          for (let j = 1; j < 6; j++) {
+            const q = j / 6;
+            pts.push([at.x + (end.x - at.x) * q + (hash01(seed * 31 + i * 11 + j) - 0.5) * 14, at.y + (end.y - at.y) * q + (hash01(seed * 17 + i * 13 + j) - 0.5) * 14]);
+          }
+          pts.push([end.x, end.y]);
+          for (const [w, c, al] of [[5, 0x9a40ff, 0.35], [2, 0xe0b0ff, 0.95]] as const) {
+            g.moveTo(pts[0][0], pts[0][1]);
+            for (const [x, y] of pts.slice(1)) g.lineTo(x, y);
+            g.stroke({ color: c, width: w, alpha: al });
+          }
+        }
+        layer.addChild(g);
       }
     }
     const layerFor = (owner: 0 | 1, type: string) => ((owner === v.you) !== (type === "COMBAT") ? this.projOwn : this.projWin);
@@ -1556,7 +1725,8 @@ export class Battle {
         if (!bp || !d.deployed || UNIT_DRONES.includes(bp.type)) continue;
         const p = this.dronePos(owner, d.slot);
         if (!p) continue;
-        const t = texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
+        // Offline drones (their power cut) go dark and drift where they are.
+        const t = (d.powered ? texNow(`ship/drones/${bp.image}_on.png`) : null) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
         const layer = layerFor(owner, bp.type);
         // The art points up: turn it toward what it last shot at, else the ship it circles (combat) or
         // away from its own ship (defense, repair).
@@ -1564,7 +1734,8 @@ export class Battle {
         const c = this.stage.toLocal(r.root.toGlobal(r.gridCentre()));
         const aim = this.droneAim.get(`${owner}:${d.slot}`);
         const face = bp.type === "COMBAT" ? (aim ?? c) : { x: 2 * p.x - c.x, y: 2 * p.y - c.y };
-        const rot = Math.atan2(face.y - p.y, face.x - p.x) + Math.PI / 2;
+        // Turn toward the new heading gradually rather than snapping to it.
+        const rot = this.turn(`d${owner}:${d.slot}`, Math.atan2(face.y - p.y, face.x - p.x) + Math.PI / 2, d.powered ? 7 : 0);
         if (t) {
           const sp = new Sprite(t);
           sp.anchor.set(0.5);
@@ -1580,7 +1751,7 @@ export class Battle {
             gs.anchor.set(0.5);
             gs.position.set(p.x, p.y);
             gs.scale.set(0.8);
-            gs.rotation = aim ? Math.atan2(aim.y - p.y, aim.x - p.x) + Math.PI / 2 : rot;
+            gs.rotation = this.turn(`g${owner}:${d.slot}`, aim ? Math.atan2(aim.y - p.y, aim.x - p.x) + Math.PI / 2 : rot, d.powered ? 9 : 0);
             if (owner !== v.you) gs.tint = 0xffd0d0;
             layer.addChild(gs);
           }
@@ -1636,13 +1807,15 @@ export class Battle {
       }
       if (d.powered) return;
       if ((d.rebuild ?? 0) > 0) return this.fail("That drone is still being rebuilt");
+      const offline = d.deployed;
       if (!ACTIVE_DRONES.includes(bp.type)) return this.fail("This drone isn't in the arena yet");
       const ds = own.systems.drones;
       if (!ds || ds.ion > 0) return this.fail(ds ? "Drones are locked by ion damage" : "No drone system");
       const load = (own.drones ?? []).filter((q) => q.powered).reduce((a, q) => a + (this.db.droneBPs[q.bp]?.power ?? 1), 0);
       if (load + bp.power > usable(ds)) return this.fail("Not enough drone system power");
-      if ((own.droneParts ?? 0) <= 0) return this.fail("No drone parts left");
-      play(this.db, ["powerUpSystem", "droneLaunch"]);
+      // An offline drone is still out there: it comes back on without a new part.
+      if (!offline && (own.droneParts ?? 0) <= 0) return this.fail("No drone parts left");
+      play(this.db, offline ? ["powerUpSystem"] : ["powerUpSystem", "droneLaunch"]);
       this.send({ c: "dronePower", slot: dh.slot, on: true });
       return;
     }
@@ -1650,12 +1823,13 @@ export class Battle {
       if (!inBox(p, b.box)) continue;
       const g = this.own.geo;
       if (b.kind === "assign") {
-        for (const c of own.crew) if (!c.dead && c.owner === v.you && c.drone === undefined) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
+        // Only crew aboard (and not mind controlled) are saved; boarders and the dead keep their old spot, or none.
+        for (const c of own.crew) if (!c.dead && c.dying === undefined && c.owner === v.you && c.drone === undefined && !c.mind && !c.beam) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
         play(this.db, ["powerUpSystem"]);
         this.say("Crew positions saved");
       } else {
         if (!this.savedStations.size) return this.fail("No crew positions saved yet");
-        for (const [id, room] of this.savedStations) if (own.crew.find((c) => c.id === id && !c.dead)) this.send({ c: "moveCrew", crew: [id], room });
+        for (const [id, room] of this.savedStations) if (own.crew.find((c) => c.id === id && !c.dead && c.owner === v.you && !c.mind)) this.send({ c: "moveCrew", crew: [id], room });
         play(this.db, ["powerUpSystem"]);
         this.say("Crew returning to saved positions");
       }
@@ -1667,39 +1841,20 @@ export class Battle {
       this.selected.add(c.id);
       return;
     }
-    for (const b of this.teleBtns) {
+    for (const b of this.btns) {
       if (!inBox(p, b.box)) continue;
-      if (right) return void (this.teleMode = null);
-      return this.teleClick(own, b.out);
-    }
-    if (this.telePanelBox && this.teleWhy && inBox(p, this.telePanelBox)) return this.fail(this.teleWhy);
-    if (this.batteryBtn && inBox(p, this.batteryBtn) && !right) {
-      play(this.db, ["batteryStart"]);
-      return this.send({ c: "battery" });
-    }
-    if (this.mindBtn && inBox(p, this.mindBtn) && !right) {
-      play(this.db, ["powerUpSystem"]);
-      this.teleMode = "mind";
-      return;
+      if (right) {
+        this.teleMode = null;
+        b.right?.();
+        return;
+      }
+      if (b.act) return b.act();
+      return this.fail(b.why ?? "Not available");
     }
     if (this.artilleryBtn && inBox(p, this.artilleryBtn)) {
       if (right) return this.send({ c: "artilleryTarget", room: null });
       play(this.db, ["powerUpSystem"]);
       this.teleMode = "artillery";
-      return;
-    }
-    if (this.cloakBtn && inBox(p, this.cloakBtn) && !right) {
-      play(this.db, ["cloak"]);
-      return this.send({ c: "cloak" });
-    }
-    for (const b of this.hackBtns) {
-      if (!inBox(p, b.box) || right) continue;
-      if (b.kind === "pulse") {
-        play(this.db, ["hackStart"]);
-        return this.send({ c: "hackPulse" });
-      }
-      play(this.db, ["powerUpSystem"]);
-      this.teleMode = "hack";
       return;
     }
     const ep = this.enemy.root.toLocal(e.global);
@@ -1815,15 +1970,10 @@ export class Battle {
       return this.clickWeapon(powered[powered.length - 1], true);
     }
     if (id === "drones") {
-      // Like weapons: the next drone in slot order launches; right-click recalls the last powered one.
+      // Drones are powered one at a time from their boxes in the drone tray (clicking the system itself never
+      // launches one); right-click switches off the last powered drone.
       const ds = own.drones ?? [];
-      if (delta > 0) {
-        const i = ds.findIndex((d) => !d.powered && !(d.rebuild ?? 0) && ACTIVE_DRONES.includes(this.db.droneBPs[d.bp]?.type ?? ""));
-        if (i < 0) return this.fail("No drone ready to launch");
-        const hit = this.droneHit.find((x) => x.slot === i);
-        if (hit) return this.onDown({ global: this.stage.toGlobal({ x: hit.box.x + 5, y: hit.box.y + 5 }), button: 0, shiftKey: false } as unknown as FederatedPointerEvent);
-        return;
-      }
+      if (delta > 0) return this.fail("Power drones from the drone tray");
       const powered = ds.map((d, i) => (d.powered ? i : -1)).filter((i) => i >= 0);
       if (!powered.length) return void play(this.db, ["powerUpFail"]);
       play(this.db, ["powerDownSystem"]);

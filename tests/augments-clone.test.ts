@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placeholderDb, type GameDB } from "@ftl/data";
-import { baseLoadout, DEFAULT_CONFIG, Match, priceLoadout, viewFor } from "@ftl/sim";
+import { baseLoadout, DEFAULT_CONFIG, Match, priceLoadout, RULES, viewFor } from "@ftl/sim";
 
 function dbWithAugs(): GameDB {
   const db = placeholderDb();
@@ -63,9 +63,11 @@ describe("clone bay", () => {
       for (let i = 0; i < 40; i++) m.step();
       expect(victim.dead).toBe(true);
       expect(victim.clone).toBeDefined();
-      // Cut the power for a moment.
+      // Cut the power: a moment is survivable, but after 3 s off the last in the queue is lost (FTL).
       cb.damage = cb.level;
       m.step();
+      expect(victim.clone).toBeDefined();
+      for (let i = 0; i < 30 * RULES.cloneLoss; i++) m.step();
       expect(victim.clone !== undefined).toBe(dna);
       cb.damage = 0;
       cb.power = 1;
@@ -73,6 +75,29 @@ describe("clone bay", () => {
       expect(victim.dead).toBe(!dna);
       if (dna) expect(victim.hp).toBe(victim.maxHp);
     }
+  });
+  it("clones one at a time, in the order they died, and never onto the bay's equipment tile", () => {
+    const db = dbWithAugs();
+    const base = baseLoadout(db, "PH_SKIFF");
+    const lo = { ...base, systems: { ...base.systems, medbay: 0, clonebay: 1 }, crew: [...base.crew, { name: "Spare", race: "human" }] };
+    const m = new Match(db, DEFAULT_CONFIG, [lo, base], ["a", "b"]);
+    const s = m.state.ships[0];
+    const cb = s.systems.clonebay!;
+    m.step();
+    if (cb.power === 0) cb.power = 1;
+    const [first, second] = s.crew;
+    first.hp = 0;
+    m.step();
+    second.hp = 0;
+    for (let i = 0; i < 40; i++) m.step();
+    expect(first.dead && second.dead).toBe(true);
+    // 12 s at level 1: the first is back, the second still waiting.
+    for (let i = 0; i < 30 * (RULES.cloneTime[1] + 0.2); i++) m.step();
+    expect(first.dead).toBe(false);
+    expect(second.dead).toBe(true);
+    expect(first.tile).not.toBe(cb.blocked ?? "none");
+    for (let i = 0; i < 30 * (RULES.cloneTime[1] + 0.2); i++) m.step();
+    expect(second.dead).toBe(false);
   });
 });
 

@@ -39,11 +39,11 @@ export const RULES = {
   ionDuration: 5,
   /** Stun seconds for weapons with stunChance but no explicit stun (est). */
   defaultStun: 3,
-  /** Medbay healing, HP/s by power 0..3 (est). */
-  medbayHeal: [0, 6.4, 16, 25.6],
-  /** O2: refill %/s per room by oxygen power 0..3; drain %/s with no oxygen (est). */
+  /** Medbay healing, HP/s by power 0..3 (wiki: x1 / x1.5 / x3). It heals crew fighting in it too. */
+  medbayHeal: [0, 6.4, 9.6, 19.2],
+  /** O2: refill %/s per room by oxygen power 0..3 (est); drain %/s with the oxygen system off (wiki 1.2). */
   o2Refill: [0, 1.2, 3.0, 5.0],
-  o2Drain: 0.35,
+  o2Drain: 1.2,
   /** Breach drain %/s per breached tile, scaled by 4/roomTiles (est). */
   breachDrain: 3.0,
   /** Airlock door open to space: %/s (est). */
@@ -52,8 +52,8 @@ export const RULES = {
   ventPull: 12,
   /** Door O2 equalisation rate (fraction of the difference per second); fast enough that an open ship vents in ~15-20 s (est). */
   doorFlow: 0.8,
-  /** Below this O2 % crew suffocate at suffocateDps (est). */
-  suffocateAt: 10,
+  /** Below this O2 % crew suffocate at suffocateDps; FTL's warning stripes show at the same level (wiki 5 %). */
+  suffocateAt: 5,
   suffocateDps: 5,
   /** Fire: HP of a new fire tile, per-second spread chance, burn-out below this O2 %, damages (est). */
   fireHp: 100,
@@ -82,8 +82,12 @@ export const RULES = {
   unlimitedReactor: 60,
   /** Death animation length (5 frames). */
   deathAnim: 0.9,
-  /** Clone bay: seconds to clone by power 0..3 (est). */
+  /** Clone bay: seconds to clone by power 0..3 (wiki), one crew member at a time; switched off, it loses the
+   * last in its queue every `cloneLoss` s (wiki); the materialise animation lasts `cloneSpawn` s (FTL's
+   * <race>_clone anim). */
   cloneTime: [0, 12, 9, 7],
+  cloneLoss: 3,
+  cloneSpawn: 0.75,
   /** Zoltan Shield (ENERGY_SHIELD augment): super-shield points at battle start; it doesn't recharge in combat (est 5). */
   zoltanShield: 5,
   /** Fire spread across a door: x0.5 when closed, then x(1 - 0.18 per door level). */

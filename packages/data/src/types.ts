@@ -179,7 +179,8 @@ export interface ShipSystemSlot {
   /** Enemy blueprints: the most bars this system can be given. */
   max?: number;
   start: boolean;
-  /** Station tile index inside the room (row-major), -1 when the system has no station. */
+  /** Station tile index inside the room (row-major), -1 when the system has no station. For the medbay and
+   * clone bay it's the tile their equipment blocks (-2: none). */
   station: number;
   /** Which way the crew member at the station faces (towards the computer). */
   facing?: "up" | "down" | "left" | "right";
@@ -238,6 +239,8 @@ export interface WeaponAnim {
   fireFrame: number;
   firePoint: { x: number; y: number };
   mountPoint: { x: number; y: number };
+  /** Chain and charge weapons: an anim whose frames light up on the gun as boosts / charges build. */
+  boost?: string;
 }
 
 export interface Anim {
@@ -266,6 +269,8 @@ export interface GameDB {
   music: { name: string; explore?: string; combat?: string }[];
   /** Crew name pool (names.xml). */
   names: string[];
+  /** Human names FTL lists as female (they get FTL's female death cries). */
+  femaleNames?: string[];
   augments: Record<string, AugmentBP>;
   droneBPs: Record<string, DroneBP>;
   /** Single-player enemy hulls the practice bot can fly. */

@@ -34,9 +34,9 @@ runtime from your own blueprints** and aren't repeated here.
 | Repair | 1/6 bar per second per crew, +10/20 % by repair skill | est |
 | Firefighting / breach repair | 28 / 20 fire or breach HP per second per crew (100 HP per tile) | est |
 | Fire | spreads 5 %/s per burning tile (through open doors only), starves below 10 % O2, uses 1.2 % O2/s, burns crew 8 HP/s, one system bar per 10 burning-tile-seconds | est |
-| O2 | refill 1.2 / 3 / 5 %/s by oxygen power; −0.35 %/s with none; breach −3 %/s per tile scaled to room size; open airlock −15 %/s; open doors equalise | est |
-| Suffocation | below 5 % O2, 5 HP/s | est |
-| Medbay | 6.4 / 16 / 25.6 HP/s by power | est |
+| O2 | refill 1.2 / 3 / 5 %/s by oxygen power (est); −1.2 %/s with the system off (wiki); breach −3 %/s per tile scaled to room size; open airlock −15 %/s; open doors equalise | est / wiki |
+| Suffocation | below 5 % O2 (where FTL's warning stripes appear), 5 HP/s | wiki / est |
+| Medbay | 6.4 / 9.6 / 19.2 HP/s by power; it heals crew fighting in it | wiki |
 | Skill XP thresholds | pilot/engines 15/30, shields 55/110, weapons 65/130, repair 18/36 | wiki |
 | Store prices | blueprint `cost`; missiles 6; crew from the race blueprint; sell refund 50 % | bp / wiki |
 | Reactor price | 30 + 5 per 5 levels above 5 | est |
@@ -149,3 +149,25 @@ Driving the real game needs the owner's go-ahead, because it takes over their mo
 | System limit | At most 8 systems installed (subsystems don't count) | FTL |
 | Cooldown locks | Cloaking, hacking, mind control and the battery show their recharge on the icon like ion (FTL's octagon art: number = 5 s rounds left) | FTL art |
 | Mind control recharge | Starts when control ends | FTL |
+
+## Round 13
+Sources: the FTL wiki (read through its MediaWiki API) and xftl, an independent FTL rebuild whose author
+documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI code).
+
+| Rule | Value | Source |
+|---|---|---|
+| Crew fights | Each swing lasts 1-1.3 s, picks its target when it starts (whoever shares the tile, else anyone in the room) and keeps it; damage lands half-way. Sharing a tile is a punch (the ship's crew face down, intruders up); otherwise a shot. Drone units never punch. Average damage unchanged | xftl |
+| Medbay / clone bay | The equipment blocks one tile (the blueprint `<slot>`, default 1; `-2` none), so a 2x2 bay holds 3 | xftl |
+| Clone bay | One at a time, in the order they died; off for 3 s, it loses the last in its queue (Backup DNA keeps it); FTL's `<race>_clone` animation, `cloneArrive` sound | wiki / xftl |
+| Drones | A deployed drone that loses power goes offline (stays, idle) until powered again, without a new part; clicking the drone system never launches one | xftl |
+| Boarding drones | Land in a system room; then head for the nearest working system | wiki / user |
+| Mind control | Controlled crew stay AI-driven: aboard their own ship they wreck the nearest working system and fight in the way; aboard the controller's they fight intruders and fix things | xftl notes ("standard intruder/crew AI") |
+| Hacked weapons | Can't fire; the charge building up drains, stored charges are kept; the hacker sees the guns' charge | wiki |
+| Enemy AI crew | FTL's CrewAI task priorities: heal (below 25 %) 0, shields repair 1, boarders and fires system + 16, breaches + 32, repairs + 48, stations 64-70; each task to the nearest free crew member | xftl `doc/crew-ai` |
+| Enemy AI boarding | One party per fight; if it dies, no more are sent | user |
+| Bot crew | The hangar bot hires up to 5; single-player hulls carry at most 6 (the flagship more), and bring their augments (Zoltan ships start with a full Zoltan shield) | user / blueprints |
+| HUD | FTL's system row: shields, engines, medbay, clone bay, oxygen, teleporter, cloaking, artillery, mind, hacking, weapons (tray inline), drones (tray inline); button systems take 54 px. Cloak, hacking (after its drone lands) and battery buttons grow with power; the timer shows 2 + 3n bars; mind control's is always two high | xftl `PlayerShipUI`, `SystemPowerButton` |
+| Subsystems | Piloting, sensors, doors, then the battery right-most | xftl |
+| Chain / charge weapons | Their `<boost>` glow lights up on the gun; no pips in the tray | animations.xml |
+| Death and repair sounds | Per race (`engiDeath`, `mantisDeath`, `rockDeath`, `crystalDeath`, `energyDeath`, `shrikeDeath` for Lanius, female names get `femaleDeath*`); Lanius repair `shrikeRepair`; Rockmen and Crystals hammer (`rockThud*`, a guess) | sounds.xml |
+

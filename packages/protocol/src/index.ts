@@ -41,6 +41,7 @@ export type DebugOp =
   | { op: "ion"; ship: 0 | 1 }
   | { op: "breach"; ship: 0 | 1 }
   | { op: "hurt"; ship: 0 | 1 }
+  | { op: "kill"; ship: 0 | 1 }
   | { op: "restart" };
 
 export interface DebugInfo {

@@ -143,9 +143,11 @@ export async function preload(db: GameDB): Promise<boolean> {
   for (let i = 1; i <= 4; i++) files.add(`systemUI/button_artillery_${i}.png`);
   for (const id of ["battery", "mind", "artillery"]) for (const c of ["green", "grey", "orange", "red", "blue"]) files.add(`icons/s_${id}_${c}1.png`);
   for (const id of db.enemies ?? []) if (/^BOSS_/.test(id)) files.add(`ships_glow/${db.ships[id].img}_cloak.png`);
-  for (let n = 1; n <= 3; n++) for (const f of ["base", "on", "off", "select2", "charging_on", "charging_off"]) files.add(`systemUI/button_cloaking${n}_${f}.png`);
-  for (const f of ["hack2_top_base", "hack2_bottom_base", "hack_drone_on", "hack_drone_off", "hack_drone_select2", "hack_grid_on", "hack_grid_off", "hack_grid_purple_on"]) files.add(`systemUI/button_${f}.png`);
-  for (const f of ["base", "land", "light1", "light2"]) files.add(`ship/drones/drone_hack_${f}.png`);
+  for (let n = 1; n <= 4; n++) for (const f of ["base", "on", "off", "select2", "charging_on", "charging_off"]) files.add(`systemUI/button_cloaking${n}_${f}.png`);
+  for (const f of ["base", "land", "extend", "light1", "light2"]) files.add(`ship/drones/drone_hack_${f}.png`);
+  for (const f of ["solo", "bottom", "middle", "top", "fill"]) files.add(`systemUI/clonebar_small_${f}.png`);
+  for (const f of ["1x2", "2x1", "2x2"]) files.add(`effects/low_o2_stripes_${f}.png`);
+  files.add("effects/fire_smoke.png");
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
   // Art is "available" as soon as one known image loads; everything else keeps loading in the background

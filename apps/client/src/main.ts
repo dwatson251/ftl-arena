@@ -166,6 +166,7 @@ function renderDebug(): void {
       else if (a.op === "damage") dbg({ op: "damage", ship: who });
       else if (a.op === "ion") dbg({ op: "ion", ship: who });
       else if (a.op === "hurt") dbg({ op: "hurt", ship: who });
+      else if (a.op === "kill") dbg({ op: "kill", ship: who });
       else if (a.op === "restart") dbg({ op: "restart" });
     });
     el.addEventListener("input", (e) => {
@@ -192,7 +193,7 @@ function renderDebug(): void {
         <input type="range" min="0" max="100" step="5" data-diff style="width:100%">
         <div class="note" data-skill></div>
         <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="them" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="them">breach</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button><button class="small" data-op="ion" data-who="them">ion</button><button class="small" data-op="hurt" data-who="them">hurt crew</button></div>
-        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="me" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="me">breach</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button></div>
+        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="me" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="me">breach</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button><button class="small" data-op="kill" data-who="me">kill one</button></div>
         <div class="debug-log" data-log></div>`
       : `<button class="small" data-toggle title="Debug">⟨ DEBUG</button>`;
   }
@@ -307,8 +308,9 @@ function render(): void {
   // Test helpers: send a command as this player; read HUD hit boxes.
   send: (cmd: unknown) => (battle as unknown as { send(c: unknown): void } | null)?.send(cmd),
   ui: () => {
-    const b = battle as unknown as { teleBtns: unknown; cloakBtn: unknown; hackBtns: unknown } | null;
-    return b ? { tele: b.teleBtns, cloak: b.cloakBtn, hack: b.hackBtns } : null;
+    // The system buttons drawn last frame (box, and whether they can be used).
+    const b = battle as unknown as { btns: { box: unknown; act?: unknown; why?: string }[]; lay: unknown } | null;
+    return b ? { btns: b.btns.map((x) => ({ box: x.box, ok: !!x.act, why: x.why })), lay: b.lay } : null;
   },
   /** Screen position of an enemy room's centre. */
   enemyRoom: (room: number) => {

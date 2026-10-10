@@ -48,6 +48,8 @@ export interface SystemState {
   manBonus?: number;
   /** Direction a crew member at the station faces. */
   facing?: "up" | "down" | "left" | "right";
+  /** Medbay / clone bay: the tile its equipment stands on (crew can't be sent there). */
+  blocked?: string;
 }
 
 export interface RoomState {
@@ -89,8 +91,24 @@ export interface CrewState {
   owner: 0 | 1;
   /** Drone units: the owner's drone slot that launched it. */
   drone?: number;
-  /** Seconds of door-bashing / sabotage progress (boarders). */
+  /** Seconds of door-bashing progress, and sabotage progress toward the next broken bar (boarders). */
   bash?: number;
+  sab?: number;
+  /**
+   * The current attack, as FTL runs it: a foe picked when each 1-1.3 s swing starts (whoever shares the tile,
+   * else anyone in the room), the swing's length and time left, whether it's a punch (same tile) or a shot,
+   * the way they face (grid space), and whether this swing's damage has landed (half-way through).
+   */
+  foe?: number;
+  atk?: number;
+  atkDur?: number;
+  punch?: boolean;
+  hit?: boolean;
+  face?: "up" | "down" | "left" | "right";
+  /** Tick they died (the clone bay works through its queue in that order). */
+  diedAt?: number;
+  /** Seconds left of the clone bay's materialise animation; can't act meanwhile. */
+  spawn?: number;
   /** Teleporting: beaming out (then moved to `ship`/`tile`) or beaming in; can't act meanwhile. */
   beam?: { t: number; phase: "out" | "in"; ship: 0 | 1; tile: string };
   /** What they're attacking (tile coords): a foe or a door. The renderer shoots at range, punches up close. */
@@ -155,6 +173,8 @@ export interface ShipState {
   artilleryTarget?: number | null;
   /** Extra reactor bars from the battery (minus a hacked battery's two), recomputed every tick. */
   reactorBonus?: number;
+  /** Clone bay switched off: progress (0..1) toward losing the last crew member in its queue. */
+  cloneDying?: number;
   /** Cloaking: seconds of cloak left, and recharge left after it. */
   cloak?: { t: number; cd: number };
   /** This ship's hacking drone: in flight (attached false) or on an enemy room; pulse and recharge timers. */
@@ -166,7 +186,7 @@ export interface ShipState {
 export interface DroneState {
   slot: number;
   bp: string;
-  /** Powered drones deploy (using a drone part); unpowering loses the deployed drone. */
+  /** Powered drones deploy (using a drone part); a deployed drone that loses power goes offline until it's powered again. */
   powered: boolean;
   deployed: boolean;
   /** Orbit angle (radians) for drawing. */

@@ -103,14 +103,16 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     const id = (s.tag === "artillery" ? (++guns > 1 ? `artillery${guns}` : "artillery") : s.tag) as SystemId;
     const slotNum = kid(kid(s, "slot"), "number");
     const dir = kid(kid(s, "slot"), "direction")?.text.trim();
-    // -2 = a manned system with no <slot>: resolved later from rooms.xml (the interior's computer).
-    const station = slotNum ? Number(slotNum.text.trim()) : MANNED.has(s.tag) ? -2 : -1;
+    // -2 = a manned system with no <slot>: resolved later from rooms.xml (the interior's computer). The medbay
+    // and clone bay's <slot> is the tile their equipment blocks (FTL's default: tile 1; -2 = none).
+    const bay = s.tag === "medbay" || s.tag === "clonebay";
+    const station = slotNum ? Number(slotNum.text.trim()) : MANNED.has(s.tag) ? -2 : bay ? 1 : -1;
     systems.push({
       id,
       room: Number(s.attrs.room),
       power: Number(s.attrs.power) || 1,
       start: s.attrs.start !== "false",
-      station: MANNED.has(s.tag) || s.tag === "medbay" ? station : -1,
+      station: MANNED.has(s.tag) || bay ? station : -1,
       img: s.attrs.img,
       weapon: s.attrs.weapon,
       max: s.attrs.max ? Number(s.attrs.max) : undefined,
@@ -209,6 +211,7 @@ export function parseAnimations(xml: string, db: Pick<GameDB, "animSheets" | "we
         sheet: txt(n, "sheet") ?? "", sheetDef: db.animSheets[txt(n, "sheet") ?? ""], frames: +(d?.attrs.length ?? 1), chargedFrame: num(n, "chargedFrame"),
         fireFrame: num(n, "fireFrame"), firePoint: { x: +(fp?.attrs.x ?? 0), y: +(fp?.attrs.y ?? 0) },
         mountPoint: { x: +(mp?.attrs.x ?? 0), y: +(mp?.attrs.y ?? 0) },
+        boost: txt(n, "boost"),
       } satisfies WeaponAnim;
     } else if (n.tag === "anim") {
       const d = kid(n, "desc");
@@ -325,8 +328,9 @@ export function buildDbFromFtl(read: FileSource): GameDB {
     for (const sys of s.systems) {
       const pc = sys.img ? computers[sys.img.replace(/^room_/, "")] : undefined;
       // A <slot> without a <direction>: face the interior's computer.
-      if (sys.station >= 0 && !sys.facing && pc && sys.id !== "medbay") sys.facing = pc.dir as ShipSystemSlot["facing"];
-      if (sys.station !== -2) continue;
+      const bay = sys.id === "medbay" || sys.id === "clonebay";
+      if (sys.station >= 0 && !sys.facing && pc && !bay) sys.facing = pc.dir as ShipSystemSlot["facing"];
+      if (sys.station !== -2 || bay) continue;
       const room = L?.rooms.find((r) => r.id === sys.room);
       if (room && pc) {
         const tx = Math.max(0, Math.min(room.w - 1, Math.floor(pc.x / 35)));
@@ -356,5 +360,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   }
   const names = read("data/names.xml");
   if (names) db.names = [...new Set(walk(parseXml(names), "name").map((n) => n.text.trim()).filter((n) => /^[A-Za-z][A-Za-z .'-]{1,13}$/.test(n)))];
+  if (names)
+    db.femaleNames = [...new Set(walk(parseXml(names), "nameList").filter((l) => l.attrs.sex === "female" && !l.attrs.language).flatMap((l) => kids(l, "name").map((n) => n.text.trim())))];
   return db;
 }

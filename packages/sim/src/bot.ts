@@ -15,7 +15,7 @@
  */
 import type { GameDB, SystemId } from "@ftl/data";
 import type { Command } from "./commands.ts";
-import { geometry, roomCentre, type Geometry } from "./geometry.ts";
+import { findPath, geometry, roomCentre, type Geometry } from "./geometry.ts";
 import { baseLoadout, buyableWeapons, hullSystems, priceLoadout, randomCrewName, usable, type Loadout } from "./loadout.ts";
 import type { Match } from "./match.ts";
 import { Rng } from "./rng.ts";
@@ -33,7 +33,6 @@ export interface BotSkills {
   powerMgmt: boolean;
   medbay: boolean;
   firefight: boolean;
-  stations: boolean;
 }
 
 export function botSkills(level: number): BotSkills {
@@ -43,19 +42,16 @@ export function botSkills(level: number): BotSkills {
     mistake: 0.45 * (1 - l),
     smartTargets: l >= 0.25,
     syncVolleys: l >= 0.55,
-    // Measured (tools/bench/ab.ts, 40 seeds vs level 0.5): aiming missiles at shields and pulling crew
-    // back to stations both lost games, so they stay off unless forced via overrides.
+    // Measured (tools/bench/ab.ts, 40 seeds vs level 0.5): aiming missiles at shields lost games, so it
+    // stays off unless forced via overrides.
     missilesOnShields: false,
     beamAfterShields: l >= 0.75,
     repair: l >= 0.2,
     powerMgmt: l >= 0.3,
     medbay: l >= 0.45,
     firefight: l >= 0.55,
-    stations: false,
   };
 }
-
-const PRIORITY: SystemId[] = ["shields", "weapons", "pilot", "engines", "oxygen", "medbay", "sensors", "doors"];
 
 export class Bot {
   level = 0;
@@ -105,6 +101,8 @@ export class Bot {
 
   /** Crew the boarding plan has claimed this think (the crew planner leaves them alone). */
   private reserved = new Set<number>();
+  /** FTL's AI boards with one party per fight: once it's sent, only those crew go again, and none once they're dead. */
+  private party: Set<number> | null = null;
 
   /** Teleporter, cloaking and hacking take any spare reactor, or the idle medbay's bar. */
   private specialPower(ship: ShipState, out: Command[]): void {
@@ -206,7 +204,7 @@ export class Bot {
       if (!w.powered) out.push({ c: "weaponPower", slot, on: true });
     });
     (ship.drones ?? []).forEach((d, slot) => {
-      if (d.powered || (ship.droneParts ?? 0) <= 0 || (d.rebuild ?? 0) > 0) return;
+      if (d.powered || (!d.deployed && (ship.droneParts ?? 0) <= 0) || (d.rebuild ?? 0) > 0) return;
       // Free a reactor bar for the drone if needed: the medbay first (nobody hurt), then the engines.
       const used = Object.values(ship.systems).reduce((a, x) => a + (x && !["pilot", "sensors", "doors"].includes(x.id) ? x.power : 0), 0);
       const need = m.db.droneBPs?.[d.bp]?.power ?? 1;
@@ -319,19 +317,32 @@ export class Bot {
       if (next) out.push({ c: "moveCrew", crew: [c.id], room: next.room, enemy: true });
     }
     if (away.length || ship.crew.some((c) => c.owner !== ship.idx && !c.dead)) return;
-    if (alive.length < 2) return;
-    const want = Math.min(2, alive.length - 1);
-    const onPad = alive.filter((c) => roomOf(c) === tp.room && c.path.length === 0 && c.hp > c.maxHp * 0.8);
-    if (ready && onPad.length >= want) {
+    // The party, once sent, is the only one: if they all died, the AI stops boarding.
+    const party = this.party;
+    if (party && !alive.some((c) => party.has(c.id))) return;
+    const eligible = party ? alive.filter((c) => party.has(c.id)) : alive;
+    if (!party && alive.length < 2) return;
+    const want = party ? eligible.length : Math.min(2, alive.length - 1);
+    const onPad = eligible.filter((c) => roomOf(c) === tp.room && c.path.length === 0 && c.hp > c.maxHp * 0.8);
+    // Whoever is on the pad or walking to it belongs to the boarding plan (the crew planner leaves them be);
+    // hurt ones (back from a raid) heal in the medbay first, then come back to the pad.
+    const med = ship.systems.medbay;
+    for (const c of eligible) {
+      if (roomOf(c) !== tp.room) continue;
+      if (c.hp <= c.maxHp * 0.8 && med && m.eff(med) > 0 && !med.hacked) out.push({ c: "moveCrew", crew: [c.id], room: med.room });
+      busy.add(c.id);
+    }
+    if (ready && want > 0 && onPad.length >= want) {
       const target = enemy.systems.weapons ?? enemy.systems.shields;
       if (target && (enemy.superShield ?? 0) <= 0) {
         out.push({ c: "teleport", room: target.room });
+        this.party ??= new Set(onPad.map((c) => c.id));
         this.note(m, `board → ${target.id}`);
       }
       return;
     }
     const pilot = ship.systems.pilot;
-    const pick = alive
+    const pick = eligible
       .filter((c) => !busy.has(c.id) && c.home !== pilot?.station && c.hp > c.maxHp * 0.8 && roomOf(c) !== tp.room)
       .sort((a, b) => (RACES[b.race]?.combat ?? 1) - (RACES[a.race]?.combat ?? 1));
     for (let i = onPad.length; i < want && pick.length; i++) {
@@ -344,73 +355,99 @@ export class Bot {
 
   // ---------------------------------------------------------------- crew
 
+  /**
+   * FTL's crew AI (CrewAI, as documented by the xftl project): every problem becomes a task with a priority,
+   * lower first - healing 0, shields repair 1, fighting boarders and fires (system priority + 16), breaches
+   * (+32), repairs (+48), then manning stations (64-70). Each task goes to the nearest crew member not already
+   * taken, so one boarder or one broken system pulls one crew member and the rest keep their stations; as the
+   * crew dwindles, stations empty first. Boarders get one defender each, fires two.
+   */
   private crew(m: Match, ship: ShipState, out: Command[]): void {
     const sk = this.skills;
     if (!sk.repair) return;
     const g = geometry(m.db.layouts[ship.layout]);
     const roomOf = (c: CrewState) => g.tiles.get(c.home)!.room;
-    const busy = new Set<number>(this.reserved);
-    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === ship.idx && c.drone === undefined);
+    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === ship.idx && c.drone === undefined && !c.mind && !c.beam && !this.reserved.has(c.id));
+    if (!alive.length) return;
+    const sysIn = (room: number) => Object.values(ship.systems).find((s) => s && s.room === room);
+    const sysPrio = (room: number) => {
+      const s = sysIn(room);
+      return s ? SYS_PRIORITY[s.id] ?? 8 : 8;
+    };
+    const intruders = ship.crew.filter((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined);
+    // Rooms the AI won't send anyone into: an open airlock, four or more fires.
+    const danger = (room: number) => {
+      const rs = ship.rooms.find((r) => r.id === room);
+      if (!rs) return false;
+      const airlock = g.doors.some((d, i) => ship.doors[i] && (d.roomA === room || d.roomB === room) && (d.roomA < 0 || d.roomB < 0));
+      return airlock || Object.keys(rs.fires).length >= 4;
+    };
+    const tasks: { room: number; prio: number; why: string; kind: "heal" | "fight" | "work" | "man" }[] = [];
+    const med = ship.systems.medbay;
+    const medOk = sk.medbay && !!med && m.eff(med) > 0 && !med.hacked && !danger(med.room);
+    const patients = new Set<number>();
+    if (medOk) {
+      for (const c of alive) {
+        // Below a quarter health they go to the medbay, and once there stay until healed.
+        if (c.hp < c.maxHp * 0.25 || (roomOf(c) === med!.room && c.hp < c.maxHp)) patients.add(c.id);
+      }
+    }
+    for (const c of intruders) tasks.push({ room: g.tiles.get(c.tile)!.room, prio: sysPrio(g.tiles.get(c.tile)!.room) + 16, why: "repel boarders", kind: "fight" });
+    for (const rs of ship.rooms) {
+      if (danger(rs.id)) continue;
+      const sys = sysIn(rs.id);
+      if (sk.firefight && Object.keys(rs.fires).length && rs.o2 > 10) {
+        tasks.push({ room: rs.id, prio: sysPrio(rs.id) + 16, why: "fight fire", kind: "work" }, { room: rs.id, prio: sysPrio(rs.id) + 16, why: "fight fire", kind: "work" });
+      }
+      if (Object.keys(rs.breaches).length) tasks.push({ room: rs.id, prio: sysPrio(rs.id) + 32, why: "fix breach", kind: "work" });
+      if (sys && sys.damage > 0) {
+        const lowO2 = sys.id === "oxygen" && ship.rooms.reduce((x, r) => x + r.o2, 0) / ship.rooms.length < 25;
+        tasks.push({ room: rs.id, prio: lowO2 ? 0 : sys.id === "shields" ? 1 : sysPrio(rs.id) + 48, why: `repair ${sys.id}`, kind: "work" });
+      }
+    }
+    for (const [id, prio] of MAN_PRIORITY) {
+      const s = ship.systems[id];
+      if (!s?.station || s.damage >= s.level || danger(s.room)) continue;
+      tasks.push({ room: s.room, prio, why: `man ${id}`, kind: "man" });
+    }
+    tasks.sort((a, b) => a.prio - b.prio);
+    // Crew who are bad at fighting (half damage or under 100 HP) are kept out of fights unless that's everyone.
+    const weak = (c: CrewState) => (RACES[c.race]?.combat ?? 1) < 1 || c.maxHp < 100;
+    const allWeak = alive.every(weak);
+    const free = new Set(alive.filter((c) => !patients.has(c.id)).map((c) => c.id));
+    const dist = (c: CrewState, room: number) => {
+      if (roomOf(c) === room) return -1;
+      const t = g.roomTiles.get(room)?.[0];
+      const p = t ? findPath(g, c.tile, t) : null;
+      return p ? p.length : 1e9;
+    };
     const send = (c: CrewState, room: number, why: string) => {
-      busy.add(c.id);
       if (roomOf(c) === room) return;
       out.push({ c: "moveCrew", crew: [c.id], room });
       this.note(m, `${c.name} → ${why}`);
     };
-    const pilot = ship.systems.pilot;
-    const isPilot = (c: CrewState) => !!pilot && c.home === pilot.station;
-    const spare = () => alive.find((c) => !busy.has(c.id) && !isPilot(c) && c.hp > c.maxHp * 0.3);
-    // 0. Intruders: meet them with one more crew member than they have (fighters first), then board back.
-    const intruders = ship.crew.filter((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined);
-    for (const room of [...new Set(intruders.map((c) => g.tiles.get(c.tile)!.room))]) {
-      const n = intruders.filter((c) => g.tiles.get(c.tile)!.room === room).length + 1;
-      const here = alive.filter((c) => roomOf(c) === room && c.hp > c.maxHp * 0.35);
-      here.forEach((c) => busy.add(c.id));
-      const fighters = alive.filter((c) => !busy.has(c.id) && !isPilot(c) && c.hp > c.maxHp * 0.5).sort((a, b) => (RACES[b.race]?.combat ?? 1) - (RACES[a.race]?.combat ?? 1));
-      for (let i = here.length; i < n && fighters.length; i++) send(fighters.shift()!, room, "repel boarders");
+    for (const id of patients) {
+      const c = alive.find((q) => q.id === id)!;
+      send(c, med!.room, "medbay");
     }
-    // 1. Wounded to the medbay; patients stay until healed.
-    const med = ship.systems.medbay;
-    if (sk.medbay && med && m.eff(med) > 0) {
-      for (const c of alive) {
-        if (c.hp < c.maxHp * 0.4 && roomOf(c) !== med.room) send(c, med.room, "medbay");
-        else if (roomOf(c) === med.room && c.hp < c.maxHp) busy.add(c.id);
-      }
-    }
-    // 2. Fires (if allowed), breaches and damaged systems, most important room first.
-    const sysIn = (room: number) => Object.values(ship.systems).find((s) => s && s.room === room);
-    const rank = (room: number) => {
-      const s = sysIn(room);
-      return s ? PRIORITY.indexOf(s.id) : 99;
-    };
-    for (const rs of [...ship.rooms].sort((a, b) => rank(a.id) - rank(b.id))) {
-      const sys = sysIn(rs.id);
-      const fires = Object.keys(rs.fires).length;
-      const problem = (sk.firefight && fires > 0) || Object.keys(rs.breaches).length > 0 || (sys && sys.damage > 0);
-      if (!problem) continue;
-      const here = alive.filter((c) => roomOf(c) === rs.id);
-      for (const c of here) busy.add(c.id);
-      const needed = fires > 0 || (sys && sys.damage >= 2) ? 2 : 1;
-      for (let i = here.length; i < needed; i++) {
-        const c = spare();
-        if (!c) break;
-        if (fires > 2 && !RACES[c.race]?.fireImmune && this.level < 0.9) break;
-        send(c, rs.id, sys && sys.damage ? `repair ${sys.id}` : fires ? "fight fire" : "fix breach");
-      }
-    }
-    // 3. Keep stations manned, helm first.
-    if (sk.stations) {
-      for (const id of ["pilot", "weapons", "shields", "engines"] as SystemId[]) {
-        const s = ship.systems[id];
-        if (!s || !s.station || s.damage >= s.level) continue;
-        if (alive.some((c) => c.home === s.station)) continue;
-        // Only crew with nothing to do: pulling repairers back to stations loses more than manning gains.
-        const c = alive.find((q) => !busy.has(q.id) && q.task === "idle" && q.path.length === 0 && q.hp > q.maxHp * 0.6);
-        if (c) send(c, s.room, `man ${id}`);
-      }
+    for (const t of tasks) {
+      const cands = alive.filter((c) => free.has(c.id) && !(t.kind === "fight" && weak(c) && !allWeak) && !(t.kind === "fight" && c.hp < c.maxHp * 0.35));
+      if (!cands.length) continue;
+      const c = cands.reduce((a, b) => (dist(b, t.room) < dist(a, t.room) ? b : a));
+      if (dist(c, t.room) >= 1e9) continue;
+      free.delete(c.id);
+      send(c, t.room, t.why);
     }
   }
 }
+
+/** FTL's system priority for crew tasks (CrewAI::PrioritizeSystem). */
+const SYS_PRIORITY: Partial<Record<SystemId, number>> = {
+  shields: 0, weapons: 1, clonebay: 1, artillery: 2, oxygen: 3, engines: 4, drones: 4, pilot: 4,
+  cloaking: 5, mind: 5, hacking: 5, sensors: 6, battery: 6, doors: 7, medbay: 2, teleporter: 3,
+};
+/** FTL's manning priorities (lower first). */
+const MAN_PRIORITY: [SystemId, number][] = [["pilot", 64], ["shields", 65], ["weapons", 66], ["engines", 67], ["sensors", 69], ["doors", 70]];
 
 /**
  * The bot's hangar. Low levels spend at random. From level 0.5 it follows a build order (2 shield
@@ -468,12 +505,18 @@ export function botLoadout(db: GameDB, shipId: string, scrap: number, level: num
     for (let i = 0; i < 6; i++) rng.chance(0.5) ? buy() : sysTo(rng.pick(["engines", "oxygen", "medbay", "shields", "weapons"] as SystemId[]), 8)();
   }
   feedReactor();
-  for (let i = 0; i < 4; i++) {
+  // Most FTL ships carry 5-6 crew (the flagship more), so the bot hires up to that and spends the rest elsewhere.
+  for (let i = 0; l.crew.length < BOT_CREW && i < 4; i++) {
     const race = level >= 0.5 && db.crew.engi ? "engi" : "human";
     tryApply((x) => void x.crew.push({ race, name: randomCrewName(db, x.crew.map((c) => c.name), seed + i * 13) }));
   }
   return l;
 }
+
+/** Crew a bot hires up to in the hangar, and the most a single-player enemy hull carries (FTL's ships rarely carry
+ * more than 5-6; the flagship is the exception). */
+const BOT_CREW = 5;
+const ENEMY_CREW = 6;
 
 /** Convenience for the bench and tests: one bot per side per match, created on first use. */
 const shared = new WeakMap<Match, [Bot, Bot]>();
@@ -523,12 +566,14 @@ export function enemyLoadout(db: GameDB, shipId: string, level: number, seed = 1
     used += w.power;
   }
   if (!weapons.length && sorted.length) weapons.push(sorted[0].id);
-  const n = lerp(s.crewCount, s.crewMax ?? s.crewCount);
+  const n = s.id.startsWith("BOSS_") ? lerp(s.crewCount, s.crewMax ?? s.crewCount) : Math.min(ENEMY_CREW, lerp(s.crewCount, s.crewMax ?? s.crewCount));
   const race = s.crewRaces[0] ?? "human";
   const crew = Array.from({ length: Math.max(1, n) }, (_, i) => ({ race: RACES[race] ? race : "human", name: randomCrewName(db, [], seed * 7 + i * 31) }));
   const demand = (systems.shields ?? 0) + (systems.engines ?? 0) + Math.min(1, systems.oxygen ?? 0) + Math.min(1, systems.medbay ?? 0) + used;
   return {
     ship: shipId, systems, reactor: Math.max(s.maxPower, demand), weapons, crew, missiles: Math.max(s.missiles, 8), hull: s.health + hullBonus,
+    // Hull augments come with the ship: a Zoltan ship's super shield starts full.
+    augments: (s.augments ?? []).filter((a) => db.augments?.[a]),
     drones: (s.drones ?? []).filter((d) => db.droneBPs?.[d]).slice(0, Math.max(s.droneSlots ?? 0, (s.drones ?? []).length)),
     droneParts: Math.max(s.droneParts ?? 0, (s.drones ?? []).length ? 6 : 0),
   };

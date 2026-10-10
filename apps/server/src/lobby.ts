@@ -189,6 +189,12 @@ export class Lobby {
       case "hurt":
         if (m) for (const c of m.state.ships[d.ship].crew) if (!c.dead && c.dying === undefined) c.hp -= 45;
         break;
+      case "kill": {
+        // One of that player's crew dies (for clone bay checks).
+        const c = m?.crewOf(d.ship).find((q) => !q.dead && q.dying === undefined);
+        if (c) c.hp = 0;
+        break;
+      }
       case "restart":
         if (this.loadouts) this.start();
         break;

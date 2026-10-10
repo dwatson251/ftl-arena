@@ -209,6 +209,17 @@
   the breach formula.
 - **Locks:** `icons/locking/s_octa_*` is the lock variant of the ion ring.
 
+## Round 13: closer to the original
+- **Research:** three read-only agents checked every estimate against the FTL wiki. Fandom blocks scripted
+  page fetches, but its MediaWiki API (`api.php?action=parse&prop=wikitext`) answers through curl.
+  xftl (gitlab.com/znixian/xftl) turned out to be the best single source: an independent rebuild whose
+  author documented FTL's code, including the exact HUD layout (`PlayerShipUI.kt`, `SystemPowerButton`).
+- **HUD:** FTL lays the bottom row out in one pass, the weapons and drone trays inline after their
+  systems, and system buttons beside their bars. Copying that removed the round-12 layout heuristics.
+- **The "medbay kills boarders" report:** a defender fighting in its own medbay healed 16 HP/s at level 2
+  (an estimate) against 6 HP/s of melee. The wiki's 9.6 / 19.2 now apply. A boarder's door-breaking time
+  could also carry over into sabotage and break a system at once; they're now separate.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

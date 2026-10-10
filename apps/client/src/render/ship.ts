@@ -22,7 +22,12 @@ export interface CrewDraw {
   selected: boolean;
   /** Belongs to the other player (intruders on your ship, defenders on theirs). */
   hostile?: boolean;
+  /** Drone units: their drone is switched off. */
+  offline?: boolean;
 }
+
+/** Share of health below which a crew member's box turns red and the low-health warning beeps. */
+export const LOW_HP = 0.25;
 
 export interface ShipDrawOpts {
   hover: { room: number; door: number };
@@ -156,11 +161,13 @@ export class ShipRenderer {
       const r = L.rooms.find((q) => q.id === s.room);
       if (!installed || !r) continue;
       if (s.id === "clonebay") {
+        // The cloning tub stands on the tile it blocks (its <slot>), as in FTL.
+        const [tx, ty] = this.cloneTile(v, r);
         for (const part of ["clone_bottom", "clone_top"]) {
           const t = texNow(`ship/interior/${part}.png`);
           if (!t) continue;
           const sp = new Sprite(t);
-          sp.position.set(r.x * TILE, r.y * TILE);
+          sp.position.set(tx * TILE, ty * TILE);
           this.interior.addChild(sp);
         }
         continue;
@@ -190,6 +197,16 @@ export class ShipRenderer {
     this.built = Boolean(base) || this.db.source !== "ftl";
   }
 
+  /** Tile (grid coords) of the clone bay's tub: the tile it blocks, else the room's first. */
+  private cloneTile(v: ShipView | undefined, r: { x: number; y: number }): [number, number] {
+    const b = v?.systems.clonebay?.blocked;
+    return b ? (b.split(",").map(Number) as [number, number]) : [r.x, r.y];
+  }
+
+  /** Fire tiles seen last frame, so a fire that goes out can puff its smoke. */
+  private lastFires = new Set<string>();
+  private smoke = new Map<string, number>();
+
   update(v: ShipView, crew: CrewDraw[], time: number, o: ShipDrawOpts): void {
     if (!this.built) this.buildStatic(v);
     const L = this.layout;
@@ -210,12 +227,12 @@ export class ShipRenderer {
     // A room is seen when the server listed it (boarders, no-sensor rooms with own crew), else by sensors.
     const visible = (room: number) => (v.visibleRooms ? v.visibleRooms.includes(room) : v.interior);
     const g = d.gfx("rooms");
-    // Low O2: pink tint, plus FTL's warning stripes when it's nearly gone.
+    // Low O2: pink tint, plus FTL's warning stripes from the level crew start suffocating at.
     for (const rs of v.rooms) {
       const r = L.rooms.find((q) => q.id === rs.id)!;
       const known = rs.o2 >= 0 && visible(rs.id);
       if (known && rs.o2 < 66) g.rect(r.x * TILE + 2, r.y * TILE + 2, r.w * TILE - 4, r.h * TILE - 4).fill({ color: 0xff3b6b, alpha: ((66 - rs.o2) / 66) * 0.42 });
-      this.stripe(r, known && rs.o2 < 25);
+      this.stripe(r, known && rs.o2 < RULES.suffocateAt);
     }
     if (o.hover.room >= 0) {
       const r = L.rooms.find((q) => q.id === o.hover.room);
@@ -225,7 +242,7 @@ export class ShipRenderer {
     if (o.destinations) {
       const dest = texNow("people/green_destination.png");
       const tiles = new Set<string>();
-      for (const cd of crew) if (!cd.c.dead && cd.c.path.length) tiles.add(cd.c.home);
+      for (const cd of crew) if (!cd.c.dead && !cd.hostile && cd.c.drone === undefined && cd.c.path.length) tiles.add(cd.c.home);
       for (const [t, left] of o.flashTiles ?? []) if (left > 0) tiles.add(t);
       for (const t of tiles) {
         const [x, y] = t.split(",").map(Number);
@@ -238,7 +255,8 @@ export class ShipRenderer {
     const gas = texNow("ship/interior/clone_gas.png");
     if (cbs && gas && v.crew.some((c) => c.dead && c.clone !== undefined)) {
       const r = L.rooms.find((q) => q.id === cbs.room)!;
-      d.sprite("cgas", gas, r.x * TILE, r.y * TILE, { alpha: 0.5 + 0.3 * Math.sin(time * 4) });
+      const [tx, ty] = this.cloneTile(v, r);
+      d.sprite("cgas", gas, tx * TILE, ty * TILE, { alpha: 0.5 + 0.3 * Math.sin(time * 4) });
     }
     // Hazards
     {
@@ -246,7 +264,24 @@ export class ShipRenderer {
         if (!visible(rs.id)) continue;
         // A breach is a state, not a loop: the crack shrinks back through its frames as it's repaired.
         for (const [t, hp] of Object.entries(rs.breaches)) this.tileAnim(`br${t}`, t, animFrame(this.db, "breach", Math.max(0, Math.min(6, Math.ceil((hp / 100) * 7) - 1))), 0x2a2a2a, 1);
-        for (const t of Object.keys(rs.fires)) this.tileAnim(`fi${t}`, t, animFrame(this.db, "fire_large", Math.floor(time * 10 + t.length)), 0xff7a1a, 0.9);
+        // A fire burns down to FTL's small flame as it's beaten back.
+        for (const [t, hp] of Object.entries(rs.fires)) this.tileAnim(`fi${t}`, t, animFrame(this.db, hp < 50 ? "fire_small" : "fire_large", Math.floor(time * 10 + t.length)), 0xff7a1a, 0.9);
+      }
+      // A fire that goes out leaves FTL's puff of smoke (fire_smoke, 7 frames).
+      const now = new Set<string>();
+      for (const rs of v.rooms) if (visible(rs.id)) for (const t of Object.keys(rs.fires)) now.add(t);
+      for (const t of this.lastFires) if (!now.has(t)) this.smoke.set(t, time);
+      this.lastFires = now;
+      const sm = texNow("effects/fire_smoke.png");
+      for (const [t, at] of this.smoke) {
+        const k = (time - at) / 0.7;
+        if (k >= 1 || now.has(t)) {
+          this.smoke.delete(t);
+          continue;
+        }
+        const [x, y] = t.split(",").map(Number);
+        if (sm) d.sprite(`sm${t}`, frame(sm, Math.min(6, Math.floor(k * 7)) * 34, 0, 34, 34), (x + 0.5) * TILE, (y + 0.5) * TILE, { anchor: 0.5, rotation: this.upright, alpha: 1 - k * 0.5 });
+        else d.gfx(`sm${t}`).circle((x + 0.5) * TILE, (y + 0.5) * TILE, 6 + 10 * k).fill({ color: 0xbbbbbb, alpha: 0.6 * (1 - k) });
       }
     }
     // Room system icons as FTL draws them (matched against real screenshots): the white overlay glyph
@@ -323,8 +358,20 @@ export class ShipRenderer {
           anchor: [anim.mountPoint.x / f.width, anim.mountPoint.y / f.height], scale: [m.mirror ? -1 : 1, 1],
           rotation: m.rotate ? Math.PI / 2 : 0,
         });
-        // Enemy weapons we can read (sensors 3) get FTL's small yellow charge bar beside the gun.
-        if (this.enemy && v.weaponsKnown && w.charge >= 0) {
+        // Chain and charge weapons light up on the gun itself (FTL's <boost> glow): one more light per chain
+        // boost, or per stored charge.
+        const lit = w.charge < 0 ? 0 : bp.boost ? w.boost : bp.chargeLevels > 1 ? w.volleys : 0;
+        const glowAnim = anim.boost ? this.db.anims[anim.boost] : undefined;
+        const glow = glowAnim && lit > 0 ? animFrame(this.db, anim.boost!, Math.min(glowAnim.frames - 1, lit - 1)) : null;
+        if (glow) {
+          wi.sprite(`wb${i}`, glow, mx, my, {
+            anchor: [anim.mountPoint.x / glow.width, anim.mountPoint.y / glow.height], scale: [m.mirror ? -1 : 1, 1],
+            rotation: m.rotate ? Math.PI / 2 : 0,
+          });
+        }
+        // Enemy weapons we can read (sensors 3, or a hacking drone on their weapons) get FTL's small yellow
+        // charge bar beside the gun.
+        if (this.enemy && (v.weaponsKnown || v.weaponChargeKnown) && w.charge >= 0) {
           const cdw = w.cd ?? bp.cooldown;
           const kk = w.volleys > 0 ? 1 : Math.min(1, w.charge / (cdw || 1));
           const bx = mx + (m.mirror ? 14 : -20);
@@ -377,7 +424,8 @@ export class ShipRenderer {
       if (s) s.visible = false;
       return;
     }
-    const t = texNow("effects/low_o2_stripes_2x2.png");
+    // FTL has stripes cut for each room shape (1x2, 2x1, 2x2); bigger rooms tile the 2x2.
+    const t = texNow(`effects/low_o2_stripes_${r.w}x${r.h}.png`) ?? texNow("effects/low_o2_stripes_2x2.png");
     if (!t) return;
     if (!s) {
       s = new TilingSprite({ texture: t, width: r.w * TILE, height: r.h * TILE });
@@ -429,39 +477,54 @@ export class ShipRenderer {
       anim = `${race}_fire_down`;
       fr = Math.floor(time * 5);
     } else if (c.task === "fight" || c.task === "sabotage") {
-      // FTL: crew carry guns. A target on another tile (or a door being broken) gets shot; one sharing the
-      // tile gets punched. Wrecking a system is up-close work.
-      const aim = c.aim;
-      const far = !!aim && c.task === "fight" && Math.hypot(aim[0] - cd.x, aim[1] - cd.y) > 0.6;
-      if (far && aim) {
-        let dx = aim[0] - cd.x;
-        let dy = aim[1] - cd.y;
-        const a = -this.upright;
-        if (a) [dx, dy] = [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
-        const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
+      // FTL: each swing picks its target and facing when it starts and keeps them, so poses don't flicker.
+      // Sharing a tile means a punch (played once over the swing); otherwise the shoot pose's first frame
+      // (FTL holds it), with a laser bolt crossing to the target as the hit lands. Wrecking a system and
+      // breaking a door are shots too.
+      const dir = this.screenDir(c.face ?? "up");
+      const k = c.atk !== undefined && c.atkDur ? Math.max(0, Math.min(0.999, 1 - c.atk / c.atkDur)) : 0;
+      if (c.punch && c.task === "fight") {
+        // FTL's punches only face up or down.
+        const pd = dir === "up" || dir === "left" ? "up" : "down";
+        const pa = this.db.anims[`${race}_punch_${pd}`];
+        anim = pa ? `${race}_punch_${pd}` : `${race}_shoot_${dir}`;
+        fr = pa ? Math.floor(k * pa.frames) : 0;
+      } else {
         anim = this.db.anims[`${race}_shoot_${dir}`] ? `${race}_shoot_${dir}` : `${race}_shoot_right`;
-        fr = Math.floor(time * 6);
-        // A laser bolt every so often, from the gun toward the target.
-        const ph = (time * 1.6 + c.id * 0.37) % 1;
-        if (ph < 0.25) {
+        fr = 0;
+        const aim = c.aim;
+        // Door breaking has no swing timer: a bolt every so often.
+        const ph = c.atk !== undefined ? k : (time * 0.9 + c.id * 0.37) % 1;
+        if (aim && c.task === "fight" && ph >= 0.45 && ph < 0.7) {
           const tx = (aim[0] + 0.5) * TILE;
           const ty = (aim[1] + 0.5) * TILE;
-          const k = ph / 0.25;
-          const bx = px + (tx - px) * k;
-          const by = py + (ty - py) * k;
-          const ux = (tx - px) / (Math.hypot(tx - px, ty - py) || 1);
-          const uy = (ty - py) / (Math.hypot(tx - px, ty - py) || 1);
+          const kk = (ph - 0.45) / 0.25;
+          const bx = px + (tx - px) * kk;
+          const by = py + (ty - py) * kk;
+          const len = Math.hypot(tx - px, ty - py) || 1;
+          const ux = (tx - px) / len;
+          const uy = (ty - py) / len;
           d.gfx(`cr${c.id}bolt`).moveTo(bx - ux * 6, by - uy * 6).lineTo(bx + ux * 6, by + uy * 6).stroke({ color: cd.hostile ? 0xff5040 : 0xffd040, width: 2 });
         }
-      } else {
-        const punch = this.db.anims[`${race}_punch_up`];
-        anim = punch ? (Math.floor(time * 2 + c.id) % 2 ? `${race}_punch_up` : `${race}_punch_down`) : this.db.anims[`${race}_attack`] ? `${race}_attack` : `${race}_shoot_right`;
-        fr = Math.floor(time * 8);
       }
     } else if (c.task === "man") {
       // Face the station's computer (the blueprint's slot <direction>).
       anim = `${race}_type_${facing.get(c.tile) ?? "up"}`;
       fr = Math.floor(time * 6);
+    }
+    // A drone unit whose drone lost power slumps into its power-down pose until it's switched back on.
+    if (c.drone !== undefined && cd.offline) {
+      const a = this.db.anims[`${race}_power_down`];
+      if (a) {
+        anim = `${race}_power_down`;
+        fr = a.frames - 1;
+      }
+    }
+    // Fresh from the clone bay: FTL's <race>_clone animation.
+    if (c.spawn !== undefined && this.db.anims[`${race}_clone`]) {
+      const a = this.db.anims[`${race}_clone`];
+      anim = `${race}_clone`;
+      fr = Math.min(a.frames - 1, Math.floor((1 - c.spawn / RULES.cloneSpawn) * a.frames));
     }
     if (c.beam && this.db.anims[`${race}_teleport`]) {
       // FTL's teleport animation: forward on the way out, reversed on arrival.
@@ -498,7 +561,8 @@ export class ShipRenderer {
       const col = hp > 0.5 ? 0x5fdc5f : hp > 0.25 ? 0xf0c030 : 0xff4040;
       const gx = d.gfx(`${key}h`);
       if (!rot) {
-        const hb = texNow(hp < 0.35 ? "people/health_box_red.png" : "people/health_box.png");
+        // The box turns red at the same point the low-health warning beeps.
+        const hb = texNow(hp < LOW_HP ? "people/health_box_red.png" : "people/health_box.png");
         if (hb) d.sprite(`${key}hb`, hb, px, py - 21, { anchor: 0.5 });
         gx.rect(px - 13, py - 23, 26 * hp, 4).fill({ color: col });
       } else gx.rect(px + 17, py - 13, 4, 26 * hp).fill({ color: col });
@@ -515,6 +579,14 @@ export class ShipRenderer {
     if (heal && c.dying === undefined && tileRoom === medRoom && c.hp < c.maxHp && c.path.length === 0) {
       d.sprite(`${key}heal`, frame(heal, (Math.floor(time * 12) % 11) * 32, 0, 32, 32), px, py - 4, { anchor: 0.5, rotation: this.upright });
     }
+  }
+
+  /** A grid-space facing turned into the screen-space one (the enemy view may be rotated). */
+  private screenDir(f: "up" | "down" | "left" | "right"): "up" | "down" | "left" | "right" {
+    let [dx, dy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[f];
+    const a = -this.upright;
+    if (a) [dx, dy] = [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
   }
 
   private drawGibs(t: number): void {
