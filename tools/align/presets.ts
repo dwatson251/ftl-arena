@@ -42,7 +42,10 @@ await p.click("[data-leave]");
 await p.waitForSelector("#practice");
 await practice();
 await p.waitForTimeout(600);
-console.log("3 next lobby opens on:", await on(p), "cards:", await p.$$eval(".preset-card:not(.preset-new-card)", (es) => es.map((e) => e.querySelector(".pc-name")?.textContent + " | " + e.querySelector(".pc-ship")?.textContent + " | " + e.querySelector(".pc-cost")?.textContent?.replace(/\s+/g, " ").trim())));
+const opened = await on(p);
+await tab("Presets"); // a host starts on Rules, then their presets
+await p.waitForTimeout(400);
+console.log("3 next lobby opens on:", opened, "→ Presets", "cards:", await p.$$eval(".preset-card:not(.preset-new-card)", (es) => es.map((e) => e.querySelector(".pc-name")?.textContent + " | " + e.querySelector(".pc-ship")?.textContent + " | " + e.querySelector(".pc-cost")?.textContent?.replace(/\s+/g, " ").trim())));
 await p.screenshot({ path: "traces/presets/1-presets.png" });
 await p.click(".preset-pick");
 await p.waitForTimeout(400);
@@ -52,7 +55,10 @@ await tab("Launch");
 console.log("5 after a change, default name:", await p.$eval("[data-preset-name]", (e) => (e as HTMLInputElement).value));
 await p.screenshot({ path: "traces/presets/2-launch-copy.png" });
 // "New ship" with unsaved changes asks first; Keep leaves everything; Discard starts over with no preset.
-const summary = () => p.$eval(".hg-summary", (e) => e.textContent?.replace(/\s+/g, " ").match(/pilot \d · doors \d · sensors \d/)?.[0]);
+const summary = async () => {
+  await tab("Systems");
+  return `pilot ${await p.$eval('[data-sys="pilot"][data-d="1"]', (b) => b.closest(".sys-row")!.querySelectorAll(".bars i.on, .bars i.new").length)}`;
+};
 const before = await summary();
 await tab("Presets");
 await p.click("[data-preset-new]");
@@ -61,11 +67,14 @@ console.log("5b new ship (changed): asks:", !!(await p.$(".preset-new-card .pres
 await p.screenshot({ path: "traces/presets/5-new-confirm.png" });
 await p.click("[data-preset-new-no]");
 await p.waitForTimeout(200);
-console.log("   Keep → still on:", await on(p), "build kept:", (await summary()) === before);
+const keptOn = await on(p);
+console.log("   Keep → still on:", keptOn, "build kept:", (await summary()) === before);
+await tab("Presets");
 await p.click("[data-preset-new]");
 await p.click("[data-preset-new-yes]");
 await p.waitForTimeout(400);
-console.log("   Discard → on:", await on(p), "build reset:", await summary(), "(was", before + ")");
+const discardOn = await on(p);
+console.log("   Discard → on:", discardOn, "build reset:", await summary(), "(was", before + ")");
 await tab("Launch");
 console.log("   preset cleared: save box default:", await p.$eval("[data-preset-name]", (e) => (e as HTMLInputElement).value));
 // An unchanged preset: New ship resets straight away.
@@ -76,6 +85,7 @@ await tab("Presets");
 await p.click("[data-preset-new]");
 await p.waitForTimeout(300);
 console.log("5c new ship (unchanged preset): asked:", !!(await p.$(".preset-confirm")), "on:", await on(p));
+await tab("Rules");
 await p.fill('[data-cfg="scrap"]', "10");
 await p.dispatchEvent('[data-cfg="scrap"]', "change");
 await p.waitForTimeout(500);
@@ -107,7 +117,7 @@ if (ftlCard) {
   await p.click("[data-ftl-yes]");
   await p.waitForTimeout(500);
   console.log("  → on:", await on(p), "notes:", JSON.stringify(await p.$eval(".import-notes", (e) => e.textContent?.replace(/\s+/g, " ").trim()).catch(() => "")));
-  console.log("  summary:", JSON.stringify(await p.$eval(".hg-summary", (e) => e.textContent?.replace(/\s+/g, " ").slice(0, 330))));
+  console.log("  launch shows:", JSON.stringify(await p.$eval(".launch-grid", (e) => e.textContent?.replace(/\s+/g, " ").slice(0, 400))));
   console.log("  save box default:", await p.$eval("[data-preset-name]", (e) => (e as HTMLInputElement).value), "stored presets:", await p.evaluate(() => JSON.parse(localStorage.getItem("ftl-arena-presets") ?? "[]").length));
   await p.screenshot({ path: "traces/presets/8-ftl-launch.png" });
   await tab("Crew");

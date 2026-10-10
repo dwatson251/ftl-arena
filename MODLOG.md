@@ -338,6 +338,27 @@
   is under 50 %), oxygen (if air is under 50 %), shields, weapons, breaches, other repairs, then man stations.
 - **Explosions:** blasts on the whole hull for 1.4 s (`EXPLODE_PRE`), then the break-up.
 
+## Hangar tidy-up
+- **Steps:** Rules (host only, practice bot included) · Presets · Ship … Augments · Launch.
+  - The host starts on Rules. Everyone else starts on Presets or Ship.
+  - After a battle (`hangarAfterBattle()`), everyone starts on Launch.
+- **Lobby column:** code, share, players, a read-only rules summary and Leave.
+- **Ship summary column:** only on the building steps, without the Bill.
+- **Launch:** full width.
+  - The ship is shown in FTL's hangar (`customizeUI/custom_background.png`, cropped to the bay) by the
+    battle's own `ShipRenderer` on a small Pixi app (`apps/client/src/bay.ts`). The canvas is kept across
+    `innerHTML` renders and re-seated into `[data-bay]`.
+  - Next to it, a pre-flight check (power, shields, evasion, weapon power, stores, what starts unpowered),
+    plus Ready, the rules, music and the preset save.
+- **Sounds:** every hangar sound is in the `SFX` table at the top of `hangar.ts`.
+  - Spending uses `upgradeSystem` (bp_upgrade_1) and refunds use `undoUpgrades` (select_down2), as on FTL's
+    upgrade screen.
+  - FTL's store uses `buy`/`sell` (bp_purchase_1) to try instead.
+- **Small screens:**
+  - below 1150 px the summary column goes and Launch stacks;
+  - below 900 px the lobby is a strip above the step;
+  - the tabs wrap.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

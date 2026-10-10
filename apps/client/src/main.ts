@@ -10,7 +10,7 @@ import { presets } from "./presets.ts";
 // Saved ship presets: read now (the loading screen also waits for them).
 void presets.init();
 import { Battle, LOGICAL } from "./battle.ts";
-import { Hangar } from "./hangar.ts";
+import { Hangar, hangarAfterBattle } from "./hangar.ts";
 import { Net } from "./net.ts";
 
 const ui = document.getElementById("ui")!;
@@ -128,8 +128,10 @@ function onMsg(m: ServerMsg): void {
 
 function startBattle(you: 0 | 1): void {
   if (battle || !db) return;
+  hangar?.destroy();
   hangar?.el.remove();
   hangar = null;
+  hangarAfterBattle();
   battle = new Battle(app, db, (cmd) => net.send({ t: "cmd", cmd }), you);
   battle.onEndReady = () => render();
   app.stage.addChild(battle.stage);
@@ -320,6 +322,7 @@ function render(): void {
     if (error) ui.insertAdjacentHTML("beforeend", `<div class="toast">${esc(error)}</div>`);
     return;
   }
+  hangar?.destroy();
   hangar?.el.remove();
   hangar = null;
   share = null;

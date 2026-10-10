@@ -3,20 +3,37 @@
  * then Launch. Prices are
  * computed locally for instant feedback; the server re-prices every loadout before it accepts "ready".
  */
-import type { GameDB, SystemId } from "@ftl/data";
+import { SUBSYSTEMS, type GameDB, type SystemId } from "@ftl/data";
 import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
 import { hasImg } from "./assets.ts";
 import { copyName, isSame, presets } from "./presets.ts";
 import { drawSnapshot } from "./snapshot.ts";
+import { HangarBay } from "./bay.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
-  baseLoadout, buyableDrones, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
+  baseLoadout, buildShip, buyableDrones, reactorUsed, usable, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
   type MatchConfig,
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-const STEPS = ["Presets", "Ship", "Systems", "Weapons", "Drones", "Crew", "Augments", "Launch"] as const;
-type Step = (typeof STEPS)[number];
+const ALL_STEPS = ["Rules", "Presets", "Ship", "Systems", "Weapons", "Drones", "Crew", "Augments", "Launch"] as const;
+type Step = (typeof ALL_STEPS)[number];
+/** The steps where the ship summary panel shows on the right (the shopping ones). */
+const BUILD_STEPS: Step[] = ["Ship", "Systems", "Weapons", "Drones", "Crew", "Augments"];
+const SUBSYSTEM_IDS: SystemId[] = SUBSYSTEMS;
+
+/**
+ * Hangar sounds in one place, to try alternatives after a playtest. Spending and refunding scrap use FTL's
+ * upgrade-screen sounds (bp_upgrade_1 / select_down2); FTL's store uses `buy` / `sell` (bp_purchase_1) for
+ * purchases, the other thing worth trying.
+ */
+const SFX = { spend: "upgradeSystem", refund: "undoUpgrades", pick: "acceptUpgrades", nav: "hoverBeep" };
+
+/** Set when a battle starts: the hangar after it (a rematch) opens on Launch, the ship already built. */
+let backFromBattle = false;
+export function hangarAfterBattle(): void {
+  backFromBattle = true;
+}
 
 export interface HangarHooks {
   setLoadout(l: Loadout): void;
@@ -31,8 +48,11 @@ export interface HangarHooks {
 export class Hangar {
   el = document.createElement("div");
   loadout: Loadout | null = null;
-  /** Saved presets open on Presets; with none yet, straight to the hull (Presets is still a tab). */
-  step: Step = presets.list().length ? "Presets" : "Ship";
+  /** Chosen on the first lobby update (the host starts on Rules); see update(). */
+  step: Step = "Ship";
+  private stepChosen = false;
+  /** The Launch step's hangar-bay view (made on first use, kept across renders). */
+  private bay: HangarBay | null = null;
   /** The preset this build came from (unchanged = no "save as preset" offer). */
   private loaded: { id: string; name: string; loadout: Loadout } | null = null;
   /** The name typed into "Save as preset" (null = the default), and what was last saved. */
@@ -80,6 +100,12 @@ export class Hangar {
     });
   }
 
+  /** The hangar is going away (battle, menu): free the bay's WebGL context. */
+  destroy(): void {
+    this.bay?.destroy();
+    this.bay = null;
+  }
+
   private sfx(name: string): void {
     play(this.db, [name], 0.8);
   }
@@ -99,12 +125,12 @@ export class Hangar {
         l.weapons.splice(from, 1);
         l.weapons.push(a);
       }
-      this.sfx("powerUpSystem");
+      this.sfx(SFX.nav);
     } else if (data.startsWith("buy:")) {
       const id = data.slice(4);
       if (slot < l.weapons.length) l.weapons[slot] = id; // replace (the old one is sold)
       else if (l.weapons.length < ship.weaponSlots) l.weapons.push(id);
-      this.sfx("powerUpSystem");
+      this.sfx(SFX.spend);
     }
     this.change(l);
   }
@@ -113,7 +139,7 @@ export class Hangar {
     if (!this.loadout) return;
     const l = structuredClone(this.loadout);
     l.weapons.splice(i, 1);
-    this.sfx("powerDownSystem");
+    this.sfx(SFX.refund);
     this.change(l);
   }
 
@@ -123,6 +149,15 @@ export class Hangar {
     if (n > 0 && n !== this.lastCountdown) this.sfx(n === 1 ? "environWarning" : "hoverBeep");
     this.lastCountdown = n;
     this.lobby = lobby;
+    if (!this.stepChosen) {
+      // The host sets the rules first; everyone else starts on their presets (or the hull, with none).
+      // Back from a battle, everyone already has a ship: straight to Launch.
+      this.stepChosen = true;
+      this.step = backFromBattle ? "Launch" : lobby.host === this.me() ? "Rules" : presets.list().length ? "Presets" : "Ship";
+      backFromBattle = false;
+    }
+    // Lost the host's chair (or never had it): the Rules step isn't yours.
+    if (this.step === "Rules" && lobby.host !== this.me()) this.step = "Presets";
     const mine = lobby.players.find((p) => p.id === this.me());
     if (!this.loadout && mine?.loadout) this.loadout = mine.loadout;
     if (this.loadout && lobby.config.shipPool.length && !lobby.config.shipPool.includes(this.loadout.ship) && mine?.loadout) this.loadout = mine.loadout;
@@ -206,54 +241,86 @@ export class Hangar {
           if (this.step === "Presets") this.render();
         });
     } else if (this.step !== "Presets") this.ftlAsked = false;
-    const body = { Presets: () => this.stepPresets(), Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
+    const body = { Rules: () => this.stepRules(lobby), Presets: () => this.stepPresets(), Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
     this.el.innerHTML = `
       <div class="hg">
-        <div class="hg-steps">${STEPS.map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""}" data-step="${s}"><b>${i + 1}</b> ${s}</button>`).join("")}
+        <div class="hg-steps">${this.steps().map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""}" data-step="${s}"><b>${i + 1}</b> ${s}</button>`).join("")}
           <div class="hg-scrap">${this.scrapIcon()}<span class="scrap">${cfg.scrap - priced.total}</span> <span class="note">scrap left of ${cfg.scrap}</span></div></div>
-        <div class="hg-body">
+        <div class="hg-body ${BUILD_STEPS.includes(this.step) ? "" : "wide"} step-${this.step.toLowerCase()}">
           <div class="panel hg-side">${this.sidebar(lobby)}</div>
           <div class="panel hg-main">${body}</div>
-          <div class="panel hg-summary">${this.summary(l, priced, me?.ready ?? false)}</div>
+          ${BUILD_STEPS.includes(this.step) ? `<div class="panel hg-summary">${this.summary(l, priced, me?.ready ?? false)}</div>` : ""}
         </div>
       </div>`;
     const main = this.el.querySelector(".hg-main");
     if (main) main.scrollTop = scrollTop;
+    // The hangar bay (Launch): one canvas kept across renders, re-seated in its placeholder.
+    const slot = this.el.querySelector("[data-bay]");
+    if (slot) {
+      this.bay ??= new HangarBay(db);
+      slot.replaceWith(this.bay.el);
+      this.bay.show(l);
+      this.bay.pause(false);
+    } else this.bay?.pause(true);
     for (const c of this.el.querySelectorAll<HTMLCanvasElement>("canvas[data-snap]")) {
       const p = presets.get(c.dataset.snap!);
       if (p) void drawSnapshot(c, db, p.loadout, p.look, this.hasArt(), p.id);
     }
   }
 
+  /** The lobby: code, how to invite, who's here, a one-glance rules summary, and the way out. */
   private sidebar(lobby: LobbyState): string {
-    const cfg = lobby.config;
-    const host = lobby.host === this.me();
     const players = lobby.players
       .map((p) => `<div class="p"><span>${h(p.name)}${p.id === lobby.host ? " ★" : ""}${p.connected ? "" : " (offline)"}</span><span class="${p.ready ? "ready" : "notready"}">${p.ready ? "READY" : "building"}</span></div>`)
       .join("") + (lobby.players.length < 2 ? `<div class="note">Waiting for an opponent: share the code.</div>` : "");
+    return `
+      <h2>Lobby</h2><div class="code">${lobby.code}</div>${this.sharePanel(lobby)}<div class="players">${players}</div>
+      <h2 style="margin-top:14px">Rules</h2>${this.rulesSummary(lobby, true)}
+      <div style="margin-top:14px"><button data-leave>Leave lobby</button></div>`;
+  }
+
+  /** The rules in a few small read-only lines (the host can jump to the Rules step to change them). */
+  private rulesSummary(lobby: LobbyState, link: boolean): string {
+    const cfg = lobby.config;
+    const hazard: Record<string, string> = { none: "none", random: "random", sun: "red giant", pulsar: "pulsar", asteroids: "asteroids", nebula: "nebula", storm: "ion storm", asb: "anti-ship batteries" };
+    const pause: Record<string, string> = { off: "off", tactical: `tactical timeouts every ${cfg.tacticalEvery ?? 0}s`, clock: "pause clock" };
+    const lines = [
+      cfg.winCondition === "auto" ? "Autonomous ships (destroy the hull)" : "Destroy the ship (or its crew)",
+      `${cfg.scrap} scrap${cfg.unlimited ? " · unrestricted systems" : ""}`,
+      cfg.timeLimit ? `${cfg.timeLimit}s time limit` : "No time limit",
+      `Hazard: ${hazard[cfg.hazard ?? "none"] ?? cfg.hazard}`,
+      `Pausing: ${pause[cfg.pause ?? "off"] ?? cfg.pause}`,
+    ];
+    const pc = lobby.practice;
+    if (pc) {
+      const botShip = lobby.players.find((p) => p.bot)?.loadout?.ship;
+      lines.push(`Bot ${pc.difficulty}${botShip ? ` · ${this.db.ships[botShip]?.className || this.db.ships[botShip]?.title || botShip}` : ""}`);
+    }
+    const host = lobby.host === this.me();
+    return `<div class="rules-summary">${lines.map((x) => `<div>${h(x)}</div>`).join("")}${link && host && this.step !== "Rules" ? `<button class="small link" data-step="Rules">Change rules</button>` : ""}</div>`;
+  }
+
+  /** Host only: the match rules (and the practice bot), set once before everyone builds. */
+  private stepRules(lobby: LobbyState): string {
+    const cfg = lobby.config;
     const pc = lobby.practice;
     const bot = pc ? difficultyToBot(pc.difficulty) : null;
     const botShip = lobby.players.find((p) => p.bot)?.loadout?.ship;
     const pool = cfg.shipPool.length ? cfg.shipPool : this.db.hangar;
-    return `
-      <h2>Lobby</h2><div class="code">${lobby.code}</div>${this.sharePanel(lobby)}<div class="players">${players}</div>
-      <h2 style="margin-top:14px">Rules ${host ? "" : "(host sets these)"}</h2>
-      <div class="kv"><span>Win</span><select data-cfg="winCondition" ${host ? "" : "disabled"}>
+    return `<h2>${this.num("Rules")} · Rules</h2>
+      <div class="note">You're the host: set the match up, then everyone builds a ship. Changing a rule unreadies both captains.</div>
+      <div class="rules-form">
+      <div class="kv"><span>Win</span><select data-cfg="winCondition">
         <option value="hull" ${cfg.winCondition === "hull" ? "selected" : ""}>Destroy the ship</option>
         <option value="auto" ${cfg.winCondition === "auto" ? "selected" : ""}>Autonomous ships</option></select></div>
-      <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
-      <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" ${host ? "" : "disabled"} style="width:90px"></div>
+      <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" style="width:90px"></div>
+      <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" style="width:90px"></div>
       <div class="note">${cfg.winCondition === "auto" ? "Only destroying the ship wins: with its crew dead a ship runs itself, like FTL's drone ships and the flagship (systems repair on their own, the helm flies itself)." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
-      <div class="kv"><span>Hazard</span><select data-cfg="hazard" ${host ? "" : "disabled"}>
+      <div class="kv"><span>Hazard</span><select data-cfg="hazard">
         ${([["none", "None"], ["random", "Random"], ["sun", "Red giant (solar flares)"], ["pulsar", "Pulsar (ion pulses)"], ["asteroids", "Asteroid field"], ["nebula", "Nebula (no sensors)"], ["storm", "Ion storm (half reactor)"], ["asb", "Anti-ship batteries"]] as const).map(([v, l]) => `<option value="${v}" ${(cfg.hazard ?? "none") === v ? "selected" : ""}>${l}</option>`).join("")}
       </select></div>
-      ${this.pauseRules(cfg, host, !!pc)}
-      <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""} ${host ? "" : "disabled"}></label>
-      <div class="kv"><span>Battle music</span><select data-music>
-        <option value="" ${battleTrackSetting() === "" ? "selected" : ""}>Random</option>
-        <option value="off" ${battleTrackSetting() === "off" ? "selected" : ""}>Off</option>
-        ${this.db.music.filter((t) => t.combat).map((t) => `<option value="${h(t.name)}" ${battleTrackSetting() === t.name ? "selected" : ""}>${h(t.name)}</option>`).join("")}
-      </select></div>
+      ${this.pauseRules(cfg, true, !!pc)}
+      <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""}></label>
       ${pc && bot ? `
         <h2 style="margin-top:14px">Practice bot</h2>
         <div class="kv"><span>Difficulty</span><b>${pc.difficulty}</b></div>
@@ -272,34 +339,51 @@ export class Hangar {
         </select></div>
         ${botShip ? `<div class="note">Bot flies: ${h(this.db.ships[botShip]?.className || this.db.ships[botShip]?.title || botShip)}${this.db.ships[botShip]?.enemy ? ` · hull ${lobby.players.find((p) => p.bot)?.loadout?.hull ?? ""}` : ""}</div>` : ""}
         <label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}
-      <div style="margin-top:14px"><button data-leave>Leave lobby</button></div>`;
+      </div>
+      ${this.nav(null, "Presets")}`;
   }
 
+  /** The current build at a glance while shopping (no bill: the scrap counter at the top has the total). */
   private summary(l: Loadout, priced: ReturnType<typeof priceLoadout>, ready: boolean): string {
     const db = this.db;
     const ship = db.ships[l.ship];
-    const sys = hullSystems(db, l.ship).filter((s) => (l.systems[s.id] ?? s.base) > 0).map((s) => `${s.id} ${l.systems[s.id] ?? s.base}`).join(" · ");
+    const st = this.shipStats(l);
     return `
       <h2>${h(ship.title)}</h2>
       <div class="note">${h(ship.className)}</div>
       ${this.miniship(ship.img)}
-      <div class="note">Hull ${ship.health} · reactor ${l.reactor} · ${l.missiles} missiles</div>
-      <div class="note">${h(sys)}</div>
-      <h2 style="margin-top:10px">Weapons</h2>${l.weapons.map((w) => `<div class="note">• ${h(db.weapons[w]?.title ?? w)}</div>`).join("") || `<div class="note">none</div>`}
-      <h2 style="margin-top:10px">Crew (${l.crew.length})</h2>${l.crew.map((c) => `<div class="note">• ${h(c.name)} <span style="opacity:.7">${h(db.crew[c.race]?.title ?? c.race)}</span> ${this.skills(c)}</div>`).join("")}
-      <h2 style="margin-top:10px">Drones</h2>${(l.drones ?? []).map((d) => `<div class="note">• ${h(db.droneBPs[d]?.title ?? d)}</div>`).join("") || `<div class="note">none</div>`}<div class="note">${l.droneParts ?? 0} drone parts</div>
-      <h2 style="margin-top:10px">Augments</h2>${(l.augments ?? []).map((a) => `<div class="note">• ${h(db.augments[a]?.title ?? a)}</div>`).join("") || `<div class="note">none</div>`}
-      <h2 style="margin-top:10px">Bill</h2>
-      ${priced.lines.map((x) => `<div class="kv note"><span>${h(x.item)}</span><span>${x.scrap}</span></div>`).join("") || `<div class="note">Nothing bought yet.</div>`}
-      ${priced.errors.map((e) => `<div class="err">${h(e)}</div>`).join("")}
-      ${this.readyButton(l, priced, ready)}
-      ${this.lobby?.phase === "countdown" ? `<div class="code" style="margin-top:12px">Launch in ${this.lobby.countdown}…</div>` : ""}`;
+      <div class="note">Hull ${ship.health} · power ${st.used}/${st.reactor} · evasion ${st.evasion}% · shields ${st.layers}</div>
+      <div class="sum-list"><b>Weapons</b> ${l.weapons.map((w) => h(db.weapons[w]?.title ?? w)).join(", ") || "none"}</div>
+      ${(l.drones ?? []).length ? `<div class="sum-list"><b>Drones</b> ${(l.drones ?? []).map((d) => h(db.droneBPs[d]?.title ?? d)).join(", ")}</div>` : ""}
+      <div class="sum-list"><b>Crew</b> ${l.crew.map((c) => `${h(c.name)} <span class="note">${h(db.crew[c.race]?.title ?? c.race)}</span>${this.skills(c)}`).join(", ")}</div>
+      ${(l.augments ?? []).length ? `<div class="sum-list"><b>Augments</b> ${(l.augments ?? []).map((a) => h(db.augments[a]?.title ?? a)).join(", ")}</div>` : ""}
+      <div class="sum-list"><b>Stores</b> ${l.missiles} missiles · ${l.droneParts ?? 0} drone parts</div>
+      ${priced.errors.map((e) => `<div class="err small">${h(e)}</div>`).join("")}
+      ${this.readyButton(l, priced, ready)}`;
+  }
+
+  /** Numbers for the summary and Launch: power use, evasion and shield layers as the ship would start. */
+  private shipStats(l: Loadout): { used: number; reactor: number; evasion: number; layers: number; unpowered: string[]; weaponNeed: number; weaponCap: number } {
+    try {
+      const st = buildShip(this.db, l, 0, "", () => "x");
+      const eng = st.systems.engines ? Math.min(st.systems.engines.power, usable(st.systems.engines)) : 0;
+      const sh = st.systems.shields ? Math.min(st.systems.shields.power, usable(st.systems.shields)) : 0;
+      const unpowered = [
+        ...Object.values(st.systems).filter((x) => x && !SUBSYSTEM_IDS.includes(x.id) && x.level > 0 && x.power < x.level).map((x) => `${x!.id} ${x!.power}/${x!.level}`),
+        ...st.weapons.filter((w) => !w.powered).map((w) => `${this.db.weapons[w.bp]?.title ?? w.bp} (off)`),
+      ];
+      const weaponNeed = l.weapons.reduce((a, w) => a + (this.db.weapons[w]?.power ?? 0), 0);
+      return { used: reactorUsed(st), reactor: st.reactor, evasion: RULES.engineEvasion[Math.min(8, eng)] ?? 0, layers: Math.floor(sh / 2), unpowered, weaponNeed, weaponCap: st.systems.weapons ? usable(st.systems.weapons) : 0 };
+    } catch {
+      return { used: 0, reactor: l.reactor, evasion: 0, layers: 0, unpowered: [], weaponNeed: 0, weaponCap: 0 };
+    }
   }
 
   /** Until the last step the button walks you forward; Ready only appears on Launch. */
   private readyButton(l: Loadout, priced: ReturnType<typeof priceLoadout>, ready: boolean): string {
-    const i = STEPS.indexOf(this.step);
-    if (i < STEPS.length - 1) return `<button class="primary big" data-step="${STEPS[i + 1]}">Next: ${STEPS[i + 1]} →</button>`;
+    const steps = this.steps();
+    const i = steps.indexOf(this.step);
+    if (i < steps.length - 1) return `<button class="primary big" data-step="${steps[i + 1]}">Next: ${steps[i + 1]} →</button>`;
     const warn = this.warnings(l);
     if (this.confirming && !ready && warn.length)
       return `<div class="warnbox"><b>Launch anyway?</b>${warn.map((w) => `<div class="err">${h(w)}</div>`).join("")}
@@ -360,12 +444,26 @@ export class Hangar {
     return `<div class="hg-nav">${back ? `<button data-step="${back}">← ${back}</button>` : "<span></span>"}${next ? `<button class="primary" data-step="${next}">${next} →</button>` : ""}</div>`;
   }
 
+  /** This viewer's steps: Rules is the host's alone. */
+  private steps(): Step[] {
+    return ALL_STEPS.filter((s) => s !== "Rules" || this.lobby?.host === this.me());
+  }
+
   /** A step's number as the tabs show it. */
   private num(step: Step): number {
-    return STEPS.indexOf(step) + 1;
+    return this.steps().indexOf(step) + 1;
   }
 
   /** Saved builds: pick one (straight to Launch), start a new ship, or delete one (after a confirmation). */
+  /** The battle music picker (a personal setting, so it lives on Launch). */
+  private musicPicker(): string {
+    return `<div class="kv"><span>Battle music</span><select data-music>
+      <option value="" ${battleTrackSetting() === "" ? "selected" : ""}>Random</option>
+      <option value="off" ${battleTrackSetting() === "off" ? "selected" : ""}>Off</option>
+      ${this.db.music.filter((t) => t.combat).map((t) => `<option value="${h(t.name)}" ${battleTrackSetting() === t.name ? "selected" : ""}>${h(t.name)}</option>`).join("")}
+      </select></div>`;
+  }
+
   private stepPresets(): string {
     const db = this.db;
     const cfg = this.lobby!.config;
@@ -434,7 +532,7 @@ export class Hangar {
     this.confirmDel = null;
     this.importNotes = { loadout: structuredClone(f.loadout), notes: f.notes ?? [] };
     this.step = "Launch";
-    this.sfx("powerUpSystem");
+    this.sfx(SFX.pick);
     this.change(structuredClone(f.loadout));
   }
 
@@ -488,7 +586,7 @@ export class Hangar {
     this.loaded = { id: p.id, name: p.name, loadout: structuredClone(p.loadout) };
     this.saveName = null;
     this.savedNote = `Saved as preset “${p.name}”.`;
-    this.sfx("powerUpSystem");
+    this.sfx(SFX.pick);
     input?.blur();
     this.render();
   }
@@ -753,17 +851,53 @@ export class Hangar {
       <div class="race-grid">${cards}</div>${this.nav("Crew", "Launch")}`;
   }
 
+  /**
+   * Launch, full width: the ship parked in FTL's hangar bay (rooms, guns and crew as they'll fight), Ready,
+   * and the pre-flight check: problems, power and defences, crew, stores, the rules and the opponent.
+   */
   private stepLaunch(l: Loadout, priced: ReturnType<typeof priceLoadout>): string {
-    const ready = !!this.lobby?.players.find((p) => p.id === this.me())?.ready;
-    const cd = this.lobby?.phase === "countdown" ? `<div class="code launch-count">Launch in ${this.lobby.countdown}…</div>` : "";
-    return `<h2>${this.num("Launch")} · Launch</h2>
-      <p>${priced.ok ? "Your ship is ready. Press <b>Ready</b> (or Enter); the battle starts when both captains are ready." : "Fix the problems listed on the right first."}</p>
+    const db = this.db;
+    const lobby = this.lobby!;
+    const ready = !!lobby.players.find((p) => p.id === this.me())?.ready;
+    const cd = lobby.phase === "countdown" ? `<div class="code launch-count">Launch in ${lobby.countdown}…</div>` : "";
+    const st = this.shipStats(l);
+    const ship = db.ships[l.ship];
+    const over = priced.total - lobby.config.scrap;
+    const opp = lobby.players.find((p) => p.id !== this.me());
+    const row = (k: string, v: string, warn = false) => `<div class="kv pf"><span>${k}</span><span class="${warn ? "warnc" : ""}">${v}</span></div>`;
+    const crew = l.crew.map((c) => `<div class="pf-crew">${this.portrait(c.race, 1.2)}<span>${h(c.name)} <span class="note">${h(db.crew[c.race]?.title ?? c.race)}</span></span>${this.skills(c)}</div>`).join("");
+    return `<h2>${this.num("Launch")} · Launch <span class="note">${h(ship.title)} · ${h(ship.className)}</span></h2>
       ${this.importNotes && isSame(l, this.importNotes.loadout) ? `<div class="import-notes"><b>Loaded from your FTL run.</b> Not saved yet: save it as a preset below to keep it.${this.importNotes.notes.map((n) => `<div class="note">${h(n)}</div>`).join("")}</div>` : ""}
-      <div class="launch-ready">${this.readyButton(l, priced, ready)}${cd}</div>
-      ${this.saveBox(l)}
-      <div class="note">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
+      <div class="launch-grid">
+        <div class="launch-left">
+          <div data-bay></div>
+          <div class="pf-cols">
+            <div><h3>Crew (${l.crew.length})</h3>${crew}</div>
+            <div><h3>Weapons</h3>${l.weapons.map((w) => `<div class="note">• ${h(db.weapons[w]?.title ?? w)} <span class="dim">${db.weapons[w]?.power ?? "?"} power</span></div>`).join("") || `<div class="note">none</div>`}
+              ${(l.drones ?? []).length ? `<h3>Drones</h3>${(l.drones ?? []).map((d) => `<div class="note">• ${h(db.droneBPs[d]?.title ?? d)} <span class="dim">${db.droneBPs[d]?.power ?? "?"} power</span></div>`).join("")}` : ""}
+              ${(l.augments ?? []).length ? `<h3>Augments</h3>${(l.augments ?? []).map((a) => `<div class="note">• ${h(db.augments[a]?.title ?? a)}</div>`).join("")}` : ""}</div>
+          </div>
+        </div>
+        <div class="launch-right">
+          ${priced.errors.length ? `<div class="warnbox"><b>Fix before launch</b>${priced.errors.map((e) => `<div class="err">${h(e)}</div>`).join("")}${over > 0 ? `<div class="note">Over the allowance by ${over} scrap.</div>` : ""}</div>` : ""}
+          <div class="launch-ready">${this.readyButton(l, priced, ready)}${cd}</div>
+          <div class="note">${opp ? `${h(opp.name)} is ${opp.ready ? "<b class='ready'>ready</b>" : "still building"}.` : "No opponent yet: share the lobby code."} The battle starts when both captains are ready.</div>
+          <h3>Pre-flight</h3>
+          ${row("Hull", String(ship.health))}
+          ${row("Reactor", `${st.used} / ${st.reactor} in use`)}
+          ${row("Shields", `${st.layers} layer${st.layers === 1 ? "" : "s"}`)}
+          ${row("Evasion", `${st.evasion}%`)}
+          ${row("Weapon power", `${st.weaponNeed} needed / ${st.weaponCap} system`, st.weaponNeed > st.weaponCap)}
+          ${row("Missiles · drone parts", `${l.missiles} · ${l.droneParts ?? 0}`)}
+          ${row("Scrap left", String(lobby.config.scrap - priced.total), over > 0)}
+          ${st.unpowered.length ? `<div class="note warnc">Starts unpowered: ${h(st.unpowered.join(", "))}</div>` : ""}
+          <h3>Rules</h3>${this.rulesSummary(lobby, true)}
+          ${this.musicPicker()}
+          ${this.saveBox(l)}
+        </div>
+      </div>
+      <div class="note small-print">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
       ${this.nav("Augments", null)}`;
-    void l;
   }
 
   // ---------------------------------------------------------------- events
@@ -788,7 +922,7 @@ export class Hangar {
       this.confirmDel = null;
       this.confirmNew = false;
       this.step = "Launch";
-      this.sfx("powerUpSystem");
+      this.sfx(SFX.pick);
       return this.change(structuredClone(p.loadout));
     }
     if ("presetNew" in d) {
@@ -827,7 +961,7 @@ export class Hangar {
       presets.remove(d.presetDelYes);
       if (this.loaded?.id === d.presetDelYes) this.loaded = null;
       this.confirmDel = null;
-      this.sfx("powerDownSystem");
+      this.sfx(SFX.refund);
       return this.render();
     }
     if ("presetSave" in d) return this.savePreset();
@@ -838,7 +972,7 @@ export class Hangar {
     }
     if ("ship" in d && d.ship) {
       if (d.ship !== l.ship) {
-        this.sfx("powerUpSystem");
+        this.sfx(SFX.pick);
         this.change(baseLoadout(this.db, d.ship));
       }
       return;
@@ -882,7 +1016,8 @@ export class Hangar {
     else if ("leave" in d) return this.hooks.leave();
     else return;
     const down = !!(d.sell || d.fire || d.unaug || d.undrone || (d.parts && Number(d.parts) < 0) || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
-    this.sfx(down ? "powerDownSystem" : "powerUpSystem");
+    // Renaming costs nothing: just a blip. Everything else spends or refunds scrap.
+    this.sfx(d.reroll ? SFX.nav : down ? SFX.refund : SFX.spend);
     this.change(l);
   }
 
@@ -895,11 +1030,12 @@ export class Hangar {
     if (!this.el.isConnected || !this.loadout || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     const typing = !!t && ["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) && this.el.contains(t);
-    const i = STEPS.indexOf(this.step);
+    const steps = this.steps();
+    const i = steps.indexOf(this.step);
     const go = (d: number) => {
-      const n = Math.max(0, Math.min(STEPS.length - 1, i + d));
+      const n = Math.max(0, Math.min(steps.length - 1, i + d));
       if (n === i) return;
-      this.step = STEPS[n];
+      this.step = steps[n];
       this.confirming = false;
       this.sfx("hoverBeep");
       this.render();
@@ -910,7 +1046,7 @@ export class Hangar {
       e.preventDefault();
       if (typing && "presetName" in t!.dataset) return this.savePreset();
       if (typing) return t!.blur();
-      if (i < STEPS.length - 1) return go(1);
+      if (i < steps.length - 1) return go(1);
       // The last page: ready (or, past a warning, "Ready anyway").
       if (!me?.ready) press('button[data-ready="1"]');
       return;
