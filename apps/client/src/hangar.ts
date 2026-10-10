@@ -205,6 +205,7 @@ export class Hangar {
       <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="5000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="note">${cfg.winCondition === "crew" ? "Hulls can't drop below 1: only a dead crew ends it." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
+      ${this.pauseRules(cfg, host, !!pc)}
       <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""} ${host ? "" : "disabled"}></label>
       <div class="kv"><span>Battle music</span><select data-music>
         <option value="" ${battleTrackSetting() === "" ? "selected" : ""}>Random</option>
@@ -257,6 +258,29 @@ export class Hangar {
       return `<div class="warnbox"><b>Launch anyway?</b>${warn.map((w) => `<div class="err">${h(w)}</div>`).join("")}
         <div class="row"><button class="primary" data-ready="1" data-force="1">Ready anyway</button><button data-cancel-ready>Back</button></div></div>`;
     return `<button class="primary big" data-ready="${ready ? 0 : 1}" ${priced.ok ? "" : "disabled"}>${ready ? "Unready" : "Ready"}</button>`;
+  }
+
+  /**
+   * Pausing (experimental). Off; forced tactical timeouts for both players; or a pause clock each player
+   * spends to stop everyone (unlimited in practice, like FTL's own pause).
+   */
+  private pauseRules(cfg: MatchConfig, host: boolean, practice: boolean): string {
+    const dis = host ? "" : "disabled";
+    const mode = cfg.pause ?? "off";
+    const num = (k: keyof MatchConfig, v: number | undefined, min: number, max: number, step: number) =>
+      `<input data-cfg="${k}" type="number" min="${min}" max="${max}" step="${step}" value="${v ?? 0}" ${dis} style="width:70px">`;
+    const sel = (v: string, label: string) => `<option value="${v}" ${mode === v ? "selected" : ""}>${label}</option>`;
+    let more = "";
+    if (mode === "tactical")
+      more = `<div class="kv"><span>Timeout every (s)</span>${num("tacticalEvery", cfg.tacticalEvery, 15, 600, 15)}</div>
+        <div class="kv"><span>Timeout length (s)</span>${num("tacticalLength", cfg.tacticalLength, 3, 60, 1)}</div>
+        <div class="note">Time stops for both captains: give orders, then press Space when ready (it ends early once both are).</div>`;
+    else if (mode === "clock")
+      more = `<div class="kv"><span>Pause time each (s)</span>${num("pauseBank", cfg.pauseBank, practice ? 0 : 10, 600, 10)}</div>
+        <div class="kv"><span>Regained per minute (s)</span>${num("pauseRegen", cfg.pauseRegen, 0, 60, 1)}</div>
+        <div class="note">Space pauses everyone and spends your clock; Space again resumes. ${practice ? "0 = unlimited, like FTL." : ""}</div>`;
+    return `<div class="kv"><span>Pausing <span class="note">(experimental)</span></span><select data-cfg="pause" ${dis}>
+        ${sel("off", "Off")}${sel("tactical", "Tactical timeouts")}${sel("clock", "Pause clock")}</select></div>${more}`;
   }
 
   private confirming = false;
@@ -583,7 +607,7 @@ export class Hangar {
       this.sfx("hoverBeep");
     } else if (t.dataset.cfg) {
       const k = t.dataset.cfg as keyof MatchConfig;
-      const v = k === "winCondition" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : Number(t.value);
+      const v = k === "winCondition" || k === "pause" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : Number(t.value);
       this.hooks.setConfig({ [k]: v } as Partial<MatchConfig>);
     } else if (t.dataset.prac) {
       const k = t.dataset.prac as keyof PracticeConfig;

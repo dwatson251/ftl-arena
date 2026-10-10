@@ -26,4 +26,6 @@ export type Command =
   /** Mind control one hostile crew member in a room (on the enemy ship, or an intruder at home). */
   | { c: "mind"; room: number; enemy: boolean }
   /** Point the artillery at an enemy room (null: random rooms). */
-  | { c: "artilleryTarget"; room: number | null };
+  | { c: "artilleryTarget"; room: number | null }
+  /** Pause clock: pause everyone (on) or resume your own pause (off). In a tactical timeout, off = ready. */
+  | { c: "pause"; on: boolean };

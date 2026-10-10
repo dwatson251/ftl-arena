@@ -15,7 +15,20 @@ export interface MatchConfig {
   seed: number;
   /** Unrestricted hangar: weapons, drones and reactor up to the most the hull could ever use (loadout.ts). */
   unlimited?: boolean;
+  /**
+   * Pausing (experimental; FTL's single player pauses at will). "off": never. "tactical": every `tacticalEvery`
+   * seconds of play both players get a forced `tacticalLength` s timeout (it ends early once both are ready).
+   * "clock": either player may pause everyone, spending their own `pauseBank` seconds (0 = unlimited, practice
+   * only), regaining `pauseRegen` seconds per minute of play.
+   */
+  pause?: PauseMode;
+  tacticalEvery?: number;
+  tacticalLength?: number;
+  pauseBank?: number;
+  pauseRegen?: number;
 }
+
+export type PauseMode = "off" | "tactical" | "clock";
 
 export const DEFAULT_CONFIG: MatchConfig = { winCondition: "hull", scrap: 400, shipPool: [], timeLimit: 0, seed: 1 };
 
@@ -244,6 +257,9 @@ export type MatchEvent =
   | { e: "battery"; ship: 0 | 1; on: boolean }
   /** `ship` mind-controlled (on) or released (off) crew member `crew`. */
   | { e: "mind"; ship: 0 | 1; crew: number; on: boolean }
+  /** A tactical timeout is coming in `in` seconds. */
+  | { e: "pauseWarn"; in: number }
+  | { e: "pause"; on: boolean; kind: "tactical" | "player"; by?: 0 | 1 }
   | { e: "end"; winner: 0 | 1 | -1; reason: string };
 
 export interface MatchState {
@@ -257,4 +273,10 @@ export interface MatchState {
   events: MatchEvent[];
   winner: 0 | 1 | -1 | null;
   endReason: string;
+  /** The running pause: a tactical timeout or a player's, seconds left, and (tactical) who's ready to go on. */
+  pause?: { kind: "tactical" | "player"; by?: 0 | 1; left: number; ready?: [boolean, boolean] } | null;
+  /** Each player's pause clock in seconds (-1 = unlimited). */
+  pauseBank?: [number, number];
+  /** Tick of the next tactical timeout. */
+  nextTactical?: number;
 }

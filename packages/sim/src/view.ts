@@ -28,6 +28,9 @@ export interface MatchView {
   events: MatchEvent[];
   winner: MatchState["winner"];
   endReason: string;
+  pause: MatchState["pause"];
+  pauseBank?: MatchState["pauseBank"];
+  nextTactical?: number;
 }
 
 export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.events, reveal = false): MatchView {
@@ -96,5 +99,6 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   return {
     you, tick: st.tick, config: st.config, ships: you === 0 ? [ownView, ev] : [ev, ownView],
     projectiles: st.projectiles, events, winner: st.winner, endReason: st.endReason,
+    pause: st.pause ?? null, pauseBank: st.pauseBank, nextTactical: st.nextTactical,
   };
 }

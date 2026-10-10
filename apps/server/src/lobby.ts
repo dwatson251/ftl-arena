@@ -4,7 +4,7 @@ import {
   PROTOCOL_VERSION, SNAP_EVERY, type DebugInfo, type DebugOp, type LobbyPlayer, type LobbyState, type PracticeConfig, type ServerMsg,
 } from "@ftl/protocol";
 import {
-  baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, difficultyToBot, enemyLoadout, Match, priceLoadout, viewFor, type Command, type Loadout,
+  baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, difficultyToBot, enemyLoadout, Match, priceLoadout, RULES, viewFor, type Command, type Loadout,
   type MatchConfig, type MatchEvent,
 } from "@ftl/sim";
 
@@ -38,7 +38,9 @@ export class Lobby {
   private loadouts: [Loadout, Loadout] | null = null;
 
   constructor(public code: string, public host: string, public db: GameDB, cfg: Partial<MatchConfig>, public practice: boolean) {
-    this.config = sanitizeConfig(db, { ...DEFAULT_CONFIG, seed: (Math.random() * 2 ** 31) | 0, ...cfg });
+    // Practice pauses freely, as FTL's single player does (an unlimited pause clock).
+    const pauseDefaults: Partial<MatchConfig> = practice ? { pause: "clock", pauseBank: 0 } : {};
+    this.config = sanitizeConfig(db, { ...DEFAULT_CONFIG, seed: (Math.random() * 2 ** 31) | 0, ...pauseDefaults, ...cfg }, practice);
     if (practice) this.practiceCfg = { difficulty: 40, botShip: "", debug: true };
   }
 
@@ -239,7 +241,7 @@ export class Lobby {
   setConfig(c: Client, cfg: Partial<MatchConfig>): string | null {
     if (c.id !== this.host) return "only the host can change the rules";
     if (this.phase !== "lobby") return "rules are locked once the countdown starts";
-    this.config = sanitizeConfig(this.db, { ...this.config, ...cfg, seed: this.config.seed });
+    this.config = sanitizeConfig(this.db, { ...this.config, ...cfg, seed: this.config.seed }, this.practice);
     for (const p of this.players) {
       if (p.bot) continue;
       if (p.loadout && this.config.shipPool.length && !this.config.shipPool.includes(p.loadout.ship))
@@ -338,6 +340,8 @@ export class Lobby {
     this.players.forEach((p, i) => {
       const idx = i as 0 | 1;
       if (p.bot && this.bot) for (const c of this.bot.think(m, idx)) m.push(idx, c);
+      // The bot plans nothing in a tactical timeout, so it's always ready to go on.
+      if (p.bot && m.state.pause?.kind === "tactical" && !m.state.pause.ready?.[idx]) m.push(idx, { c: "pause", on: false });
       else if (!p.bot && this.autopilot) for (const c of this.autopilot.think(m, idx)) m.push(idx, c);
     });
     m.step();
@@ -380,8 +384,16 @@ export class Lobby {
   }
 }
 
-export function sanitizeConfig(db: GameDB, c: MatchConfig): MatchConfig {
+export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): MatchConfig {
+  const pause = c.pause === "tactical" || c.pause === "clock" ? c.pause : "off";
+  // An unlimited pause clock (0) is for practice only: against a person it would stop the game for good.
+  const bank = clamp(Math.round(Number(c.pauseBank ?? RULES.pauseBank) || 0), 0, 600);
   return {
+    pause,
+    tacticalEvery: clamp(Math.round(Number(c.tacticalEvery ?? RULES.tacticalEvery) || RULES.tacticalEvery), 15, 600),
+    tacticalLength: clamp(Math.round(Number(c.tacticalLength ?? RULES.tacticalLength) || RULES.tacticalLength), 3, 60),
+    pauseBank: bank === 0 && !practice ? RULES.pauseBank : bank,
+    pauseRegen: clamp(Math.round(Number(c.pauseRegen ?? RULES.pauseRegen) || 0), 0, 60),
     winCondition: c.winCondition === "crew" ? "crew" : "hull",
     scrap: clamp(Math.round(Number(c.scrap) || 0), 0, 5000),
     shipPool: (Array.isArray(c.shipPool) ? c.shipPool : []).filter((s) => db.hangar.includes(s)),

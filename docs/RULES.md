@@ -173,3 +173,13 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 
 | Clone bay and the crew win | With every crew member dead, the player stays in while the clone bay has someone queued; once it's destroyed (no one left to repair it) they lose, Backup DNA or not | user |
 | Unrestricted hangar | Weapons up to weapon slots × the hungriest weapon's power, drones up to drone slots × the hungriest drone's, and the reactor up to the hull's eight biggest systems at their maximum | user |
+
+## Pausing (experimental; FTL itself is single player and pauses freely)
+| Rule | Value | Source |
+|---|---|---|
+| Modes | Off; tactical timeouts; pause clock (lobby rules) | design |
+| While paused | No time passes (the tick, the time limit and every timer stand still) but orders still go in: power, targets, doors, crew paths, abilities queued | design, like FTL's pause |
+| Tactical timeout | Every 60 s of play (15-600) for 10 s (3-60), warned 5 s ahead (FTL's flagship surge warning, then a beep a second); ends early once both captains press Space; the practice bot is always ready | design |
+| Pause clock | Space pauses everyone and spends your own 60 s (10-600); Space resumes; it resumes by itself when your clock is empty; the other captain can't resume it; unused time comes back at 5 s per minute of play (0-60) | design |
+| Practice | Defaults to an unlimited clock (0), i.e. FTL's free pause | design |
+| Time-stop effects | The world freezes under a cold blue wash with FTL's blinking PAUSED; the music winds down like a tape to half speed an octave lower and holds as a drone, other loops fall silent under a low hum; FTL's cloak whoosh on stopping, decloak on resuming | design |

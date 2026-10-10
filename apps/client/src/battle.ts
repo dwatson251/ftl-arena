@@ -11,7 +11,7 @@ import type { GameDB, SystemId } from "@ftl/data";
 import { baseSystemId, SUBSYSTEMS } from "@ftl/data";
 import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
 import { animFrame, frame, texNow } from "./assets.ts";
-import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, setSound, soundOn, stopLoops } from "./audio.ts";
+import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, setSound, soundOn, stopLoops, timeStop } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
 import { LOW_HP, ShipRenderer, type CrewDraw } from "./render/ship.ts";
 
@@ -78,6 +78,10 @@ export class Battle {
   private fxOwn = new Container();
   private fxWin = new Container();
   private hudRoot = new Container();
+  /** A cold blue wash over the battle while time is stopped. */
+  private pauseTint = new Graphics().rect(0, 0, W, H).fill({ color: 0x1a3060 });
+  /** Animation clock: stands still while the match is paused, so fires, crew and drones freeze too. */
+  private animTime = 0;
   private hud: Imm;
   own!: ShipRenderer;
   enemy!: ShipRenderer;
@@ -119,7 +123,7 @@ export class Battle {
     ownProj.mask = ownClip;
     this.winLayer.addChild(this.enemyBox, this.projWin, this.fxWin);
     this.world.addChild(this.ownBox, ownClip, ownProj, this.winLayer);
-    this.stage.addChild(this.bgLayer, this.world, this.hudRoot);
+    this.stage.addChild(this.bgLayer, this.world, this.pauseTint, this.hudRoot);
     this.stage.eventMode = "static";
     this.stage.hitArea = { contains: () => true };
     this.stage.on("pointerdown", (e) => this.onDown(e));
@@ -130,6 +134,7 @@ export class Battle {
 
   destroy(): void {
     stopLoops();
+    timeStop(false);
     window.removeEventListener("keydown", this.keyHandler);
     this.stage.destroy({ children: true });
   }
@@ -308,6 +313,19 @@ export class Battle {
       case "hackPulse":
         play(this.db, ["hackStart"], 1);
         break;
+      case "pauseWarn":
+        // FTL's flagship power-surge warning: something big is coming.
+        play(this.db, ["surgeWarning"], 1);
+        this.say(`Tactical timeout in ${e.in} s`, 0x9fd8ff);
+        break;
+      case "pause":
+        // Time stopping: a cloak's whoosh as the music winds down to a slow, low drone; the decloak as it
+        // spins back up.
+        timeStop(e.on);
+        play(this.db, [e.on ? "cloak" : "decloak"], 1);
+        if (e.on) stopLoops();
+        if (!e.on) this.say(e.kind === "tactical" ? "Timeout over" : "Resumed", 0x9fd8ff);
+        break;
       case "doorBroken":
         play(this.db, ["doorOpen"], 1);
         break;
@@ -461,6 +479,8 @@ export class Battle {
     this.frameDt = dt;
     const v = this.view;
     if (!v) return;
+    if (!v.pause) this.animTime += dt;
+    this.pauseTint.alpha += ((v.pause ? 0.28 : 0) - this.pauseTint.alpha) * Math.min(1, dt * 6);
     for (const m of [this.flashTiles, this.flashTilesEnemy]) for (const [k, left] of m) left - dt <= 0 ? m.delete(k) : m.set(k, left - dt);
     const k = Math.min(1, (performance.now() - this.snapAt) / (1000 / SNAP_HZ));
     this.snapK = k;
@@ -471,11 +491,11 @@ export class Battle {
       const e = s.systems.engines;
       return e ? Math.max(0, Math.min(e.power + (e.bonus ?? 0), usable(e))) : 0;
     };
-    this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.time, {
+    this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.animTime, {
       hover: this.hoverOwn, weaponFrame: (s) => this.weaponFrameFor(ownV, v.you, s), shieldFlash: this.time - this.shieldHitAt[v.you],
       exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0,
     });
-    this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.time, {
+    this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.animTime, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
       shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.weaponsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
       destinations: true, flashTiles: this.flashTilesEnemy,
@@ -763,6 +783,7 @@ export class Battle {
       const t = h.text("msg", this.message.text, 440, 588, fstyle("JustinFont12Bold", this.message.color, { stroke: 0x101010, strokeWidth: 3 }), [0.5, 0]);
       t.alpha = Math.min(1, (this.message.until - this.time) / 0.4);
     }
+    this.pauseHud(v);
     this.tooltip(v);
     // The selection box, in screen space above everything (both ships and the hostiles window).
     if (this.drag) {
@@ -778,6 +799,57 @@ export class Battle {
       h.text("clock", `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, 640, 8, fstyle("HL2", 0xffffff, { stroke: 0x101010 }), [0.5, 0]);
     }
     h.end();
+  }
+
+  private pauseBox: Box | null = null;
+
+  /**
+   * Pausing (experimental): FTL's blinking PAUSED banner while time is stopped, with who stopped it and the
+   * seconds left; the pause clocks (yours and theirs) or the time to the next tactical timeout at the top.
+   */
+  private pauseHud(v: MatchView): void {
+    const h = this.hud;
+    const mode = v.config.pause ?? "off";
+    this.pauseBox = null;
+    if (mode === "off") return;
+    const fmt = (t: number) => (t < 0 ? "∞" : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`);
+    const st = fstyle("JustinFont10", 0xdfe8ff, { stroke: 0x101010 });
+    const p = v.pause;
+    if (p) {
+      const t = texNow(Math.floor(this.time * 2) % 2 ? "Text_pause1.png" : "Text_pause2.png");
+      if (t) h.sprite("pzT", t, 640, 84, { anchor: 0.5 });
+      else h.text("pzT", "PAUSED", 640, 84, fstyle("HL2", 0xe8ece8, { scale: 3, stroke: 0x101010, strokeWidth: 3 }), [0.5, 0.5]);
+      const who = p.kind === "tactical" ? "TACTICAL TIMEOUT" : p.by === v.you ? "You paused" : `${v.ships[p.by ?? 0].player} paused`;
+      const hint = p.kind === "tactical" ? (p.ready?.[v.you] ? "Ready: waiting for the other captain" : "Space when you're ready") : p.by === v.you ? "Space to resume" : "Orders still go in";
+      h.text("pzW", p.left < 0 ? `${who}  ·  ${hint}` : `${who}  ·  ${fmt(p.left)}  ·  ${hint}`, 640, 112, st, [0.5, 0]);
+    }
+    if (mode === "tactical" && !p && v.nextTactical !== undefined) {
+      h.text("pzN", `Tactical timeout in ${fmt((v.nextTactical - v.tick) / 30)}`, 640, 28, st, [0.5, 0]);
+    }
+    if (mode === "clock" && v.pauseBank) {
+      const mine = v.pauseBank[v.you];
+      const theirs = v.pauseBank[1 - v.you];
+      // Practice's unlimited clock is FTL's own pause: no clocks to show.
+      const label = mine < 0 ? "Pause: Space" : `Pause (Space): you ${fmt(mine)}  ·  them ${fmt(theirs)}`;
+      const tt = h.text("pzC", label, 640, 28, fstyle("JustinFont10", mine === 0 ? 0xff8070 : 0xdfe8ff, { stroke: 0x101010 }), [0.5, 0]);
+      this.pauseBox = { x: 640 - tt.width / 2, y: 26, w: tt.width, h: 18 };
+    }
+  }
+
+  /** Space: pause from your clock, resume your own pause, or say you're ready in a tactical timeout. */
+  private togglePause(): void {
+    const v = this.view;
+    if (!v || v.winner !== null) return;
+    const mode = v.config.pause ?? "off";
+    const p = v.pause;
+    if (p?.kind === "tactical") return this.send({ c: "pause", on: false });
+    if (mode !== "clock") return this.fail(mode === "tactical" ? "Pausing comes in tactical timeouts" : "Pausing is off for this match");
+    if (p) {
+      if (p.by !== v.you) return this.fail("The other captain paused: it's their clock running");
+      return this.send({ c: "pause", on: false });
+    }
+    if (v.pauseBank?.[v.you] === 0) return this.fail("Your pause clock is empty");
+    this.send({ c: "pause", on: true });
   }
 
   private hoverCrew: { id: number; mine: boolean } | null = null;
@@ -805,13 +877,22 @@ export class Battle {
   /** Ambient loops and event sounds driven by our own ship's state. */
   private lowHpBeep = new Map<number, number>();
   private hammerAt = -9;
+  private lastCountdown = 0;
   private soundscape(v: MatchView): void {
     const own = v.ships[v.you];
     const g = this.own.geo;
     // Our own crew aboard our ship (intruders make none of these sounds for us).
     const alive = own.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === v.you);
     const roomOf = (c: { tile: string }) => g.tiles.get(c.tile)?.room;
-    const over = v.winner !== null;
+    // While time is stopped the world falls silent but for a low hum (nothing burns, leaks or gets fixed).
+    const over = v.winner !== null || !!v.pause;
+    loop(this.db, "nebula", !!v.pause && v.winner === null, 0.35);
+    // The last seconds before a tactical timeout tick down.
+    if (v.nextTactical !== undefined && !v.pause) {
+      const left = Math.ceil((v.nextTactical - v.tick) / 30);
+      if (left !== this.lastCountdown && left >= 1 && left <= 3) play(this.db, ["hoverBeep"], 1.4);
+      this.lastCountdown = left;
+    }
     loop(this.db, "fire", !over && own.rooms.some((r) => Object.keys(r.fires).length > 0), 0.8);
     const venting = g.doors.some((d, i) => own.doors[i] && (d.roomA < 0 || d.roomB < 0));
     loop(this.db, "airLeak", !over && (venting || own.rooms.some((r) => Object.keys(r.breaches).length > 0)), 1);
@@ -1686,7 +1767,7 @@ export class Battle {
         sp.rotation = spot.rot + r.root.rotation;
         layer.addChild(sp);
         if (s.hack.pulse > 0) {
-          const lt = texNow(Math.floor(this.time * 6) % 2 ? "ship/drones/drone_hack_light1.png" : "ship/drones/drone_hack_light2.png");
+          const lt = texNow(Math.floor(this.animTime * 6) % 2 ? "ship/drones/drone_hack_light1.png" : "ship/drones/drone_hack_light2.png");
           if (lt) {
             const l = new Sprite(lt);
             l.anchor.set(0.5, 0.92);
@@ -1698,7 +1779,7 @@ export class Battle {
       }
       if (s.hack.pulse > 0) {
         const tiles = r.geo.roomTiles.get(s.hack.room) ?? [];
-        const seed = Math.floor(this.time * 12);
+        const seed = Math.floor(this.animTime * 12);
         const g = new Graphics();
         for (let i = 0; i < 3 && tiles.length; i++) {
           const [tx, ty] = tiles[Math.floor(hash01(seed * 7 + i) * tiles.length)].split(",").map(Number);
@@ -1768,6 +1849,7 @@ export class Battle {
     const p = this.stage.toLocal(e.global);
     const right = e.button === 2;
     const own = v.ships[v.you];
+    if (this.pauseBox && inBox(p, this.pauseBox)) return this.togglePause();
     for (const s of this.sysHit) {
       if (!inBox(p, s.box)) continue;
       this.powerClick(own, s.id, right ? -1 : 1);
@@ -2115,7 +2197,10 @@ export class Battle {
     const v = this.view;
     if (!v) return;
     const own = v.ships[v.you];
-    if (/^[1-4]$/.test(e.key)) this.clickWeapon(Number(e.key) - 1, false);
+    if (e.key === " ") {
+      e.preventDefault();
+      this.togglePause();
+    } else if (/^[1-4]$/.test(e.key)) this.clickWeapon(Number(e.key) - 1, false);
     else if (e.key === "Escape") this.disarm();
     else if (e.key.toLowerCase() === "a" && this.armed !== null) this.send({ c: "autofire", slot: this.armed, on: !own.weapons[this.armed].autofire });
     else if (e.key.toLowerCase() === "m") {

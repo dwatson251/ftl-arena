@@ -44,6 +44,11 @@ export class Match {
       buildShip(db, loadouts[1], 1, players[1], pick, config.unlimited),
     ];
     this.state = { tick: 0, rng: this.rng.s, nextId: 1, config, ships, projectiles: [], events: [], winner: null, endReason: "" };
+    if (config.pause === "clock") {
+      const bank = (config.pauseBank ?? RULES.pauseBank) > 0 ? (config.pauseBank ?? RULES.pauseBank) : -1;
+      this.state.pauseBank = [bank, bank];
+    }
+    if (config.pause === "tactical") this.state.nextTactical = Math.round((config.tacticalEvery ?? RULES.tacticalEvery) * TICK_HZ);
     for (const s of ships) this.updateDerived(s);
   }
 
@@ -75,6 +80,11 @@ export class Match {
     st.events = [];
     if (st.winner !== null) return;
     for (const { player, cmd } of this.queue.splice(0)) this.apply(st.ships[player], cmd);
+    // Paused: orders still go in (crew get their paths, power moves, targets are set) but no time passes.
+    if (this.pauseStep()) {
+      st.rng = this.rng.s;
+      return;
+    }
     // Alternate which ship is processed first so simultaneous events don't always favour one side.
     const order = st.tick % 2 ? [st.ships[1], st.ships[0]] : st.ships;
     for (const s of st.ships) {
@@ -169,6 +179,8 @@ export class Match {
         return this.startBattery(ship);
       case "mind":
         return this.mindControl(ship, cmd.room, cmd.enemy);
+      case "pause":
+        return this.pauseCmd(ship.idx, cmd.on);
       case "artilleryTarget": {
         const T = this.state.ships[1 - ship.idx];
         if (cmd.room !== null && !this.geo(T).roomTiles.has(cmd.room)) return false;
@@ -260,6 +272,75 @@ export class Match {
     if (!p) return;
     c.home = dest;
     c.path = c.path.length ? [c.path[0], ...p] : p;
+  }
+
+  // ---------------------------------------------------------------- pausing (experimental)
+
+  get paused(): boolean {
+    return !!this.state.pause;
+  }
+
+  /** Pause clock: start a pause from your own bank, or end your own. In a tactical timeout, `off` means ready. */
+  private pauseCmd(idx: 0 | 1, on: boolean): boolean {
+    const st = this.state;
+    const p = st.pause;
+    if (p?.kind === "tactical") {
+      if (on) return false;
+      p.ready ??= [false, false];
+      p.ready[idx] = true;
+      if (p.ready[0] && p.ready[1]) this.endPause();
+      return true;
+    }
+    if (st.config.pause !== "clock" || !st.pauseBank) return false;
+    if (on) {
+      if (p || st.pauseBank[idx] === 0) return false;
+      st.pause = { kind: "player", by: idx, left: st.pauseBank[idx] };
+      st.events.push({ e: "pause", on: true, kind: "player", by: idx });
+      return true;
+    }
+    if (p?.kind !== "player" || p.by !== idx) return false;
+    this.endPause();
+    return true;
+  }
+
+  private endPause(): void {
+    const p = this.state.pause;
+    if (!p) return;
+    this.state.pause = null;
+    this.state.events.push({ e: "pause", on: false, kind: p.kind, by: p.by });
+  }
+
+  /** Runs the pause clocks and the tactical schedule; true while the match is paused (the tick is skipped). */
+  private pauseStep(): boolean {
+    const st = this.state;
+    const cfg = st.config;
+    if (cfg.pause === "tactical" && !st.pause && st.nextTactical !== undefined) {
+      const warn = st.nextTactical - Math.round(RULES.tacticalWarn * TICK_HZ);
+      if (st.tick === warn) st.events.push({ e: "pauseWarn", in: RULES.tacticalWarn });
+      if (st.tick >= st.nextTactical) {
+        st.pause = { kind: "tactical", left: cfg.tacticalLength ?? RULES.tacticalLength, ready: [false, false] };
+        st.nextTactical = st.tick + Math.round((cfg.tacticalEvery ?? RULES.tacticalEvery) * TICK_HZ);
+        st.events.push({ e: "pause", on: true, kind: "tactical" });
+      }
+    }
+    const p = st.pause;
+    const bank = st.pauseBank;
+    if (!p) {
+      // Unused pause time slowly comes back.
+      const regen = ((cfg.pauseRegen ?? RULES.pauseRegen) / 60) * DT;
+      const max = cfg.pauseBank ?? RULES.pauseBank;
+      if (bank && regen > 0) for (const i of [0, 1] as const) if (bank[i] >= 0) bank[i] = Math.min(max, bank[i] + regen);
+      return false;
+    }
+    if (p.kind === "player" && bank && p.by !== undefined) {
+      if (bank[p.by] >= 0) bank[p.by] = Math.max(0, bank[p.by] - DT);
+      p.left = bank[p.by];
+      if (bank[p.by] === 0) this.endPause();
+    } else {
+      p.left -= DT;
+      if (p.left <= 0) this.endPause();
+    }
+    return true;
   }
 
   // ---------------------------------------------------------------- systems, shields, evasion

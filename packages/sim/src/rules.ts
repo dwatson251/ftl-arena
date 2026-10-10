@@ -152,6 +152,13 @@ export const RULES = {
   /** The Rebel flagship's crew (its blueprints don't list one; est). */
   flagshipCrew: 8,
   maxCrew: 8,
+  /** Pausing defaults (experimental, not FTL): a tactical timeout every 60 s for 10 s, warned 5 s ahead; a
+   * 60 s pause clock each, regaining 5 s per minute of play. */
+  tacticalEvery: 60,
+  tacticalLength: 10,
+  tacticalWarn: 5,
+  pauseBank: 60,
+  pauseRegen: 5,
   sellRefund: 0.5,
 };
 

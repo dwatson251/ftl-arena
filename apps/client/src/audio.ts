@@ -107,6 +107,32 @@ export function music(file: string | null): void {
     fade(el, MUSIC_VOL);
   }
 }
+/**
+ * Time stopping: the music winds down like a tape stopping, to half speed an octave lower and quieter, and
+ * holds there as a drone; when time starts again it spins back up.
+ */
+let stopped = false;
+export function timeStop(on: boolean): void {
+  stopped = on;
+  const el = current?.el;
+  if (!el) return;
+  (el as HTMLAudioElement & { preservesPitch: boolean }).preservesPitch = false;
+  const from = el.playbackRate;
+  const to = on ? 0.5 : 1;
+  const v0 = el.volume;
+  const v1 = musicOn ? (on ? MUSIC_VOL * 0.45 : MUSIC_VOL) : 0;
+  const t0 = performance.now();
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / (on ? 700 : 450));
+    // Ease out on the way down (a tape slowing), ease in on the way up.
+    const e = on ? 1 - (1 - k) * (1 - k) : k * k;
+    el.playbackRate = from + (to - from) * e;
+    el.volume = v0 + (v1 - v0) * e;
+    if (k < 1 && stopped === on) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 export const musicEnabled = () => musicOn;
 export function setMusic(on: boolean): void {
   musicOn = on;
