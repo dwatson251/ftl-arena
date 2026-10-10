@@ -310,7 +310,7 @@ export class Hangar {
     return `<h2>${this.num("Rules")} · Rules</h2>
       <div class="note">You're the host: set the match up, then everyone builds a ship. Changing a rule unreadies both captains.</div>
       <div class="rules-form">
-      <div class="kv"><span>Win</span><select data-cfg="winCondition">
+      <div class="kv"><span>Game mode</span><select data-cfg="winCondition">
         <option value="hull" ${cfg.winCondition === "hull" ? "selected" : ""}>Destroy the ship</option>
         <option value="auto" ${cfg.winCondition === "auto" ? "selected" : ""}>Autonomous ships</option></select></div>
       <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" style="width:90px"></div>
