@@ -70,6 +70,8 @@ export interface DroneBP {
   speed: number;
   weapon: string;
   image: string;
+  /** Store/tray icon: systemUI/weapbox_icon_D_<icon>.png. */
+  icon: string;
   rarity: number;
   /** Anti-drone drones target drones instead of projectiles. */
   antiDrone?: boolean;

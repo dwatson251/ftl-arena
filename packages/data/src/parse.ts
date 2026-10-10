@@ -261,7 +261,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
         db.droneBPs[n.attrs.name] = {
           id: n.attrs.name, title: title(n, "title", text) || n.attrs.name, type, power: num(n, "power", 1), cost: num(n, "cost"),
           cooldown: num(n, "cooldown", 1000) / 1000, speed: num(n, "speed", 10), weapon: txt(n, "weaponBlueprint") ?? "",
-          image: txt(n, "droneImage") ?? "", rarity: num(n, "rarity"), antiDrone: n.attrs.name === "ANTI_DRONE",
+          image: txt(n, "droneImage") ?? "", icon: txt(n, "iconImage") ?? "", rarity: num(n, "rarity"), antiDrone: n.attrs.name === "ANTI_DRONE",
         };
       } else if (n.tag === "blueprintList" && n.attrs.name) lists[n.attrs.name] = kids(n, "name").map((x) => x.text.trim());
       else if (n.tag === "shipBlueprint" && n.attrs.name && n.attrs.layout && f.includes("Blueprints")) enemyNodes.push(n);

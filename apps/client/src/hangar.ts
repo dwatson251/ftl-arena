@@ -7,7 +7,7 @@ import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
 import { hasImg } from "./assets.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
-  AUGMENT_EFFECTS, baseLoadout, buyableDrones, fullPowerNeed, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
+  baseLoadout, buyableDrones, fullPowerNeed, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
   type MatchConfig,
 } from "@ftl/sim";
 
@@ -411,7 +411,15 @@ export class Hangar {
 
   private droneArt(id: string): string {
     const bp = this.db.droneBPs[id];
-    if (!bp?.image || !this.hasArt()) return `<div class="ph-weapon">D</div>`;
+    if (!bp || !this.hasArt()) return `<div class="ph-weapon">D</div>`;
+    // Interior drones fly no sprite: show their crew-style portrait (anti-personnel, repair, ion intruder)
+    // or FTL's drone icon.
+    if (!bp.image) {
+      const sheet = { BATTLE: "battle", REPAIR: "repair" }[bp.type as string] ?? (bp.id === "BOARDER_ION" ? "boarder_ion" : "");
+      if (sheet && this.db.anims[`${sheet}_portrait`]) return this.portrait(sheet, 1.2);
+      const icon = `systemUI/weapbox_icon_D_${bp.icon}.png`;
+      return bp.icon && hasImg(icon) ? `<img class="drone-art" src="/assets/img/${h(icon)}">` : `<div class="ph-weapon">D</div>`;
+    }
     const f = [`ship/drones/${bp.image}_base.png`, `ship/drones/${bp.image}_off.png`].find(hasImg);
     if (!f) return `<div class="ph-weapon">D</div>`;
     return `<img class="drone-art" src="/assets/img/${h(f)}" onerror="this.style.visibility='hidden'">`;
@@ -465,16 +473,14 @@ export class Hangar {
       const id = augs[i];
       if (!id) return `<div class="wslot empty">augment slot ${i + 1}</div>`;
       const a = db.augments[id];
-      return `<div class="wslot"><div><b>${h(a?.title ?? id)}</b>${base.includes(id) ? ` <span class="note">(came with the hull)</span>` : ""}<div class="note">${h(AUGMENT_EFFECTS[id] ?? "No effect in the arena.")}</div></div><button class="small" data-unaug="${i}" title="Remove">✕</button></div>`;
+      return `<div class="wslot"><div><b>${h(a?.title ?? id)}</b>${base.includes(id) ? ` <span class="note">(came with the hull)</span>` : ""}<div class="note">${h(a?.desc ?? "")}</div></div><button class="small" data-unaug="${i}" title="Remove">✕</button></div>`;
     }).join("");
-    const all = Object.values(db.augments).sort((a, b) => Number(!AUGMENT_EFFECTS[a.id]) - Number(!AUGMENT_EFFECTS[b.id]) || a.title.localeCompare(b.title));
+    const all = Object.values(db.augments).sort((a, b) => a.title.localeCompare(b.title));
     const cards = all
       .map((a) => {
         const has = augs.includes(a.id);
-        const effect = AUGMENT_EFFECTS[a.id];
-        return `<div class="wcard aug ${effect ? "" : "inert"}"><div class="wcard-body"><b>${h(a.title)}</b>${a.stackable ? ` <span class="note">stacks</span>` : ""}
-          <div class="note">${h(a.desc)}</div>
-          <div class="note ${effect ? "effect" : "noeffect"}">${effect ? `Arena: ${h(effect)}` : "No effect in the arena."}</div></div>
+        return `<div class="wcard aug"><div class="wcard-body"><b>${h(a.title)}</b>${a.stackable ? ` <span class="note">stacks</span>` : ""}
+          <div class="note">${h(a.desc)}</div></div>
           <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) ? "disabled" : ""}>${this.scrapIcon()}${a.cost}</button></div>`;
       })
       .join("");

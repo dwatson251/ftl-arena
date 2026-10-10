@@ -15,7 +15,8 @@ await p.waitForTimeout(2500);
 await p.selectOption('select[data-prac="botShip"]', "PLAYER_SHIP_CIRCLE");
 await p.click('button[data-ship="PLAYER_SHIP_CIRCLE"]');
 await p.click('button[data-step="Drones"]');
-await p.click('button[data-drone="DEFENSE_1"]').catch(() => console.log("no DEFENSE_1"));
+await p.click(`button[data-drone="DEFENSE_1"]`).catch(() => {});
+await p.evaluate(() => document.querySelector(".race-grid")?.scrollIntoView());
 await p.waitForTimeout(300);
 await p.screenshot({ path: `${out}/01-drones-step.png` });
 await p.click('button[data-step="Launch"]');
@@ -30,7 +31,7 @@ for (const i of [0, 1]) {
   await p.mouse.click(b.x, b.y);
   await p.waitForTimeout(200);
 }
-await p.waitForTimeout(6000);
+await p.waitForTimeout(14000);
 await p.screenshot({ path: `${out}/02-battle.png` });
 console.log(await p.evaluate(() => {
   const v = (window as unknown as { __arena: { view(): any } }).__arena.view();

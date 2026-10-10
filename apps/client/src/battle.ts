@@ -257,6 +257,7 @@ export class Battle {
           const g = new Graphics();
           const dir = e.ship === v.you ? 1 : -1;
           const to = { x: from.x + dir * 70, y: from.y - 20 };
+          this.droneAim.set(`${e.ship}:${e.drone}`, to);
           this.addFx(e.ship === v.you ? this.fxOwn : this.fxWin, g, 0.35, (kk) => g.clear().moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: 0x9fe8ff, width: 3, alpha: 1 - kk }));
           const c = new Graphics().circle(0, 0, 10).fill({ color: 0xffd060 });
           c.position.set(to.x, to.y);
@@ -506,19 +507,34 @@ export class Battle {
     this.projWin.removeChildren();
     const dtSnap = k / SNAP_HZ;
     for (const p of v.projectiles) {
-      if (p.kind === "BEAM") continue;
-      if (p.delay - dtSnap > 0) continue;
       const mine = p.from === v.you;
       if (p.drone !== undefined) {
-        // Drone shots: straight from the drone (which is already in the target's view) to the room.
+        // Drone shots: straight from the drone (already beside the target ship) to a room on it.
         const from = this.dronePos(p.from, p.drone);
         const dst2 = mine ? this.enemy : this.own;
         if (!from) continue;
-        const to = this.stage.toLocal(dst2.root.toGlobal({ x: p.px, y: p.py }));
+        const layer = mine ? this.projWin : this.projOwn;
         const kk = Math.min(1, (p.t + dtSnap) / p.flight);
-        this.drawShot(mine ? this.projWin : this.projOwn, this.db.weapons[p.weapon]?.image, from.x + (to.x - from.x) * kk, from.y + (to.y - from.y) * kk, Math.atan2(to.y - from.y, to.x - from.x), p.kind, 1);
+        const key = `${p.from}:${p.drone}`;
+        if (!this.launched.has(p.id)) {
+          this.launched.add(p.id);
+          play(this.db, this.db.weapons[p.weapon]?.sounds?.launch, mine ? 0.7 : 0.45);
+        }
+        if (p.target.kind === "beam") {
+          // Beam drones sweep a short line across a room.
+          const tg = p.target;
+          const a = this.stage.toLocal(dst2.root.toGlobal({ x: tg.x1 + (tg.x2 - tg.x1) * kk, y: tg.y1 + (tg.y2 - tg.y1) * kk }));
+          this.droneAim.set(key, a);
+          layer.addChild(new Graphics().moveTo(from.x, from.y).lineTo(a.x, a.y).stroke({ color: 0xff5040, width: 5, alpha: 0.5 }).moveTo(from.x, from.y).lineTo(a.x, a.y).stroke({ color: 0xffe0c0, width: 2 }));
+          continue;
+        }
+        const to = this.stage.toLocal(dst2.root.toGlobal({ x: p.px, y: p.py }));
+        this.droneAim.set(key, to);
+        this.drawShot(layer, this.db.weapons[p.weapon]?.image, from.x + (to.x - from.x) * kk, from.y + (to.y - from.y) * kk, Math.atan2(to.y - from.y, to.x - from.x), p.kind, 1);
         continue;
       }
+      if (p.kind === "BEAM") continue;
+      if (p.delay - dtSnap > 0) continue;
       const src = mine ? this.own : this.enemy;
       const dst = mine ? this.enemy : this.own;
       const t = p.t + Math.max(0, dtSnap - Math.max(0, p.delay));
@@ -1147,6 +1163,9 @@ export class Battle {
     return this.stage.toLocal(r.root.toGlobal({ x: lx, y: ly }));
   }
 
+  /** Where each drone (`ship:slot`) last aimed, in stage coordinates. */
+  private droneAim = new Map<string, { x: number; y: number }>();
+
   private drawDrones(v: MatchView): void {
     const layerFor = (owner: 0 | 1, type: string) => ((owner === v.you) !== (type === "COMBAT") ? this.projOwn : this.projWin);
     for (const owner of [0, 1] as const) {
@@ -1157,13 +1176,32 @@ export class Battle {
         if (!p) continue;
         const t = texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
         const layer = layerFor(owner, bp.type);
+        // The art points up: turn it toward what it last shot at, else the ship it circles (combat) or
+        // away from its own ship (defense, repair).
+        const r = (owner === v.you) !== (bp.type === "COMBAT") ? this.own : this.enemy;
+        const c = this.stage.toLocal(r.root.toGlobal(r.gridCentre()));
+        const aim = this.droneAim.get(`${owner}:${d.slot}`);
+        const face = bp.type === "COMBAT" ? (aim ?? c) : { x: 2 * p.x - c.x, y: 2 * p.y - c.y };
+        const rot = Math.atan2(face.y - p.y, face.x - p.x) + Math.PI / 2;
         if (t) {
           const sp = new Sprite(t);
           sp.anchor.set(0.5);
           sp.position.set(p.x, p.y);
           sp.scale.set(0.8);
+          sp.rotation = bp.type === "DEFENSE" ? 0 : rot;
           if (owner !== v.you) sp.tint = 0xffd0d0;
           layer.addChild(sp);
+          // Defense drones: a gun turret on top, turned toward the last shot it took down.
+          const gun = bp.type === "DEFENSE" ? texNow(`ship/drones/${bp.image}_gun_on.png`) ?? texNow(`ship/drones/${bp.image}_gun.png`) : null;
+          if (gun) {
+            const gs = new Sprite(gun);
+            gs.anchor.set(0.5);
+            gs.position.set(p.x, p.y);
+            gs.scale.set(0.8);
+            gs.rotation = aim ? Math.atan2(aim.y - p.y, aim.x - p.x) + Math.PI / 2 : rot;
+            if (owner !== v.you) gs.tint = 0xffd0d0;
+            layer.addChild(gs);
+          }
         } else layer.addChild(new Graphics().circle(p.x, p.y, 7).fill({ color: owner === v.you ? 0x6ab4ff : 0xff6a5a }).stroke({ color: 0xffffff, width: 1.5 }));
       }
     }

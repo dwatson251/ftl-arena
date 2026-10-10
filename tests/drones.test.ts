@@ -10,7 +10,7 @@ function dbWithDrones(): GameDB {
   db.systems.drones = { id: "drones", maxPower: 8, startPower: 2, upgradeCost: [30, 40, 50, 60, 70, 80, 90], cost: 60 };
   db.weapons.DRONE_LASER = { ...db.weapons.PH_PULSE, id: "DRONE_LASER", shots: 1, rarity: 0 };
   const d = (id: string, type: "COMBAT" | "DEFENSE", power: number, cooldown: number, speed: number, weapon: string) =>
-    ({ id, title: id, type, power, cost: 50, cooldown, speed, weapon, image: "", rarity: 1 });
+    ({ id, title: id, type, power, cost: 50, cooldown, speed, weapon, image: "", icon: "", rarity: 1 });
   db.droneBPs = { COMBAT_1: d("COMBAT_1", "COMBAT", 2, 1, 15, "DRONE_LASER"), DEFENSE_1: d("DEFENSE_1", "DEFENSE", 2, 1, 5, "DRONE_LASER") };
   db.augments = { DEFENSE_SCRAMBLER: { id: "DEFENSE_SCRAMBLER", title: "Defense Scrambler", desc: "", cost: 80, value: 0, stackable: false, rarity: 4 } };
   return db;
