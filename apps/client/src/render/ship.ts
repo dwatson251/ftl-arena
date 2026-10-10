@@ -7,7 +7,7 @@
  */
 import { Container, Graphics, Sprite, TilingSprite, type Texture } from "pixi.js";
 import { baseSystemId, type GameDB, type ShipLayout } from "@ftl/data";
-import { geometry, RULES, TILE, type CrewState, type Geometry, type ShipView } from "@ftl/sim";
+import { geometry, RULES, TILE, usable, type CrewState, type Geometry, type ShipView } from "@ftl/sim";
 import { animFrame, frame, shieldFile, texNow, weaponFrame } from "../assets.ts";
 import { Imm, style } from "../imm.ts";
 
@@ -310,13 +310,13 @@ export class ShipRenderer {
       }
     }
     // Room system icons as FTL draws them (matched against real screenshots): the white overlay glyph
-    // tinted grey whatever the power; blue when ionised, yellow-orange when damaged, red when destroyed.
+    // tinted grey whatever the power; red when destroyed, blue while ionised, yellow-orange when damaged.
     for (const s of Object.values(v.systems)) {
       if (!s) continue;
       const r = L.rooms.find((q) => q.id === s.room)!;
       const cx = (r.x + r.w / 2) * TILE;
       const cy = (r.y + r.h / 2) * TILE;
-      const tint = s.damage >= s.level ? 0xff3c30 : s.damage > 0 ? 0xffa830 : s.ion > 0 ? 0x5aa8ff : 0x8a8a8a;
+      const tint = s.damage >= s.level ? 0xff3c30 : s.ion > 0 ? 0x5aa8ff : s.damage > 0 ? 0xffa830 : 0x8a8a8a;
       const t = texNow(`icons/s_${baseSystemId(s.id)}_overlay.png`);
       if (t) d.sprite(`ic${s.id}`, t, cx, cy, { anchor: 0.5, scale: r.w * r.h <= 1 ? 0.8 : 1, rotation: up, tint });
       else {
@@ -326,9 +326,11 @@ export class ShipRenderer {
     }
     // Doors from FTL's door sheet: rows = door level, columns = opening frames.
     const doorTex = texNow("effects/door_sheet.png");
-    // Door sprite row = door strength: the doors level, +1 while manned (level 4 = super doors).
+    // Door sprite row = door strength, as the sim reckons it: the doors system's working level (each
+    // damaged bar takes one off, back down to plain doors), +1 while manned (level 4 = super doors).
     const dsys = v.systems.doors;
-    const level = Math.max(1, Math.min(4, (dsys?.level ?? 1) + (dsys?.manBonus ?? 0)));
+    const working = dsys ? usable(dsys) : 0;
+    const level = Math.max(1, Math.min(4, working > 0 ? working + (dsys?.manBonus ?? 0) : 1));
     this.geo.doors.forEach((dr, i) => {
       // Open when set open, or held open for a moment (crew walking through, a broken door).
       const open = v.doors[i] || (v.doorPass?.[i] ?? 0) > 0;

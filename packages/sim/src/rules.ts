@@ -44,8 +44,13 @@ export const RULES = {
   /** O2: refill %/s per room by oxygen power 0..3 (est); drain %/s with the oxygen system off (wiki 1.2). */
   o2Refill: [0, 1.2, 3.0, 5.0],
   o2Drain: 1.2,
-  /** Breach drain %/s per breached tile, scaled by 4/roomTiles (est). */
-  breachDrain: 3.0,
+  /**
+   * Hull breach air loss, from FTL's OxygenSystem::ComputeAirLoss (documented by xftl): 8 %/s per breach
+   * (a Lanius counts as one), in its room and in every room joined to it through open doors, times
+   * `breachFalloff` per room of distance.
+   */
+  breachDrain: 8,
+  breachFalloff: 0.75,
   /** Airlock door open to space: %/s (est). */
   ventDrain: 60,
   /** %/s pulled from rooms joined to an open airlock, at one door away (halving-ish with distance) (est). */

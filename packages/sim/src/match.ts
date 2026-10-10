@@ -946,6 +946,7 @@ export class Match {
     const doorLevel = Math.min(RULES.doorBreak.length - 1, this.eff(ship.systems.doors));
     this.refillStations(ship, g);
     this.cloneTick(ship, g);
+    for (const s of Object.values(ship.systems)) if (s) s.sabotage = 0;
     /** Boarders who died here go home to their owner's ship (its clone bay may bring them back). */
     const leaving: CrewState[] = [];
     /** Crew whose beam-out finished: moved aboard the other ship after the loop. */
@@ -981,7 +982,7 @@ export class Match {
       if (rs.o2 < RULES.suffocateAt) c.hp -= RULES.suffocateDps * tr.suffocation * masks * DT;
       // Engi Med-bot Dispersal: slow healing anywhere aboard your own ship outside the medbay.
       if (ownShip && augCount(ship, "NANO_MEDBAY") && !(medbay && medbay.room === room) && c.hp < c.maxHp) c.hp = Math.min(c.maxHp, c.hp + RULES.nanoMedbay * DT);
-      if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - RULES.breachDrain * (4 / g.roomTiles.get(room)!.length) * tr.drainO2 * DT);
+      if (tr.drainO2) this.airLoss(ship, g, room, RULES.breachDrain * tr.drainO2);
       if (this.god.has(c.owner)) c.hp = c.maxHp;
       // Only a working medbay heals (powered, not wrecked or hacked), and only its own ship's crew.
       c.healing = ownShip && c.drone === undefined && !!medbay && !medbay.hacked && medbay.room === room && heal > 0 && c.path.length === 0 && c.hp < c.maxHp;
@@ -1124,6 +1125,7 @@ export class Match {
               this.wrecked(ship, sys);
             }
           }
+          if (!tr.ionBoarder) sys.sabotage = Math.max(sys.sabotage ?? 0, c.sab);
           c.task = "sabotage";
           c.face = sabotageFacing(g, room, c.tile);
         } else {
@@ -1835,6 +1837,29 @@ export class Match {
 
   // ---------------------------------------------------------------- fire, breaches, oxygen
 
+  /**
+   * Air lost to a leak in `room` (breaches, a Lanius) at `rate` %/s: the room itself, and every room joined
+   * to it through open doors at `breachFalloff` per room of distance (FTL's ComputeAirLoss).
+   */
+  private airLoss(ship: ShipState, g: Geometry, room: number, rate: number): void {
+    const dist = new Map([[room, 0]]);
+    const queue = [room];
+    while (queue.length) {
+      const r = queue.shift()!;
+      g.doors.forEach((d, i) => {
+        if (d.roomA < 0 || d.roomB < 0 || !this.doorOpen(ship, i)) return;
+        const next = d.roomA === r ? d.roomB : d.roomB === r ? d.roomA : -1;
+        if (next < 0 || dist.has(next)) return;
+        dist.set(next, dist.get(r)! + 1);
+        queue.push(next);
+      });
+    }
+    for (const rs of ship.rooms) {
+      const k = dist.get(rs.id);
+      if (k !== undefined) rs.o2 = Math.max(0, rs.o2 - rate * RULES.breachFalloff ** k * DT);
+    }
+  }
+
   private environmentTick(ship: ShipState): void {
     const g = this.geo(ship);
     const ox = this.eff(ship.systems.oxygen);
@@ -1846,7 +1871,7 @@ export class Match {
       if (ox > 0) rs.o2 += RULES.o2Refill[Math.min(3, ox)] * DT;
       else rs.o2 -= RULES.o2Drain * DT;
       const nb = Object.keys(rs.breaches).length;
-      if (nb) rs.o2 -= RULES.breachDrain * nb * (4 / tiles.length) * DT;
+      if (nb) this.airLoss(ship, g, rs.id, RULES.breachDrain * nb);
       const fireTiles = Object.keys(rs.fires);
       // Fire Suppression puts fires out on its own; Slug Repair Gel seals breaches.
       if (augCount(ship, "FIRE_EXTINGUISHERS"))

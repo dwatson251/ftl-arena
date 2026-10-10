@@ -320,6 +320,24 @@
 - **Endpoint:** `/api/ftl-save` answers loopback requests only (`ftlSave` option: desktop and dev on,
   dedicated off), so LAN players can't read the host's save.
 
+## Playtest round 19
+- **Oxygen:** the source is xftl's `doc/oxygen` (FTL's `OxygenSystem` code). The FTL wiki's breach rate is an
+  open "@to-do".
+  - A breach drains 8 %/s per breach (a Lanius counts as one). Rooms joined through open doors lose that
+    × 0.75^distance, so `breachDrain` goes from a guessed 3 to 8, plus `breachFalloff`.
+  - Airlocks drain 16 %/s each, with the same falloff.
+  - The refill is 1.2 %/s × 1/4/7 by level (not the UI's 1/3/6).
+  - Within a group of rooms joined by open doors, each room moves 8 % of its gap to the group's average per
+    second.
+  - Only the breach and Lanius parts are applied for now.
+- **Fog vs things you can see:** enemy engine glow (`thrust`) and ion (room icons blue) show whatever the
+  sensors. Ion timers and sabotage progress stay level-4 only.
+- **Sabotage progress:** it was per boarder (`c.sab`). Systems now carry `sabotage` (the furthest-along boarder)
+  so the bars can draw it.
+- **Crew AI order:** heal, then fight boarders (one more defender than boarders), fires, the medbay (if anyone
+  is under 50 %), oxygen (if air is under 50 %), shields, weapons, breaches, other repairs, then man stations.
+- **Explosions:** blasts on the whole hull for 1.4 s (`EXPLODE_PRE`), then the break-up.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

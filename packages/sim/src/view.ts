@@ -21,6 +21,8 @@ export interface ShipView extends ShipState {
   weaponChargeKnown?: boolean;
   /** Their shield recharge bar is readable: a hacking drone sits on their shields room. */
   shieldChargeKnown?: boolean;
+  /** The engines' working power (0 = dark exhaust): on the hull for anyone to see, whatever the sensors. */
+  thrust?: number;
 }
 
 export interface MatchView {
@@ -111,6 +113,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   }
 
   const ev = structuredClone(enemy) as ShipView;
+  ev.thrust = m.eff(enemy.systems.engines);
   ev.visibleRooms = null;
   ev.interior = over || (sensors >= 2 && !cloaked);
   ev.weaponsKnown = over || sensors >= 3;
@@ -144,13 +147,14 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     }
   }
   if (!ev.systemsKnown) {
-    // Below level 4: damage shows (the icons), but not power, ion or repair and sabotage progress.
+    // Below level 4: damage and ion show (the room icons go orange / blue), but not power, how long the ion
+    // lasts, or repair and sabotage progress.
     for (const s of Object.values(ev.systems)) {
       if (!s) continue;
       s.power = -1;
-      s.ion = 0;
       s.ionTimer = 0;
       s.repair = 0;
+      s.sabotage = 0;
     }
     ev.reactor = -1;
   }

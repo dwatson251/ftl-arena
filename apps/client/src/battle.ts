@@ -64,6 +64,8 @@ interface Box {
 
 const inBox = (p: { x: number; y: number }, b: Box) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
 /** Stable pseudo-random in [0,1) from an integer. */
+/** Seconds of blasts across a dying ship's intact hull before it breaks apart. */
+const EXPLODE_PRE = 1.4;
 const hash01 = (n: number) => Math.abs(Math.sin(n * 91.345 + 3.1) * 43758.5453) % 1;
 
 export class Battle {
@@ -246,6 +248,9 @@ export class Battle {
     }
     this.prev = this.view ?? v;
     this.view = v;
+    // The aimed gun lost its power (a right-click, the system bars, damage, ion, or an order queued in a
+    // pause that lands on unpause): drop the targeting mode with it.
+    if (this.armed !== null && this.prev.ships[v.you].weapons[this.armed]?.powered && !v.ships[v.you].weapons[this.armed]?.powered) this.disarm();
     // Saved positions start as everyone's starting spot, so "return to stations" works before any save.
     if (!this.savedStations.size) {
       const g = this.own.geo;
@@ -423,7 +428,7 @@ export class Battle {
           if (/^BOSS_[12](_HARD)?$/.test(this.view!.ships[i].bp)) this.jumpAway(i);
           else this.explode(i);
         }
-        this.endReadyAt = this.time + (destroyed.length ? 4.2 : 1.2);
+        this.endReadyAt = this.time + (destroyed.length ? 4.2 + EXPLODE_PRE : 1.2);
         setTimeout(() => this.onEndReady(), (this.endReadyAt - this.time) * 1000 + 50);
         break;
       }
@@ -566,16 +571,26 @@ export class Battle {
     }
   }
 
+  /**
+   * A ship's death as in FTL: blasts ripple across the still-whole hull for EXPLODE_PRE seconds, then a last
+   * big one and it breaks apart (the gibs; `explodedAt` is when the break-up starts).
+   */
   private explode(ship: number): void {
-    this.explodedAt.set(ship, this.time);
+    this.explodedAt.set(ship, this.time + EXPLODE_PRE);
     const b = this.rOf(ship).bounds();
-    for (let i = 0; i < 9; i++) {
+    const n = 9;
+    for (let i = 0; i < n; i++) {
       setTimeout(() => {
         if (!this.view) return;
-        this.boom(ship, b.x + b.w * (0.15 + 0.7 * hash01(i * 3 + ship)), b.y + b.h * (0.2 + 0.6 * hash01(i * 7 + ship)), 1.6 + hash01(i) * 1.2);
+        this.boom(ship, b.x + b.w * (0.15 + 0.7 * hash01(i * 3 + ship)), b.y + b.h * (0.2 + 0.6 * hash01(i * 7 + ship)), 1.2 + hash01(i) * 1.0);
         if (i % 3 === 0) play(this.db, ["explosion1", "explosion2", "explosion3", "explosion4"]);
-      }, i * 160);
+      }, (i * EXPLODE_PRE * 1000) / n);
     }
+    setTimeout(() => {
+      if (!this.view) return;
+      this.boom(ship, b.x + b.w / 2, b.y + b.h / 2, 3.2);
+      play(this.db, ["explosion1", "explosion2", "explosion3", "explosion4"]);
+    }, EXPLODE_PRE * 1000);
   }
 
   // ---------------------------------------------------------------- frame
@@ -600,7 +615,8 @@ export class Battle {
     this.snapK = k;
     const ownV = v.ships[v.you];
     const enV = v.ships[1 - v.you];
-    const ex = (i: number) => (this.explodedAt.has(i) ? this.time - this.explodedAt.get(i)! : null);
+    // Broken up only once the blasts have had their moment (see explode()).
+    const ex = (i: number) => (this.explodedAt.has(i) && this.time >= this.explodedAt.get(i)! ? this.time - this.explodedAt.get(i)! : null);
     const eng = (s: ShipView) => {
       const e = s.systems.engines;
       return e ? Math.max(0, Math.min(e.power + (e.bonus ?? 0), usable(e))) : 0;
@@ -611,7 +627,7 @@ export class Battle {
     });
     this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.animTime, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
-      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.systemsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
+      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.thrust ?? (enV.systemsKnown ? eng(enV) : 1), cloaked: (enV.cloak?.t ?? 0) > 0,
       destinations: true, flashTiles: this.flashTilesEnemy, clock: this.time,
     });
     this.crewSounds(v);
@@ -1357,7 +1373,7 @@ export class Battle {
     const step = Math.min(30, 330 / Math.max(1, present.length));
     present.forEach((id, i) => {
       const s = en.systems[id]!;
-      const state = s.damage >= s.level ? "red" : s.damage > 0 ? "orange" : s.ion > 0 ? "blue" : en.systemsKnown && s.power === 0 && !SUBSYSTEMS.includes(id) ? "grey" : "green";
+      const state = s.damage >= s.level ? "red" : s.ion > 0 ? "blue" : s.damage > 0 ? "orange" : en.systemsKnown && s.power === 0 && !SUBSYSTEMS.includes(id) ? "grey" : "green";
       const t = texNow(`icons/s_${baseSystemId(id)}_${state}1.png`);
       if (t) h.sprite(`eic${id}`, t, x + 74 + i * step, y + 502, { anchor: 0.5, scale: 0.85 * Math.min(1, step / 30 + 0.15), tint: s.hacked ? 0xd070ff : 0xffffff });
       if (s.locked) h.sprite(`eick${id}`, texNow("icons/s_hacked.png"), x + 82 + i * step, y + 494, { anchor: 0.5, scale: 0.6 });
@@ -1372,7 +1388,8 @@ export class Battle {
           const dmg = b >= s.level - s.damage;
           const ion = !dmg && b >= cap;
           const on = !dmg && !ion && (SUBSYSTEMS.includes(id) ? b < cap : b < Math.min(cap, s.power + (s.bonus ?? 0)));
-          const col = dmg ? (b === s.level - s.damage && s.repair > 0 ? 0xffe050 : 0xff3a2a) : ion ? 0x3a7fd0 : on ? 0x78ff78 : 0x40484a;
+          const sab = !dmg && b === s.level - s.damage - 1 && (s.sabotage ?? 0) > 0;
+          const col = dmg ? (b === s.level - s.damage && s.repair > 0 ? 0xffe050 : 0xff3a2a) : sab ? 0xff8040 : ion ? 0x3a7fd0 : on ? 0x78ff78 : 0x40484a;
           g2.rect(bx, yy, 10, 3).fill({ color: col });
         }
       }
@@ -1518,15 +1535,20 @@ export class Battle {
         g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0xff3a2a });
         if (b === sys.level - sys.damage && sys.repair > 0) g.rect(x, yy, Math.floor((BAR_W * sys.repair) / 3) * 3, BAR_H).fill({ color: 0xffe050 });
       } else if (ion) g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0x3a7fd0 });
-      else if (powered) g.rect(x, yy, BAR_W, BAR_H).fill({ color: !isSub && b >= sys.power ? 0xd8ff50 : 0x78ff78 });
+      else if (b === sys.level - sys.damage - 1 && (sys.sabotage ?? 0) > 0) {
+        // Boarders at work: the next bar to break fills red as they wreck it.
+        if (powered) g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0x78ff78 });
+        else g.rect(x + 0.5, yy + 0.5, BAR_W - 1, BAR_H - 1).stroke({ color: 0xe8ece8, width: 1 });
+        g.rect(x, yy, Math.max(3, Math.floor((BAR_W * (sys.sabotage ?? 0)) / 3) * 3), BAR_H).fill({ color: 0xff3a2a });
+      } else if (powered) g.rect(x, yy, BAR_W, BAR_H).fill({ color: !isSub && b >= sys.power ? 0xd8ff50 : 0x78ff78 });
       else g.rect(x + 0.5, yy + 0.5, BAR_W - 1, BAR_H - 1).stroke({ color: 0xe8ece8, width: 1 });
     }
   }
 
   private iconState(sys: NonNullable<ShipView["systems"][SystemId]>): string {
     if (sys.damage >= sys.level) return "red";
-    if (sys.damage > 0) return "orange";
     if (sys.ion > 0) return "blue";
+    if (sys.damage > 0) return "orange";
     if (!SUBSYSTEMS.includes(sys.id) && sys.power + (sys.bonus ?? 0) === 0) return "grey";
     return "green";
   }

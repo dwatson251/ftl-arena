@@ -356,11 +356,12 @@ export class Bot {
   // ---------------------------------------------------------------- crew
 
   /**
-   * FTL's crew AI (CrewAI, as documented by the xftl project): every problem becomes a task with a priority,
-   * lower first - healing 0, shields repair 1, fighting boarders and fires (system priority + 16), breaches
-   * (+32), repairs (+48), then manning stations (64-70). Each task goes to the nearest crew member not already
-   * taken, so one boarder or one broken system pulls one crew member and the rest keep their stations; as the
-   * crew dwindles, stations empty first. Boarders get one defender each, fires two.
+   * Crew AI after FTL's CrewAI (as documented by the xftl project): every problem becomes a task with a
+   * priority, lower first. Healing comes first (the wounded go to the medbay), then fighting boarders (one
+   * more defender than there are boarders in the room), fires, urgent repairs (the medbay while anyone is
+   * below half health, oxygen while the air is thin), shields, weapons, hull breaches, every other repair by
+   * FTL's system priority, and last manning stations (64-70). Each task goes to the nearest crew member not
+   * already taken, so the rest keep their stations; as the crew dwindles, stations empty first.
    */
   private crew(m: Match, ship: ShipState, out: Command[]): void {
     const sk = this.skills;
@@ -392,17 +393,26 @@ export class Bot {
         if (c.hp < c.maxHp * 0.25 || (roomOf(c) === med!.room && c.hp < c.maxHp)) patients.add(c.id);
       }
     }
-    for (const c of intruders) tasks.push({ room: g.tiles.get(c.tile)!.room, prio: sysPrio(g.tiles.get(c.tile)!.room) + 16, why: "repel boarders", kind: "fight" });
+    // Boarders: outnumber them, one defender per boarder plus one per room they're in.
+    const boarded = new Map<number, number>();
+    for (const c of intruders) {
+      const room = g.tiles.get(c.tile)!.room;
+      boarded.set(room, (boarded.get(room) ?? 0) + 1);
+    }
+    for (const [room, n] of boarded) for (let k = 0; k <= n; k++) tasks.push({ room, prio: 8 + sysPrio(room), why: "repel boarders", kind: "fight" });
+    const hurt = alive.some((c) => c.hp < c.maxHp * 0.5);
+    const thinAir = ship.rooms.reduce((x, r) => x + r.o2, 0) / Math.max(1, ship.rooms.length) < 50;
     for (const rs of ship.rooms) {
       if (danger(rs.id)) continue;
       const sys = sysIn(rs.id);
       if (sk.firefight && Object.keys(rs.fires).length && rs.o2 > 10) {
-        tasks.push({ room: rs.id, prio: sysPrio(rs.id) + 16, why: "fight fire", kind: "work" }, { room: rs.id, prio: sysPrio(rs.id) + 16, why: "fight fire", kind: "work" });
+        tasks.push({ room: rs.id, prio: sysPrio(rs.id) + 20, why: "fight fire", kind: "work" }, { room: rs.id, prio: sysPrio(rs.id) + 20, why: "fight fire", kind: "work" });
       }
-      if (Object.keys(rs.breaches).length) tasks.push({ room: rs.id, prio: sysPrio(rs.id) + 32, why: "fix breach", kind: "work" });
+      if (Object.keys(rs.breaches).length) tasks.push({ room: rs.id, prio: 44, why: "fix breach", kind: "work" });
       if (sys && sys.damage > 0) {
-        const lowO2 = sys.id === "oxygen" && ship.rooms.reduce((x, r) => x + r.o2, 0) / ship.rooms.length < 25;
-        tasks.push({ room: rs.id, prio: lowO2 ? 0 : sys.id === "shields" ? 1 : sysPrio(rs.id) + 48, why: `repair ${sys.id}`, kind: "work" });
+        // Urgency: a medbay with people hurt, oxygen with the air running out, then shields and weapons.
+        const prio = sys.id === "medbay" && hurt ? 40 : sys.id === "oxygen" && thinAir ? 41 : sys.id === "shields" ? 42 : sys.id === "weapons" ? 43 : 46 + sysPrio(rs.id);
+        tasks.push({ room: rs.id, prio, why: `repair ${sys.id}`, kind: "work" });
       }
     }
     for (const [id, prio] of MAN_PRIORITY) {

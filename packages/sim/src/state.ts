@@ -54,6 +54,8 @@ export interface SystemState {
   power: number;
   damage: number;
   repair: number;
+  /** Boarders' progress (0..1) toward breaking the next bar, for the HUD (recomputed every tick). */
+  sabotage?: number;
   /** Ion stacks lock bars; `ionTimer` counts down the current stack. */
   ion: number;
   ionTimer: number;
