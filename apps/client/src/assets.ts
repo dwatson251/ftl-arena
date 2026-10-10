@@ -134,6 +134,8 @@ export async function preload(db: GameDB): Promise<boolean> {
   files.add("ship/drones/boarder_engine.png");
   for (let i = 1; i <= 9; i++) files.add(`icons/locking/s_ring_${i}_base.png`);
   files.add("icons/locking/s_ring_timer.png");
+  for (let i = 1; i <= 9; i++) files.add(`icons/locking/s_octa_${i}_base.png`);
+  files.add("icons/locking/s_octa_timer.png");
   files.add("icons/s_hacked.png");
   files.add("icons/locking/s_lock.png");
   files.add("people/mindcontrol_strip8.png");

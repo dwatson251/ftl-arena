@@ -91,6 +91,10 @@ export interface CrewState {
   drone?: number;
   /** Seconds of door-bashing / sabotage progress (boarders). */
   bash?: number;
+  /** Teleporting: beaming out (then moved to `ship`/`tile`) or beaming in; can't act meanwhile. */
+  beam?: { t: number; phase: "out" | "in"; ship: 0 | 1; tile: string };
+  /** What they're attacking (tile coords): a foe or a door. The renderer shoots at range, punches up close. */
+  aim?: [number, number];
   /** Mind controlled: by which player, seconds left, the true owner, the damage boost and the max HP before. */
   mind?: { by: 0 | 1; t: number; owner: 0 | 1; boost: number; maxHp: number };
 }
@@ -171,6 +175,10 @@ export interface DroneState {
   cd: number;
   /** Ship repair drones: hull points left before it expires. */
   repairLeft?: number;
+  /** Seconds until a powered drone launches. */
+  launch?: number;
+  /** Seconds until a destroyed drone is rebuilt (it can't be powered until then). */
+  rebuild?: number;
 }
 
 export interface Projectile {

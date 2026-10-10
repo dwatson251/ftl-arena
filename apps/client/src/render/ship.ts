@@ -7,7 +7,7 @@
  */
 import { Container, Graphics, Sprite, TilingSprite, type Texture } from "pixi.js";
 import { baseSystemId, type GameDB, type ShipLayout } from "@ftl/data";
-import { geometry, TILE, type CrewState, type Geometry, type ShipView } from "@ftl/sim";
+import { geometry, RULES, TILE, type CrewState, type Geometry, type ShipView } from "@ftl/sim";
 import { animFrame, frame, shieldFile, texNow, weaponFrame } from "../assets.ts";
 import { Imm, style } from "../imm.ts";
 
@@ -429,14 +429,47 @@ export class ShipRenderer {
       anim = `${race}_fire_down`;
       fr = Math.floor(time * 5);
     } else if (c.task === "fight" || c.task === "sabotage") {
-      // Melee (punch) for crew, guns for drones; side-on toward the room's centre for drones.
-      const punch = this.db.anims[`${race}_punch_up`];
-      anim = punch ? (Math.floor(time * 2 + c.id) % 2 ? `${race}_punch_up` : `${race}_punch_down`) : this.db.anims[`${race}_attack`] ? `${race}_attack` : `${race}_shoot_right`;
-      fr = Math.floor(time * 8);
+      // FTL: crew carry guns. A target on another tile (or a door being broken) gets shot; one sharing the
+      // tile gets punched. Wrecking a system is up-close work.
+      const aim = c.aim;
+      const far = !!aim && c.task === "fight" && Math.hypot(aim[0] - cd.x, aim[1] - cd.y) > 0.6;
+      if (far && aim) {
+        let dx = aim[0] - cd.x;
+        let dy = aim[1] - cd.y;
+        const a = -this.upright;
+        if (a) [dx, dy] = [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+        const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
+        anim = this.db.anims[`${race}_shoot_${dir}`] ? `${race}_shoot_${dir}` : `${race}_shoot_right`;
+        fr = Math.floor(time * 6);
+        // A laser bolt every so often, from the gun toward the target.
+        const ph = (time * 1.6 + c.id * 0.37) % 1;
+        if (ph < 0.25) {
+          const tx = (aim[0] + 0.5) * TILE;
+          const ty = (aim[1] + 0.5) * TILE;
+          const k = ph / 0.25;
+          const bx = px + (tx - px) * k;
+          const by = py + (ty - py) * k;
+          const ux = (tx - px) / (Math.hypot(tx - px, ty - py) || 1);
+          const uy = (ty - py) / (Math.hypot(tx - px, ty - py) || 1);
+          d.gfx(`cr${c.id}bolt`).moveTo(bx - ux * 6, by - uy * 6).lineTo(bx + ux * 6, by + uy * 6).stroke({ color: cd.hostile ? 0xff5040 : 0xffd040, width: 2 });
+        }
+      } else {
+        const punch = this.db.anims[`${race}_punch_up`];
+        anim = punch ? (Math.floor(time * 2 + c.id) % 2 ? `${race}_punch_up` : `${race}_punch_down`) : this.db.anims[`${race}_attack`] ? `${race}_attack` : `${race}_shoot_right`;
+        fr = Math.floor(time * 8);
+      }
     } else if (c.task === "man") {
       // Face the station's computer (the blueprint's slot <direction>).
       anim = `${race}_type_${facing.get(c.tile) ?? "up"}`;
       fr = Math.floor(time * 6);
+    }
+    if (c.beam && this.db.anims[`${race}_teleport`]) {
+      // FTL's teleport animation: forward on the way out, reversed on arrival.
+      const a = this.db.anims[`${race}_teleport`];
+      const k = Math.max(0, Math.min(0.999, 1 - c.beam.t / RULES.teleportTime));
+      const i = Math.floor(k * a.frames);
+      anim = `${race}_teleport`;
+      fr = c.beam.phase === "out" ? i : a.frames - 1 - i;
     }
     if (c.dying !== undefined) {
       // Death animation, played once over the dying time.

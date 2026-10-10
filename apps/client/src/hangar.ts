@@ -299,18 +299,23 @@ export class Hangar {
     const db = this.db;
     const base = baseLoadout(db, l.ship);
     const unl = !!this.lobby?.config.unlimited;
+    const isSub = (id: string) => ["pilot", "sensors", "doors", "battery"].includes(id);
+    const installed = hullSystems(db, l.ship, unl).filter((s) => !isSub(s.id) && (l.systems[s.id] ?? s.base) > 0).length;
+    const atCap = installed >= RULES.maxSystems;
     const rows = hullSystems(db, l.ship, unl)
       .map((s) => {
         const lv = l.systems[s.id] ?? s.base;
+        // FTL's 8-system limit: a new (main) system can't go in once 8 are installed (a bay swap is fine).
+        const capped = lv === 0 && !isSub(s.id) && atCap && !this.bayPair(s.id);
         const bp = db.systems[s.id];
         const next = lv >= s.max ? "max" : lv === 0 ? `install ${bp?.cost ?? "?"}` : `next ${bp?.upgradeCost[lv - 1] ?? bp?.upgradeCost[bp.upgradeCost.length - 1] ?? "?"}`;
         const bars = Array.from({ length: s.max }, (_, i) => `<i class="${i < Math.min(s.base, lv) ? "on" : i < lv ? "new" : ""}"></i>`).join("");
         return `<div class="sys-row">${this.sysIcon(s.id)}<span class="sys-name">${s.id}</span><span class="bars">${bars}</span>
           <button class="small" data-sys="${s.id}" data-d="-1" ${lv <= s.base && !(this.bayPair(s.id) && lv > 0 && hullSystems(db, l.ship).some((x) => x.id === this.bayPair(s.id) && x.base > 0)) ? "disabled" : ""}>−</button>
-          <button class="small" data-sys="${s.id}" data-d="1" ${lv >= s.max ? "disabled" : ""}>+</button><span class="note">${next}</span></div>`;
+          <button class="small" data-sys="${s.id}" data-d="1" ${lv >= s.max || capped ? "disabled" : ""}>+</button><span class="note">${capped ? "system limit reached" : next}</span></div>`;
       })
       .join("");
-    return `<h2>2 · Systems</h2>
+    return `<h2>2 · Systems <span class="note">${installed}/${RULES.maxSystems} systems</span></h2>
       <div class="note">Green bars came with the hull; yellow ones are bought. Shields give a layer per 2 bars; engines give evasion; weapons bars power your guns. The medbay and clone bay share a room: installing one replaces the other.</div>
       ${rows}
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>

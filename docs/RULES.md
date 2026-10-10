@@ -136,3 +136,16 @@ Driving the real game needs the owner's go-ahead, because it takes over their mo
 |---|---|---|
 | Repair progress | Kept while the ship's own crew stay in the room (fighting or firefighting pauses it); lost when the last of them leaves | FTL |
 | Ion ring | 12 dashes; the current one fades out smoothly over its share of the stack | FTL art |
+
+## Round 12
+| Rule | Value | Source |
+|---|---|---|
+| Crew guns | Fighters shoot a target on another tile (and shoot doors they break); up close they punch | FTL |
+| Teleporting | 1 s beam-out, then 1 s beam-in, using FTL's `<race>_teleport` animation; can't act meanwhile | FTL anim + est |
+| Sabotage | ~20 s per system bar for a 1× race (was 8 s) | est, slowed per play |
+| Lanius | Drains its room's oxygen like a one-square hull breach; moves 20% slower | FTL wiki |
+| Hacked room | Breach and system repairs there take twice as long | FTL wiki |
+| Drones | Launch 1.5 s after powering; a destroyed drone loses power, rebuilds for 10 s, then waits for the player to power it | est |
+| System limit | At most 8 systems installed (subsystems don't count) | FTL |
+| Cooldown locks | Cloaking, hacking, mind control and the battery show their recharge on the icon like ion (FTL's octagon art: number = 5 s rounds left) | FTL art |
+| Mind control recharge | Starts when control ends | FTL |

@@ -44,16 +44,16 @@ describe("boarding", () => {
     const [me, them] = m.state.ships;
     const ids = padUp(m, 2);
     m.push(0, { c: "teleport", room: 5 });
-    m.step();
+    run(m, RULES.teleportTime * 2 + 0.2);
     expect(them.crew.filter((c) => ids.includes(c.id)).length).toBe(2);
-    expect(me.tele).toBeLessThan(1);
+    expect(me.tele).toBeLessThan(RULES.teleportTime * 2 + 1);
     // Not charged yet: retrieving fails, then works once charged.
     m.push(0, { c: "retrieve", room: 5 });
     m.step();
     expect(them.crew.filter((c) => ids.includes(c.id)).length).toBe(2);
     run(m, RULES.teleCooldown[3] + 1);
     m.push(0, { c: "retrieve", room: 5 });
-    m.step();
+    run(m, RULES.teleportTime * 2 + 0.2);
     expect(me.crew.filter((c) => ids.includes(c.id)).length).toBe(2);
   });
 
@@ -64,7 +64,7 @@ describe("boarding", () => {
     padUp(m, 1);
     // Oxygen room (5): nobody defends it at first.
     m.push(0, { c: "teleport", room: 5 });
-    run(m, 15);
+    run(m, 30);
     expect(them.systems.oxygen!.damage).toBeGreaterThan(0);
     // Send the whole enemy crew in: the lone boarder dies, and goes home dead (it was our crew).
     m.push(1, { c: "moveCrew", crew: them.crew.filter((c) => c.owner === 1).map((c) => c.id), room: 5 });
@@ -81,7 +81,7 @@ describe("boarding", () => {
     const them = m.state.ships[1];
     const ids = padUp(m, 1);
     m.push(0, { c: "teleport", room: 5 });
-    m.step();
+    run(m, RULES.teleportTime * 2 + 0.2);
     const g = geometry(db.layouts[them.layout]);
     const doorsOut = g.doors.filter((d) => d.roomA === 5 || d.roomB === 5).map((d) => d.index);
     expect(doorsOut.length).toBeGreaterThan(0);
@@ -108,7 +108,7 @@ describe("boarding", () => {
     const [me] = m.state.ships;
     padUp(m, 1);
     m.push(0, { c: "teleport", room: 5 });
-    m.step();
+    run(m, RULES.teleportTime * 2 + 0.2);
     for (const c of me.crew) c.hp = 0;
     run(m, 3);
     expect(m.state.winner).toBe(null);
@@ -122,10 +122,10 @@ describe("boarding", () => {
     const [me, them] = m.state.ships;
     m.push(0, { c: "dronePower", slot: 0, on: true });
     m.push(1, { c: "dronePower", slot: 0, on: true });
-    run(m, 1);
+    run(m, RULES.droneLaunch + 0.5);
     expect(them.crew.some((c) => c.owner === 1 && c.race === "battle")).toBe(true);
     expect(m.state.projectiles.some((p) => p.kind === "BOARDER")).toBe(true);
-    run(m, RULES.boarderFlight + 1);
+    run(m, RULES.boarderFlight + 1.5);
     expect(them.crew.some((c) => c.owner === 0 && c.race === "boarder")).toBe(true);
     expect(them.rooms.some((r) => Object.keys(r.breaches).length)).toBe(true);
     // Unpowering removes the unit.
@@ -144,7 +144,7 @@ describe("dead boarders", () => {
     const [me] = m.state.ships;
     const ids = padUp(m, 1);
     m.push(0, { c: "teleport", room: 5 });
-    m.step();
+    run(m, RULES.teleportTime * 2 + 0.2);
     const c = m.state.ships[1].crew.find((q) => q.id === ids[0])!;
     c.hp = 0;
     run(m, 2);

@@ -710,6 +710,7 @@ export class Battle {
     const en = v.ships[1 - v.you];
     this.topLeft(own);
     this.target(en, v);
+    this.computeLayout(own);
     this.crewList(own, this.myCrew(v));
     this.systemsBar(own);
     this.subsystems(own);
@@ -720,8 +721,10 @@ export class Battle {
       if (!sys) continue;
       const main = MAIN_SYS.filter((x) => own.systems[x]).indexOf(id);
       const sub = SUB_SYS.filter((x) => own.systems[x]).indexOf(id);
-      if (main >= 0) this.ionPie(`ion${id}`, sys, SYS_X0 + 32 + main * SYS_DX, SYS_ICON_Y + 32);
-      else if (sub >= 0) this.ionPie(`ion${id}`, sys, this.subX0(own) + 32 + sub * SYS_DX, SUB_ICON_Y + 32);
+      const at = main >= 0 ? { x: SYS_X0 + 32 + main * SYS_DX, y: SYS_ICON_Y + 32 } : sub >= 0 ? { x: this.subX0(own) + 32 + sub * SYS_DX, y: SUB_ICON_Y + 32 } : null;
+      if (!at) continue;
+      if (sys.ion > 0) this.ionPie(`ion${id}`, sys, at.x, at.y);
+      else this.lockPie(`lock${id}`, this.lockLeft(own, id), at.x, at.y);
     }
     if (this.message && this.time < this.message.until) {
       const t = h.text("msg", this.message.text, 440, 588, fstyle("JustinFont12Bold", this.message.color, { stroke: 0x101010, strokeWidth: 3 }), [0.5, 0]);
@@ -994,12 +997,33 @@ export class Battle {
    * When it runs out the number drops by one and the ring starts again.
    */
   private ionPie(key: string, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, cy: number): void {
-    if (sys.ion <= 0) return;
+    if (sys.ion > 0) this.countdown(key, Math.min(9, sys.ion), Math.max(0, Math.min(1, sys.ionTimer / RULES.ionDuration)), cx, cy, "ring");
+  }
+
+  /**
+   * After use, cloaking, hacking, mind control and the battery lock like an ion hit, shown the same
+   * way in FTL's octagon art: the number is full 5 s rounds left, the ring empties over the current one.
+   */
+  private lockLeft(s: ShipView, id: SystemId): number {
+    if (id === "cloaking") return (s.cloak?.t ?? 0) > 0 ? 0 : s.cloak?.cd ?? 0;
+    if (id === "hacking") return s.hack?.attached && (s.hack.pulse ?? 0) <= 0 ? s.hack.cd ?? 0 : 0;
+    if (id === "mind") return s.mindCd ?? 0;
+    if (id === "battery") return (s.battery?.t ?? 0) > 0 ? 0 : s.battery?.cd ?? 0;
+    return 0;
+  }
+
+  private lockPie(key: string, left: number, cx: number, cy: number): void {
+    if (left <= 0) return;
+    const round = 5;
+    const n = Math.min(9, Math.ceil(left / round));
+    const k = (left - (n - 1) * round) / round;
+    this.countdown(key, n, Math.max(0, Math.min(1, k)), cx, cy, "octa");
+  }
+
+  private countdown(key: string, n: number, k: number, cx: number, cy: number, art: "ring" | "octa"): void {
     const h = this.hud;
-    const n = Math.min(9, sys.ion);
-    const badge = texNow(`icons/locking/s_ring_${n}_base.png`);
-    const ring = texNow("icons/locking/s_ring_timer.png");
-    const k = Math.max(0, Math.min(1, sys.ionTimer / RULES.ionDuration));
+    const badge = texNow(`icons/locking/s_${art}_${n}_base.png`);
+    const ring = texNow(`icons/locking/s_${art}_timer.png`);
     if (badge) h.sprite(`${key}b`, badge, cx, cy, { anchor: 0.5 });
     else h.gfx(`${key}bg`).circle(cx, cy, 13).fill({ color: 0x0c2a2c }).stroke({ color: 0x6ad8ff, width: 2 });
     if (!badge) h.text(`${key}n`, String(n), cx, cy, fstyle("JustinFont10", 0x9ff0ff), [0.5, 0.5]);
@@ -1088,8 +1112,6 @@ export class Battle {
       else g.rect(13.5, yy + 0.5, 26, 5).stroke({ color: 0xe8ece8, width: 1 });
     }
     const systems = MAIN_SYS.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
-    // FTL's tray fits five main systems; each extra one pushes the weapons (and drones) tray right.
-    this.trayDx = Math.max(0, systems.length - 5) * SYS_DX;
     const right = SYS_X0 + 32 + (systems.length - 1) * SYS_DX + 20;
     for (let yy = 627; yy < 690; yy += 6) g.moveTo(44, yy + 6).lineTo(50, yy).stroke({ color: 0x8a948c, width: 2 });
     g.moveTo(46, 690).lineTo(58, 704).lineTo(right, 704).stroke({ color: 0xe8ece8, width: 2.5 });
@@ -1100,7 +1122,7 @@ export class Battle {
       if (this.manned(s, sys.id)) h.sprite(`mn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 657 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`) ?? texNow(`icons/s_${sys.id}_green1.png`);
       if (icon) {
-        if (sys.ion <= 0) h.sprite(`si${sys.id}`, icon, SYS_X0 + i * SYS_DX, SYS_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
+        if (sys.ion <= 0 && this.lockLeft(s, sys.id) <= 0) h.sprite(`si${sys.id}`, icon, SYS_X0 + i * SYS_DX, SYS_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
       } else if (sys.ion <= 0) h.text(`si${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SYS_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
       this.sysHit.push({ id: sys.id, box: { x: cx - 16, y: 657 - sys.level * this.pitch(sys.level) - 4, w: 32, h: sys.level * this.pitch(sys.level) + 60 } });
       const top = 657 - sys.level * this.pitch(sys.level) - 8;
@@ -1183,11 +1205,7 @@ export class Battle {
       this.gauge("ckG", `systemUI/button_cloaking${n}_charging_off.png`, `systemUI/button_cloaking${n}_charging_on.png`, x, y, 35, 31, (c!.t) / (RULES.cloakDuration[lv] || 1));
       return;
     }
-    if ((c?.cd ?? 0) > 0) {
-      this.gauge("ckG", `systemUI/button_cloaking${n}_charging_off.png`, `systemUI/button_cloaking${n}_charging_on.png`, x, y, 35, 31, 1 - c!.cd / RULES.cloakCooldown);
-      return;
-    }
-    const ready = lv > 0 && !sys.hacked;
+    const ready = lv > 0 && !sys.hacked && (c?.cd ?? 0) <= 0;
     h.sprite("ckOn", texNow(`systemUI/button_cloaking${n}_${ready ? "on" : "off"}.png`), x, y);
     if (ready) this.cloakBtn = { x: x + 4, y: y + 29, w: 32, h: 43 };
   }
@@ -1213,13 +1231,32 @@ export class Battle {
     h.sprite("hkG", texNow(pulsing ? "systemUI/button_hack_grid_purple_on.png" : ready ? "systemUI/button_hack_grid_on.png" : "systemUI/button_hack_grid_off.png"), x, y);
     if (ready) this.hackBtns.push({ kind: "pulse", box: { x: x + 10, y: y + 36, w: 20, h: 20 } });
     if (this.teleMode === "hack") h.text("hkHint", "Click an enemy room to attach the hacking drone", OWN.cx, 588, fstyle("JustinFont10", 0xd8a0ff, { stroke: 0x101010 }), [0.5, 0]);
-    // Recharge after a pulse: a thin bar under the grid button.
-    if (hk?.attached && !pulsing && (hk.cd ?? 0) > 0) h.gfx("hkCd").rect(x + 10, y + 58, Math.round(20 * (1 - hk.cd / RULES.hackCooldown)), 3).fill({ color: 0xd070ff });
   }
 
-  /** Left edge of the subsystems group: one slot further left when there's a battery. */
-  private subX0(s: ShipView): number {
-    return s.systems.battery ? SUB_X0 - SYS_DX : SUB_X0;
+  /**
+   * Bottom HUD layout for this frame: the weapons tray slides right for each system past five (FTL's
+   * tray fits five), the drone tray sits flush to its right, and the subsystems move right if they must.
+   */
+  private lay = { trayDx: 0, droneX0: 660, subX0: SUB_X0 };
+  private computeLayout(s: ShipView): void {
+    const main = MAIN_SYS.filter((id) => s.systems[id]).length;
+    const trayDx = Math.max(0, main - 5) * SYS_DX;
+    const boxW = (n: number) => 31 + 97 * n;
+    const wslots = Math.max(2, Math.min(4, this.db.ships[s.bp]?.weaponSlots ?? 4));
+    const weaponsRight = TRAY.x + trayDx + boxW(wslots);
+    const dslots = this.db.ships[s.bp]?.droneSlots ?? 0;
+    const hasDrones = !!s.systems.drones && dslots > 0;
+    const droneX0 = weaponsRight - 3;
+    const droneRight = hasDrones ? droneX0 + boxW(Math.max(2, Math.min(4, dslots))) : 0;
+    const base = s.systems.battery ? SUB_X0 - SYS_DX : SUB_X0;
+    // The battery's side panel needs its own 44 px left of the group.
+    this.lay = { trayDx, droneX0, subX0: Math.max(base, droneRight + 6 + (s.systems.battery ? 44 : 0)) };
+    this.trayDx = trayDx;
+  }
+
+  /** Left edge of the subsystems group. */
+  private subX0(_s: ShipView): number {
+    return this.lay.subX0;
   }
 
   private batteryBtn: Box | null = null;
@@ -1238,18 +1275,21 @@ export class Battle {
     h.sprite("btB", frame(base, 0, 13, 40, 79), x, y + 13);
     const b = s.battery;
     const g = h.gfx("btG");
-    if ((b?.t ?? 0) > 0 || (b?.cd ?? 0) > 0) {
-      const on = (b!.t ?? 0) > 0;
-      const k = on ? b!.t / RULES.batteryDuration : 1 - b!.cd / RULES.batteryCooldown;
-      g.rect(x + 12, y + 30 + Math.round(48 * (1 - k)), 16, Math.round(48 * k)).fill({ color: on ? 0xffd040 : 0x8a8e8a });
+    if ((b?.t ?? 0) > 0) {
+      // Bonus power left: the warm-up bar drains.
+      const k = b!.t / RULES.batteryDuration;
+      g.rect(x + 12, y + 30 + Math.round(48 * (1 - k)), 16, Math.round(48 * k)).fill({ color: 0xffd040 });
       return;
     }
-    const ready = usable(sys) > 0 && !sys.hacked;
+    const ready = usable(sys) > 0 && !sys.hacked && (b?.cd ?? 0) <= 0;
     h.sprite("btI", texNow(`icons/s_battery_${ready ? "green" : "grey"}1.png`), cx, y + 52, { anchor: 0.5, scale: 0.7 });
     if (ready) this.batteryBtn = { x: x + 4, y: y + 28, w: 32, h: 50 };
   }
 
-  /** Mind control panel (FTL's cloak-style frame with the mind icon); click, then a room with hostile crew. */
+  /**
+   * Mind control panel, cloak-style: FTL's button (not the system icon) when it can be used; while someone
+   * is controlled the warm-up bar shows the control time left. The recharge after shows on the icon.
+   */
   private mindPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
     const h = this.hud;
     this.mindBtn = null;
@@ -1258,15 +1298,17 @@ export class Battle {
     const base = texNow("systemUI/button_cloaking2_base.png");
     if (!base) return;
     h.sprite("mdB", base, x, y);
-    const powered = Math.min(sys.power + (sys.bonus ?? 0), usable(sys)) > 0 && !sys.hacked;
-    const cd = s.mindCd ?? 0;
-    if (cd > 0) {
-      const total = RULES.mindDuration[Math.min(3, Math.max(1, sys.level))] + RULES.mindCooldown;
-      h.gfx("mdG").rect(x + 12, y + 35 + Math.round(31 * (cd / total)), 16, Math.round(31 * (1 - cd / total))).fill({ color: 0xd070ff });
+    const v = this.view!;
+    const held = [...v.ships[0].crew, ...v.ships[1].crew].find((c) => c.mind?.by === s.idx);
+    if (held?.mind) {
+      const lv = Math.max(1, Math.min(3, sys.level));
+      this.gauge("mdG", "systemUI/button_cloaking2_charging_off.png", "systemUI/button_cloaking2_charging_on.png", x, y, 35, 31, held.mind.t / RULES.mindDuration[lv]);
       return;
     }
-    h.sprite("mdI", texNow(`icons/s_mind_${powered ? "green" : "grey"}1.png`), cx, y + 50, { anchor: 0.5, scale: 0.7, tint: this.teleMode === "mind" ? 0xffe060 : 0xffffff });
-    if (powered) this.mindBtn = { x: x + 4, y: y + 29, w: 32, h: 43 };
+    const powered = Math.min(sys.power + (sys.bonus ?? 0), usable(sys)) > 0 && !sys.hacked;
+    const ready = powered && (s.mindCd ?? 0) <= 0;
+    h.sprite("mdOn", texNow(`systemUI/button_cloaking2_${this.teleMode === "mind" ? "select2" : ready ? "on" : "off"}.png`), x, y);
+    if (ready) this.mindBtn = { x: x + 4, y: y + 29, w: 32, h: 43 };
     if (this.teleMode === "mind") h.text("mdHint", "Click a room with enemy crew (theirs, or intruders here)", OWN.cx, 588, fstyle("JustinFont10", 0xd8a0ff, { stroke: 0x101010 }), [0.5, 0]);
   }
 
@@ -1305,9 +1347,11 @@ export class Battle {
     const h = this.hud;
     const subs = SUB_SYS.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
     const tab = texNow("box_subsystems4.png");
-    if (tab) h.sprite("subTab", tab, 1022, 664);
+    // The tab sits under piloting, sensors and doors (the battery, when fitted, stands to its left).
+    const tabX = this.subX0(s) + (s.systems.battery ? SYS_DX : 0) + 7;
+    if (tab) h.sprite("subTab", tab, tabX, 664);
     else h.gfx("subTabG").roundRect(1024, 666, 165, 34, 4).fill({ color: 0xd8e4dc });
-    this.label("subT", "SUBSYSTEMS", 1034, 669);
+    this.label("subT", "SUBSYSTEMS", tabX + 12, 669);
     subs.forEach((sys, i) => {
       const cx = this.subX0(s) + 32 + i * SYS_DX;
       this.bars(`sb${sys.id}`, sys, cx, 639);
@@ -1316,12 +1360,13 @@ export class Battle {
       if (sys.locked) h.sprite(`hk${sys.id}`, texNow("icons/s_hacked.png"), cx + 10, SUB_ICON_Y + 12, { anchor: 0.5 });
       if (sys.id === "battery") this.batteryPanel(s, sys, cx - 36, 690);
       if (icon) {
-        if (sys.ion <= 0) h.sprite(`ssi${sys.id}`, icon, this.subX0(s) + i * SYS_DX, SUB_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
+        if (sys.ion <= 0 && this.lockLeft(s, sys.id) <= 0) h.sprite(`ssi${sys.id}`, icon, this.subX0(s) + i * SYS_DX, SUB_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
       } else if (sys.ion <= 0) h.text(`ssi${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SUB_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
     });
     this.doorBtns = [];
     if (s.systems.doors) {
-      const bx = 1122;
+      // FTL's door controls stand over the doors subsystem.
+      const bx = this.subX0(s) + SUB_SYS.filter((x) => s.systems[x]).indexOf("doors") * SYS_DX + 35;
       const by = 597;
       const base = texNow("systemUI/button_door_base.png");
       if (base) {
@@ -1427,16 +1472,9 @@ export class Battle {
     const slots = this.db.ships[s.bp]?.droneSlots ?? 0;
     if (!slots || !s.systems.drones) return;
     const n = Math.max(2, Math.min(4, slots));
-    let x0 = 660 + this.trayDx;
-    let dy = 0;
-    // With many systems the tray would run into the subsystems: it moves up, over the weapons tray's right end.
-    const right = x0 + 34 + n * SLOT.dx;
-    const limit = this.subX0(s) - (s.systems.battery ? 48 : 8);
-    if (right > limit) {
-      const wslots = Math.max(2, Math.min(4, this.db.ships[s.bp]?.weaponSlots ?? 4));
-      x0 = TRAY.x + this.trayDx + 34 + wslots * SLOT.dx - (34 + n * SLOT.dx);
-      dy = -76;
-    }
+    // Flush to the right of the weapons tray, as in FTL.
+    const x0 = this.lay.droneX0;
+    const dy = 0;
     const boxT = texNow(`box_weapons_bottom${n}.png`);
     const g = h.gfx("dtray");
     if (boxT) h.sprite("dbox", boxT, x0, TRAY.y + dy);
@@ -1461,7 +1499,7 @@ export class Battle {
       }
       const short = bp.title.replace(/ Drone/, "").replace("Mark ", "").trim();
       h.text(`dn${i}`, short.length > 14 ? `${short.slice(0, 13)}.` : short, bx + 54, by + 4, fstyle("JustinFont10", usableHere ? (d.powered ? 0xffffff : 0x9aa09a) : 0x707070), [0.5, 0]);
-      const status = !usableHere ? "coming later" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
+      const status = (d.rebuild ?? 0) > 0 ? `rebuilding ${Math.ceil(d.rebuild ?? 0)}s` : !usableHere ? "coming later" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
       if (status) h.text(`ds${i}`, status, bx + 26, by + SLOT.h - 12, fstyle("JustinFont8", d.deployed ? 0x9fe89f : 0xffd040));
       this.droneHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
     }
@@ -1597,6 +1635,7 @@ export class Battle {
         return;
       }
       if (d.powered) return;
+      if ((d.rebuild ?? 0) > 0) return this.fail("That drone is still being rebuilt");
       if (!ACTIVE_DRONES.includes(bp.type)) return this.fail("This drone isn't in the arena yet");
       const ds = own.systems.drones;
       if (!ds || ds.ion > 0) return this.fail(ds ? "Drones are locked by ion damage" : "No drone system");
@@ -1779,7 +1818,7 @@ export class Battle {
       // Like weapons: the next drone in slot order launches; right-click recalls the last powered one.
       const ds = own.drones ?? [];
       if (delta > 0) {
-        const i = ds.findIndex((d) => !d.powered && ACTIVE_DRONES.includes(this.db.droneBPs[d.bp]?.type ?? ""));
+        const i = ds.findIndex((d) => !d.powered && !(d.rebuild ?? 0) && ACTIVE_DRONES.includes(this.db.droneBPs[d.bp]?.type ?? ""));
         if (i < 0) return this.fail("No drone ready to launch");
         const hit = this.droneHit.find((x) => x.slot === i);
         if (hit) return this.onDown({ global: this.stage.toGlobal({ x: hit.box.x + 5, y: hit.box.y + 5 }), button: 0, shiftKey: false } as unknown as FederatedPointerEvent);
@@ -1869,13 +1908,16 @@ export class Battle {
       if (!e.shiftKey) this.selected.clear();
       return;
     }
-    const a = this.own.root.toLocal({ x: Math.min(d.x, d.x2), y: Math.min(d.y, d.y2) }, this.stage);
-    const b = this.own.root.toLocal({ x: Math.max(d.x, d.x2), y: Math.max(d.y, d.y2) }, this.stage);
+    // Box-select your crew on either ship: each crew member's on-screen spot (the enemy view is rotated
+    // and scaled) tested against the box in stage space.
+    const x1 = Math.min(d.x, d.x2), x2 = Math.max(d.x, d.x2), y1 = Math.min(d.y, d.y2), y2 = Math.max(d.y, d.y2);
     if (!e.shiftKey) this.selected.clear();
-    for (const c of v.ships[v.you].crew) {
-      const cx = (c.x + 0.5) * 35;
-      const cy = (c.y + 0.5) * 35;
-      if (!c.dead && c.owner === v.you && c.drone === undefined && cx >= a.x && cx <= b.x && cy >= a.y && cy <= b.y) this.selected.add(c.id);
+    for (const [ship, r] of [[v.ships[v.you], this.own], [v.ships[1 - v.you], this.enemy]] as const) {
+      for (const c of ship.crew) {
+        if (c.dead || c.owner !== v.you || c.drone !== undefined || c.mind) continue;
+        const p = this.stage.toLocal(r.root.toGlobal({ x: (c.x + 0.5) * 35, y: (c.y + 0.5) * 35 }));
+        if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) this.selected.add(c.id);
+      }
     }
   }
 

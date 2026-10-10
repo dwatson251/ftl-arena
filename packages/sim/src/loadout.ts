@@ -149,6 +149,8 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
       errors.push(`${k}: this hull has no room for it`);
   }
   if ((l.systems.medbay ?? 0) > 0 && (l.systems.clonebay ?? 0) > 0) errors.push("medbay and clone bay share a room: install one");
+  const installed = Object.entries(l.systems).filter(([id, lv]) => (lv ?? 0) > 0 && !isSubsystem(id as SystemId)).length;
+  if (installed > RULES.maxSystems) errors.push(`FTL allows at most ${RULES.maxSystems} systems (subsystems don't count)`);
   if (!Number.isInteger(l.reactor) || l.reactor < base.reactor) errors.push(`reactor can't go below ${base.reactor}`);
   const reactorMax = unlimited ? RULES.unlimitedReactor : RULES.reactorMax;
   if (l.reactor > reactorMax) errors.push(`reactor max is ${reactorMax}`);

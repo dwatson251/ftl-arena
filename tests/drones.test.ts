@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placeholderDb, type GameDB } from "@ftl/data";
-import { baseLoadout, DEFAULT_CONFIG, Match, priceLoadout } from "@ftl/sim";
+import { baseLoadout, DEFAULT_CONFIG, Match, priceLoadout, RULES } from "@ftl/sim";
 
 function dbWithDrones(): GameDB {
   const db = placeholderDb();
@@ -36,6 +36,8 @@ describe("drones", () => {
     const s = m.state.ships[0];
     m.push(0, { c: "dronePower", slot: 0, on: true });
     m.step();
+    expect(s.drones![0].deployed).toBe(false); // launching
+    for (let i = 0; i < 30 * (RULES.droneLaunch + 0.2); i++) m.step();
     expect(s.drones![0].deployed).toBe(true);
     expect(s.droneParts).toBe(2);
     const shots = new Set<number>();
@@ -48,7 +50,7 @@ describe("drones", () => {
     m.push(0, { c: "dronePower", slot: 0, on: false });
     m.step();
     m.push(0, { c: "dronePower", slot: 0, on: true });
-    m.step();
+    for (let i = 0; i < 30 * (RULES.droneLaunch + 0.2); i++) m.step();
     expect(s.droneParts).toBe(1);
   });
   it("a defense drone shoots down incoming missiles (unless scrambled)", () => {
@@ -57,7 +59,7 @@ describe("drones", () => {
       const attacker = { ...baseLoadout(db, "PH_SKIFF"), augments: scramble ? ["DEFENSE_SCRAMBLER"] : [] };
       const m = new Match(db, DEFAULT_CONFIG, [attacker, armed(db, "DEFENSE_1")], ["a", "b"]);
       m.push(1, { c: "dronePower", slot: 0, on: true });
-      for (let i = 0; i < 60; i++) m.step();
+      for (let i = 0; i < 30 * (RULES.droneLaunch + 2); i++) m.step();
       m.state.projectiles.push({ id: 500, from: 0, weapon: "PH_TORPEDO", slot: 0, kind: "MISSILES", delay: 0, t: 0, flight: 1.5, target: { kind: "room", room: 3 }, px: 0, py: 0, damageBonus: 0 });
       let intercepted = false;
       for (let i = 0; i < 40; i++) {

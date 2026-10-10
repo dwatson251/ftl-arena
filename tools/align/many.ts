@@ -19,10 +19,11 @@ await p.press('input[data-cfg="scrap"]', "Enter");
 await p.waitForTimeout(800);
 await p.click('button[data-ship="PLAYER_SHIP_HARD"]');
 await p.click('button[data-step="Systems"]');
+const press = (sel: string) => p.$eval(sel, (b) => (b as HTMLButtonElement).click()).catch(() => {});
 for (const id of ["drones", "teleporter", "cloaking", "hacking", "mind", "battery", "clonebay"]) {
-  for (let i = 0; i < 2; i++) await p.click(`button[data-sys="${id}"][data-d="1"]`).catch(() => {});
+  for (let i = 0; i < 2; i++) await press(`button[data-sys="${id}"][data-d="1"]`);
 }
-for (let i = 0; i < 14; i++) await p.click('button[data-reactor="1"]').catch(() => {});
+for (let i = 0; i < 14; i++) await press('button[data-reactor="1"]');
 await p.waitForTimeout(300);
 await p.screenshot({ path: `${out}/00-systems.png` });
 await p.click('button[data-step="Launch"]');
@@ -57,7 +58,16 @@ if (st.ui?.tele?.length) {
   await p.waitForTimeout(300);
   const t = await p.evaluate(() => { const a = (window as unknown as { __arena: A }).__arena; const v = a.view(); const en = v.ships[1 - v.you]; return a.enemyRoom((en.systems.weapons ?? en.systems.shields).room); });
   await p.mouse.click(t.x, t.y);
-  await p.waitForTimeout(1500);
+  await p.waitForTimeout(450);
+  await p.screenshot({ path: `${out}/03-beaming.png` });
+  await p.waitForTimeout(2000);
+}
+const ck = await p.evaluate(() => (window as unknown as { __arena: A }).__arena.ui()?.cloak);
+if (ck) {
+  const s2 = await p.evaluate(([x, y]) => (window as unknown as { __arena: A }).__arena.toScreen(x, y), [ck.x + 16, ck.y + 20]);
+  await p.mouse.click(s2.x, s2.y);
+  await p.waitForTimeout(11500);
+  await p.screenshot({ path: `${out}/04-cloak-lock.png` });
 }
 console.log("after:", await p.evaluate(() => { const v = (window as unknown as { __arena: A }).__arena.view(); return v.ships.map((s: any) => s.crew.filter((c: any) => c.owner === v.you).length); }));
 // Ion ring frames.

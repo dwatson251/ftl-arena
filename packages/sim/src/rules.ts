@@ -109,12 +109,19 @@ export const RULES = {
   teleMax: 4,
   meleeDps: 6,
   combatSkillBonus: [0, 0.1, 0.2],
-  sabotageRate: 0.12,
+  sabotageRate: 0.05,
   doorBreak: [2, 4, 7, 11, 16],
   /** A broken door stays open this long, then shuts again (est); crew walking through hold it open briefly. */
   doorBrokenOpen: 4,
   doorPassOpen: 0.35,
   boarderFlight: 2.4,
+  /** Teleporting takes a beam-out and a beam-in (est, from FTL's teleport animation). */
+  teleportTime: 1,
+  /** Drones (est): launch time after powering a slot; rebuild time after one is destroyed. */
+  droneLaunch: 1.5,
+  droneRebuild: 10,
+  /** FTL's limit on installed systems (subsystems don't count). */
+  maxSystems: 8,
   /** Cloaking: duration by level ("Cloak: N seconds"; est 5/10/15), recharge after (est), +60 evasion (FTL text). */
   cloakDuration: [0, 5, 10, 15],
   cloakCooldown: 20,
@@ -185,7 +192,8 @@ export const RACES: Record<string, RaceTraits> = {
   slug: { hp: 100, speed: 1, repair: 1, combat: 1, suffocation: 1, telepathic: true, blurb: "Telepathic: sees enemy crew without sensors." },
   energy: { hp: 70, speed: 1, repair: 1, combat: 1, suffocation: 1, power: 1, blurb: "Powers the system it stands in by 1. 70 HP." },
   crystal: { hp: 125, speed: 0.8, repair: 1, combat: 1, suffocation: 0.5, blurb: "125 HP, half suffocation damage, slow." },
-  anaerobic: { hp: 100, speed: 1, repair: 1, combat: 1, suffocation: 0, drainO2: 1.5, blurb: "Doesn't breathe; drains O2 from its room." },
+  // Lanius (wiki): drain oxygen "about as fast as a hull breach in a single square"; 20% slower.
+  anaerobic: { hp: 100, speed: 0.8, repair: 1, combat: 1, suffocation: 0, drainO2: 1, blurb: "Doesn't breathe; drains its room's oxygen like a hull breach. 20% slower." },
   // Drone units (not hireable): anti-personnel, system repair, boarding (est stats).
   battle: { hp: 150, speed: 1, repair: 0, combat: 1, suffocation: 0, fireImmune: true, drone: true, blurb: "Anti-personnel drone." },
   repair: { hp: 70, speed: 1, repair: 1, combat: 0, suffocation: 0, fireImmune: true, drone: true, blurb: "System repair drone." },

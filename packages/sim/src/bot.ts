@@ -206,7 +206,7 @@ export class Bot {
       if (!w.powered) out.push({ c: "weaponPower", slot, on: true });
     });
     (ship.drones ?? []).forEach((d, slot) => {
-      if (d.powered || (ship.droneParts ?? 0) <= 0) return;
+      if (d.powered || (ship.droneParts ?? 0) <= 0 || (d.rebuild ?? 0) > 0) return;
       // Free a reactor bar for the drone if needed: the medbay first (nobody hurt), then the engines.
       const used = Object.values(ship.systems).reduce((a, x) => a + (x && !["pilot", "sensors", "doors"].includes(x.id) ? x.power : 0), 0);
       const need = m.db.droneBPs?.[d.bp]?.power ?? 1;

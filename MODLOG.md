@@ -201,6 +201,14 @@
 - **Teleporter feedback:** every reason it won't fire now has a message (no power, charging, crew not on
   the pad, super shields, room full). Before, it failed silently.
 
+## Round 12: nits from play
+- **Bottom HUD:** a single per-frame layout. The weapons tray slides right per system past five, the drone
+  tray sits flush to its right, and the subsystems move right as needed. FTL's 8-system cap keeps it
+  on screen.
+- **Lanius drain:** the wiki says "about as fast as a hull breach in a single square", so the drain reuses
+  the breach formula.
+- **Locks:** `icons/locking/s_octa_*` is the lock variant of the ion ring.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
