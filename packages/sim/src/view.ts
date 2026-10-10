@@ -39,7 +39,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   const ownView: ShipView = { ...structuredClone(own), visibleRooms: null, interior: true, weaponsKnown: true };
   if (sensors <= 0 && !over) {
     const g = geometry(m.db.layouts[own.layout]);
-    ownView.visibleRooms = [...new Set(own.crew.filter((c) => !c.dead && c.owner === you).map((c) => g.tiles.get(c.tile)!.room))];
+    ownView.visibleRooms = [...new Set(own.crew.filter((c) => !c.dead && c.owner === you).map((c) => g.tiles.get(c.tile)?.room ?? -1))];
   }
 
   const ev = structuredClone(enemy) as ShipView;
@@ -49,7 +49,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   if (!ev.interior) {
     // Without sensors you still see the rooms your boarders stand in, and everyone in them.
     const eg = geometry(m.db.layouts[enemy.layout]);
-    const roomOf = (c: { tile: string }) => eg.tiles.get(c.tile)!.room;
+    const roomOf = (c: { tile: string }) => eg.tiles.get(c.tile)?.room ?? -1;
     const seen = new Set(ev.crew.filter((c) => c.owner === you && !c.dead).map(roomOf));
     // An attached hacking drone shows its room too.
     if (own.hack?.attached) seen.add(own.hack.room);

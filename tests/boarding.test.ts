@@ -135,3 +135,22 @@ describe("boarding", () => {
     expect(me.droneParts).toBe(2);
   });
 });
+
+describe("dead boarders", () => {
+  it("go home with a tile on their own ship (the view doesn't choke on them)", async () => {
+    const { viewFor } = await import("@ftl/sim");
+    const db = boardingDb();
+    const m = new Match(db, DEFAULT_CONFIG, [boarder(db), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    const [me] = m.state.ships;
+    const ids = padUp(m, 1);
+    m.push(0, { c: "teleport", room: 5 });
+    m.step();
+    const c = m.state.ships[1].crew.find((q) => q.id === ids[0])!;
+    c.hp = 0;
+    run(m, 2);
+    expect(me.crew).toContain(c);
+    expect(m.geo(me).tiles.has(c.tile)).toBe(true);
+    expect(() => viewFor(m, 0)).not.toThrow();
+    expect(() => viewFor(m, 1)).not.toThrow();
+  });
+});

@@ -929,10 +929,25 @@ export class Match {
       else if (!drone && medbay && medbay.room === room && c.hp < c.maxHp) c.task = "heal";
       else c.task = "idle";
     }
+    // FTL: partial repair is lost once the last of the ship's own crew leaves the room; while they're
+    // still in it (fighting intruders, fighting fire) it only pauses.
+    for (const sys of Object.values(ship.systems)) {
+      if (!sys || sys.repair <= 0) continue;
+      const present = ship.crew.some((q) => q.owner === ship.idx && !q.dead && q.dying === undefined && !q.mind && g.tiles.get(q.tile)?.room === sys.room && !(q.path.length && g.tiles.get(q.path[q.path.length - 1])?.room !== sys.room));
+      if (!present) sys.repair = 0;
+    }
     for (const c of leaving) {
       ship.crew = ship.crew.filter((q) => q !== c);
       if (c.drone !== undefined) this.loseDrone(st.ships[c.owner], c.drone);
-      else st.ships[c.owner].crew.push(c);
+      else {
+        // The body goes home: give it a tile on its own ship (its old one belongs to this ship's layout).
+        const home = st.ships[c.owner];
+        const hg = this.geo(home);
+        const tile = (home.systems.clonebay && hg.roomTiles.get(home.systems.clonebay.room)?.[0]) || [...hg.tiles.keys()][0];
+        const [x, y] = unkey(tile);
+        Object.assign(c, { tile, home: tile, x, y, path: [] });
+        home.crew.push(c);
+      }
     }
   }
 

@@ -144,7 +144,14 @@ setInterval(() => {
   let n = 0;
   while (acc >= STEP && n++ < 5) {
     acc -= STEP;
-    for (const l of lobbies.values()) l.tick();
+    for (const l of lobbies.values()) {
+      // One lobby's bug must not take the whole server (and every other match) down.
+      try {
+        l.tick();
+      } catch (err) {
+        console.error("lobby tick failed:", err);
+      }
+    }
   }
   if (acc > STEP * 5) acc = 0;
   while (secAcc >= 1000) {

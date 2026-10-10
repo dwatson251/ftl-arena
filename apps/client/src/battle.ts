@@ -25,7 +25,8 @@ const WIN_SHIP = { x: WIN.x + 18, y: WIN.y + 104, w: 366, h: 372 };
 const MAIN_SYS: SystemId[] = ["shields", "engines", "medbay", "clonebay", "oxygen", "weapons", "drones", "teleporter", "cloaking", "hacking", "mind", "artillery"];
 const ACTIVE_DRONES = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER", "SHIELD"];
 const UNIT_DRONES = ["BATTLE", "REPAIR", "BOARDER"];
-const SUB_SYS: SystemId[] = ["pilot", "sensors", "doors", "battery"];
+// The battery leads the subsystems group (its compact panel sits to its left, clear of the target window).
+const SUB_SYS: SystemId[] = ["battery", "pilot", "sensors", "doors"];
 /** Bottom-left system icons: s_<sys>_*1.png (64 px) top-left corners, 36 px apart. */
 const SYS_X0 = 58;
 const SYS_ICON_Y = 651;
@@ -720,7 +721,7 @@ export class Battle {
       const main = MAIN_SYS.filter((x) => own.systems[x]).indexOf(id);
       const sub = SUB_SYS.filter((x) => own.systems[x]).indexOf(id);
       if (main >= 0) this.ionPie(`ion${id}`, sys, SYS_X0 + 32 + main * SYS_DX, SYS_ICON_Y + 32);
-      else if (sub >= 0) this.ionPie(`ion${id}`, sys, SUB_X0 + 32 + sub * SYS_DX, SUB_ICON_Y + 32);
+      else if (sub >= 0) this.ionPie(`ion${id}`, sys, this.subX0(own) + 32 + sub * SYS_DX, SUB_ICON_Y + 32);
     }
     if (this.message && this.time < this.message.until) {
       const t = h.text("msg", this.message.text, 440, 588, fstyle("JustinFont12Bold", this.message.color, { stroke: 0x101010, strokeWidth: 3 }), [0.5, 0]);
@@ -1002,14 +1003,25 @@ export class Battle {
     if (badge) h.sprite(`${key}b`, badge, cx, cy, { anchor: 0.5 });
     else h.gfx(`${key}bg`).circle(cx, cy, 13).fill({ color: 0x0c2a2c }).stroke({ color: 0x6ad8ff, width: 2 });
     if (!badge) h.text(`${key}n`, String(n), cx, cy, fstyle("JustinFont10", 0x9ff0ff), [0.5, 0.5]);
-    // The ring's remaining segments: a wedge mask from 12 o'clock, shrinking clockwise.
-    const mask = h.gfx(`${key}m`);
-    mask.moveTo(cx, cy).arc(cx, cy, 40, -Math.PI / 2 + (1 - k) * Math.PI * 2, Math.PI * 1.5).closePath().fill({ color: 0xffffff });
+    // FTL's timer ring has 12 dashes, one per 30° clockwise from 12 o'clock. Whole dashes still to go
+    // show through one mask; the dash being used up fades out smoothly through a second.
+    const m = k * 12;
+    const whole = Math.floor(m);
+    const frac = m - whole;
+    const deg = (d: number) => (d * Math.PI) / 180;
+    const wedge = (g: Graphics, a0: number, a1: number) => (a1 > a0 ? g.moveTo(cx, cy).arc(cx, cy, 40, deg(a0), deg(a1)).closePath().fill({ color: 0xffffff }) : g);
+    const maskA = wedge(h.gfx(`${key}m`), -90 + 30 * (12 - whole), 270);
+    const maskB = wedge(h.gfx(`${key}m2`), -90 + 30 * (11 - whole), -90 + 30 * (12 - whole));
     if (ring) {
-      const sp = h.sprite(`${key}r`, ring, cx, cy, { anchor: 0.5 });
-      if (sp) sp.mask = mask;
+      const a = h.sprite(`${key}r`, ring, cx, cy, { anchor: 0.5 });
+      if (a) a.mask = maskA;
+      if (whole < 12 && frac > 0) {
+        const p = h.sprite(`${key}r2`, ring, cx, cy, { anchor: 0.5, alpha: frac });
+        if (p) p.mask = maskB;
+      }
     } else {
-      mask.clear();
+      maskA.clear();
+      maskB.clear();
       h.gfx(`${key}rg`).arc(cx, cy, 18, -Math.PI / 2 + (1 - k) * Math.PI * 2, Math.PI * 1.5).stroke({ color: 0x6ad8ff, width: 3 });
     }
   }
@@ -1054,6 +1066,15 @@ export class Battle {
   private systemsBar(s: ShipView): void {
     const h = this.hud;
     this.sysHit = [];
+    // Panels re-register their buttons as they're drawn; nothing stale stays clickable.
+    this.teleBtns = [];
+    this.telePanelBox = null;
+    this.teleWhy = "";
+    this.cloakBtn = null;
+    this.hackBtns = [];
+    this.mindBtn = null;
+    this.artilleryBtn = null;
+    this.batteryBtn = null;
     const used = Object.values(s.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
     const bonus = Math.max(0, s.reactorBonus ?? 0);
     const free = s.reactor + (s.reactorBonus ?? 0) - used;
@@ -1094,6 +1115,8 @@ export class Battle {
   }
 
   private trayDx = 0;
+  private telePanelBox: Box | null = null;
+  private teleWhy = "";
   private teleBtns: { out: boolean; box: Box }[] = [];
   private teleMode: "send" | "return" | "hack" | "mind" | "artillery" | null = null;
 
@@ -1110,6 +1133,9 @@ export class Battle {
     const base = texNow("systemUI/button_teleport_base.png");
     if (!base) return;
     h.sprite("tpB", base, x, y);
+    // Clicking a teleporter that isn't ready says why (FTL just greys it out, which reads as "broken").
+    this.telePanelBox = { x, y, w: 40, h: 79 };
+    this.teleWhy = lv <= 0 ? "The teleporter needs power" : !ready ? "The teleporter is charging" : "";
     if (!ready) {
       // Charging: the striped gauge fills from the bottom.
       h.sprite("tpC0", texNow("systemUI/button_teleport_charging_off.png"), x, y);
@@ -1191,6 +1217,11 @@ export class Battle {
     if (hk?.attached && !pulsing && (hk.cd ?? 0) > 0) h.gfx("hkCd").rect(x + 10, y + 58, Math.round(20 * (1 - hk.cd / RULES.hackCooldown)), 3).fill({ color: 0xd070ff });
   }
 
+  /** Left edge of the subsystems group: one slot further left when there's a battery. */
+  private subX0(s: ShipView): number {
+    return s.systems.battery ? SUB_X0 - SYS_DX : SUB_X0;
+  }
+
   private batteryBtn: Box | null = null;
   private mindBtn: Box | null = null;
   private artilleryBtn: Box | null = null;
@@ -1199,11 +1230,12 @@ export class Battle {
   private batteryPanel(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, cx: number, bottom: number): void {
     const h = this.hud;
     this.batteryBtn = null;
+    // FTL's battery frame without its pointer, standing beside the battery rather than above it.
     const x = cx - 20;
     const y = bottom - 92;
     const base = texNow("systemUI/button_battery3_base.png");
     if (!base) return;
-    h.sprite("btB", base, x, y);
+    h.sprite("btB", frame(base, 0, 13, 40, 79), x, y + 13);
     const b = s.battery;
     const g = h.gfx("btG");
     if ((b?.t ?? 0) > 0 || (b?.cd ?? 0) > 0) {
@@ -1261,8 +1293,9 @@ export class Battle {
     const ts = own.systems.teleporter;
     if (!ts) return;
     const g = this.own.geo;
-    if (out && !own.crew.some((c) => c.owner === own.idx && !c.dead && c.drone === undefined && g.tiles.get(c.tile)?.room === ts.room))
-      return this.fail("Move crew onto the teleporter pad first");
+    const onPad = own.crew.filter((c) => c.owner === own.idx && !c.dead && c.drone === undefined && !c.mind && g.tiles.get(c.tile)?.room === ts.room);
+    if (out && !onPad.length) return this.fail("Move crew onto the teleporter pad first");
+    if (out && !onPad.some((c) => c.path.length === 0)) return this.fail("Wait for your crew to reach the pad");
     play(this.db, ["powerUpSystem"]);
     this.teleMode = out ? "send" : "return";
   }
@@ -1276,14 +1309,14 @@ export class Battle {
     else h.gfx("subTabG").roundRect(1024, 666, 165, 34, 4).fill({ color: 0xd8e4dc });
     this.label("subT", "SUBSYSTEMS", 1034, 669);
     subs.forEach((sys, i) => {
-      const cx = SUB_X0 + 32 + i * SYS_DX;
+      const cx = this.subX0(s) + 32 + i * SYS_DX;
       this.bars(`sb${sys.id}`, sys, cx, 639);
       if (this.manned(s, sys.id)) h.sprite(`smn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 639 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`);
       if (sys.locked) h.sprite(`hk${sys.id}`, texNow("icons/s_hacked.png"), cx + 10, SUB_ICON_Y + 12, { anchor: 0.5 });
-      if (sys.id === "battery") this.batteryPanel(s, sys, cx, 639 - sys.level * this.pitch(sys.level) - 8);
+      if (sys.id === "battery") this.batteryPanel(s, sys, cx - 36, 690);
       if (icon) {
-        if (sys.ion <= 0) h.sprite(`ssi${sys.id}`, icon, SUB_X0 + i * SYS_DX, SUB_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
+        if (sys.ion <= 0) h.sprite(`ssi${sys.id}`, icon, this.subX0(s) + i * SYS_DX, SUB_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
       } else if (sys.ion <= 0) h.text(`ssi${sys.id}`, sys.id.slice(0, 3).toUpperCase(), cx, SUB_ICON_Y + 32, fstyle("JustinFont10", 0xffffff), [0.5, 0.5]);
     });
     this.doorBtns = [];
@@ -1394,15 +1427,24 @@ export class Battle {
     const slots = this.db.ships[s.bp]?.droneSlots ?? 0;
     if (!slots || !s.systems.drones) return;
     const n = Math.max(2, Math.min(4, slots));
-    const x0 = 660 + this.trayDx;
+    let x0 = 660 + this.trayDx;
+    let dy = 0;
+    // With many systems the tray would run into the subsystems: it moves up, over the weapons tray's right end.
+    const right = x0 + 34 + n * SLOT.dx;
+    const limit = this.subX0(s) - (s.systems.battery ? 48 : 8);
+    if (right > limit) {
+      const wslots = Math.max(2, Math.min(4, this.db.ships[s.bp]?.weaponSlots ?? 4));
+      x0 = TRAY.x + this.trayDx + 34 + wslots * SLOT.dx - (34 + n * SLOT.dx);
+      dy = -76;
+    }
     const boxT = texNow(`box_weapons_bottom${n}.png`);
     const g = h.gfx("dtray");
-    if (boxT) h.sprite("dbox", boxT, x0, TRAY.y);
-    else g.roundRect(x0 + 6, TRAY.y + 6, 20 + n * SLOT.dx, 64, 4).fill({ color: 0x1a1f22, alpha: 0.9 }).stroke({ color: 0xe8ece8, width: 2 });
-    this.label("dlabT", "DRONES", x0 + 18, 667);
+    if (boxT) h.sprite("dbox", boxT, x0, TRAY.y + dy);
+    else g.roundRect(x0 + 6, TRAY.y + dy + 6, 20 + n * SLOT.dx, 64, 4).fill({ color: 0x1a1f22, alpha: 0.9 }).stroke({ color: 0xe8ece8, width: 2 });
+    this.label("dlabT", "DRONES", x0 + 18, 667 + dy);
     for (let i = 0; i < n; i++) {
       const bx = x0 + 17 + i * SLOT.dx;
-      const by = SLOT.y;
+      const by = SLOT.y + dy;
       const d = (s.drones ?? [])[i];
       const bp = d && this.db.droneBPs[d.bp];
       if (!d || !bp || i >= slots) {
@@ -1591,6 +1633,7 @@ export class Battle {
       if (right) return void (this.teleMode = null);
       return this.teleClick(own, b.out);
     }
+    if (this.telePanelBox && this.teleWhy && inBox(p, this.telePanelBox)) return this.fail(this.teleWhy);
     if (this.batteryBtn && inBox(p, this.batteryBtn) && !right) {
       play(this.db, ["batteryStart"]);
       return this.send({ c: "battery" });
@@ -1645,6 +1688,16 @@ export class Battle {
       if (mode === "hack") {
         play(this.db, ["droneLaunch"]);
         return this.send({ c: "hackLaunch", room: eh.room });
+      }
+      // The server decides, but say why it would refuse (FTL's own warning for super shields).
+      const enV2 = v.ships[1 - v.you];
+      if ((enV2.superShield ?? 0) > 0) return this.fail("Super shields prevent teleporting");
+      if (out) {
+        const eg = this.enemy.geo;
+        const free = (eg.roomTiles.get(eh.room) ?? []).filter((t) => !enV2.crew.some((c) => c.owner === v.you && !c.dead && c.tile === t)).length;
+        if (!free) return this.fail("That room is full");
+      } else if (!enV2.crew.some((c) => c.owner === v.you && !c.dead && c.drone === undefined && this.enemy.geo.tiles.get(c.tile)?.room === eh.room)) {
+        return this.fail("None of your crew are in that room");
       }
       play(this.db, ["teleport"]);
       return this.send({ c: out ? "teleport" : "retrieve", room: eh.room });

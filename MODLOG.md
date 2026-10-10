@@ -191,6 +191,16 @@
   `ships_glow/` and is vertical, like every other enemy's.
 - **Fixed on the way:** beams ignored shield piercing.
 
+## Round 11: many-systems fixes
+- **Server crash:** a crew member killed aboard the other ship went home still holding a tile from that
+  ship's layout, and `viewFor` crashed on the lookup. Bodies now get a home tile, view lookups are safe,
+  and a lobby tick that throws no longer takes the server down.
+- **Layout with every system fitted:**
+  - The drone tray moves above the weapons tray's right end when it would hit the subsystems.
+  - The battery leads the subsystems, with a compact panel beside it, clear of the target window.
+- **Teleporter feedback:** every reason it won't fire now has a message (no power, charging, crew not on
+  the pad, super shields, room full). Before, it failed silently.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

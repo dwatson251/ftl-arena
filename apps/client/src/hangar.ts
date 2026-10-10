@@ -440,7 +440,7 @@ export class Hangar {
     const cards = buyableDrones(db)
       .map((id) => {
         const d = db.droneBPs[id];
-        const ok = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER"].includes(d.type);
+        const ok = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER", "SHIELD"].includes(d.type);
         return `<div class="wcard ${ok ? "" : "inert"}">${this.droneArt(id)}<div class="wcard-body"><b>${h(d.title)}</b><div class="note">${this.droneStats(id)}</div>
           ${ok ? "" : `<div class="note noeffect">Not in the arena yet (a later update).</div>`}</div>
           <button class="small buy" data-drone="${id}" ${full || !slots ? "disabled" : ""}>${this.scrapIcon()}${d.cost}</button></div>`;
@@ -460,7 +460,7 @@ export class Hangar {
 
   private droneStats(id: string): string {
     const d = this.db.droneBPs[id];
-    const what = { COMBAT: "attacks the enemy", DEFENSE: d.antiDrone ? "shoots enemy drones" : d.id === "DEFENSE_1" ? "shoots down missiles" : "shoots down missiles and lasers", SHIP_REPAIR: "repairs hull", REPAIR: "repairs systems", BATTLE: "fights boarders", BOARDER: "boards the enemy", HACKING: "hacks", SHIELD: "shields" }[d.type] ?? d.type;
+    const what = { COMBAT: "attacks the enemy", DEFENSE: d.antiDrone ? "shoots enemy drones" : d.id === "DEFENSE_1" ? "shoots down missiles" : "shoots down missiles and lasers", SHIP_REPAIR: "repairs hull", REPAIR: "repairs systems", BATTLE: "fights boarders", BOARDER: "boards the enemy", HACKING: "hacks", SHIELD: "builds a super shield" }[d.type] ?? d.type;
     return `${d.power} pwr · ${what}`;
   }
 

@@ -130,3 +130,9 @@ Driving the real game needs the owner's go-ahead, because it takes over their mo
 | Shield Overcharger drone | +1 super-shield point every 15 s, up to 5 | est |
 | Cloak fire | Each volley fired while cloaked takes 1.5 s off the cloak (Stealth Weapons prevents it) | FTL augment text + est |
 | Augments | Reconstructive Teleport (full heal on teleport), Hacking Stun (stun for the pulse), Zoltan Shield Bypass (teleport, bombs and mind control through super shields) | FTL text |
+
+## Round 11 fixes
+| Rule | Value | Source |
+|---|---|---|
+| Repair progress | Kept while the ship's own crew stay in the room (fighting or firefighting pauses it); lost when the last of them leaves | FTL |
+| Ion ring | 12 dashes; the current one fades out smoothly over its share of the stack | FTL art |

@@ -201,3 +201,22 @@ describe("arena rules round 4", () => {
     }
   });
 });
+
+describe("repair progress", () => {
+  it("is lost when the crew walk out, kept while they stay", async () => {
+    const { placeholderDb } = await import("@ftl/data");
+    const { baseLoadout, DEFAULT_CONFIG, Match } = await import("@ftl/sim");
+    const db = placeholderDb();
+    const m = new Match(db, DEFAULT_CONFIG, [baseLoadout(db, "PH_SKIFF"), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    const s = m.state.ships[0];
+    const eng = s.systems.engines!;
+    eng.damage = 1;
+    m.push(0, { c: "moveCrew", crew: [s.crew[0].id], room: eng.room });
+    for (let i = 0; i < 30 * 8 && eng.repair < 0.3; i++) m.step();
+    expect(eng.repair).toBeGreaterThan(0.2);
+    m.push(0, { c: "moveCrew", crew: [s.crew[0].id], room: s.systems.shields!.room });
+    for (let i = 0; i < 30 * 3; i++) m.step();
+    expect(eng.repair).toBe(0);
+    expect(eng.damage).toBe(1);
+  });
+});
