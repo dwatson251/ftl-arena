@@ -47,7 +47,13 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   ev.interior = over || sensors >= 2;
   ev.weaponsKnown = over || sensors >= 3;
   if (!ev.interior) {
-    if (!telepath) ev.crew = [];
+    // Telepathy (Slug crew, the life scanner) senses where crew are, nothing else: anonymous blips.
+    ev.crew = !telepath
+      ? []
+      : ev.crew.filter((c) => !c.dead && c.dying === undefined).map((c) => ({
+          id: c.id, name: "", race: "", hp: 1, maxHp: 1, x: c.x, y: c.y, tile: c.tile, path: [], home: c.tile, task: "idle",
+          xp: { pilot: 0, engines: 0, shields: 0, weapons: 0, repair: 0, combat: 0 }, stun: 0, dead: false, blip: true,
+        }));
     ev.visibleRooms = [];
     for (const r of ev.rooms) {
       r.o2 = -1;

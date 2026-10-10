@@ -25,7 +25,7 @@ runtime from your own blueprints** and aren't repeated here.
 | Beam vs shields | beam damage minus shield layers; layers aren't removed | wiki |
 | Bombs | ignore shields and evasion, never hit the hull | wiki |
 | Weapon charge | 1 s/s, manned weapons +10/15/20 %; unpowered drains at 3× | wiki / est |
-| Volley spacing / flight time | 0.18 s between shots; laser 1.0 s, flak 1.1 s, missile 1.5 s, bomb 0.8 s, beam sweep 1.0 s | est |
+| Volley spacing / flight time | 0.3 s between shots (each with its own sound and fire animation; FTL data has no field for it); laser 1.0 s, flak 1.1 s, missile 1.5 s, bomb 0.8 s, beam sweep 1.0 s | est |
 | Crew damage | 15 HP per point of (damage + persDamage) to everyone in the room | wiki |
 | Human HP | 100 | wiki |
 | Fire / breach / stun chance | blueprint value × 10 % | wiki |
@@ -68,3 +68,10 @@ Values marked **est** still need measuring against real single-player FTL:
 4. Move the measured values here as **measured**.
 
 Driving the real game needs the owner's go-ahead, because it takes over their mouse and keyboard.
+
+## Crew, stations and sensing (round 6)
+| Rule | Value | Source |
+|---|---|---|
+| Station refill | An idle crew member in the room steps onto a station when it's left empty | FTL behaviour |
+| Telepathy / life scanner | Enemy crew appear as anonymous dots: location only, no race, health or action | FTL behaviour |
+| Medbay / clone bay | Share one room; installing one removes the other, and removing a swapped-in bay restores the hull's original | FTL |

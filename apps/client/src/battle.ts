@@ -222,7 +222,9 @@ export class Battle {
     switch (e.e) {
       case "fire":
         this.firedAt.set(`${e.ship}:${e.slot}`, this.time);
-        play(this.db, bpOf(e.ship, e.slot)?.type === "BOMB" ? ["bombTeleport"] : bpOf(e.ship, e.slot)?.sounds?.launch, e.ship === v.you ? 1 : 0.6);
+        // Projectile weapons sound per shot as each leaves the barrel (drawProjectiles); bombs and beams here.
+        if (bpOf(e.ship, e.slot)?.type === "BOMB") play(this.db, ["bombTeleport"], e.ship === v.you ? 1 : 0.6);
+        else if (bpOf(e.ship, e.slot)?.type === "BEAM") play(this.db, bpOf(e.ship, e.slot)?.sounds?.launch, e.ship === v.you ? 1 : 0.6);
         break;
       case "breach":
         play(this.db, ["breach", "airLoss"], e.ship === v.you ? 1 : 0.5);
@@ -436,7 +438,7 @@ export class Battle {
     const pending = this.view?.projectiles.some((p) => p.from === ship && p.slot === slot && p.delay > 0) ?? false;
     // After firing, play the frames past the charged one (recoil for guns, the teleport for bomb launchers).
     const fireDur = bp.type === "BOMB" ? 0.7 : 0.35;
-    const shotDur = bp.type === "BOMB" ? fireDur : Math.min(fireDur, 0.16);
+    const shotDur = bp.type === "BOMB" ? fireDur : Math.min(fireDur, RULES.shotSpacing * 0.9);
     if (fired !== undefined && this.time - fired < shotDur) {
       const first = anim.chargedFrame + 1;
       const n = anim.frames - first;
@@ -555,6 +557,7 @@ export class Battle {
       if (!this.launched.has(p.id) && p.delay - dtSnap <= 0) {
         this.launched.add(p.id);
         this.shotAt.set(shotKey, this.time);
+        play(this.db, this.db.weapons[p.weapon]?.sounds?.launch, mine ? 1 : 0.6);
       }
       // Out of the barrel at a steady FTL-like speed, straight along the weapon's facing (right for
       // rotated mounts, up for upright ones), until it leaves this view.
@@ -804,7 +807,7 @@ export class Battle {
     const sh = en.systems.shields;
     const max = sh ? Math.floor(usable(sh) / 2) : 0;
     for (let i = 0; i < Math.max(max, en.shieldLayers); i++) {
-      if (s1 && s2) h.sprite(`enS${i}`, i < en.shieldLayers ? s2 : s1, x + 22 + i * 24, y + 75);
+      if (s1 && s2) h.sprite(`enS${i}`, i < en.shieldLayers ? s1 : s2, x + 22 + i * 24, y + 75);
       else g.roundRect(x + 22 + i * 24, y + 78, 18, 18, 4).fill({ color: i < en.shieldLayers ? 0x2a7bff : 0x101820 }).stroke({ color: 0xffffff, width: 2 });
     }
     for (let i = 0; i < (en.superShield ?? 0); i++) g.rect(x + 22 + i * 14, y + 98, 11, 4).fill({ color: 0xc8ff40 });
@@ -957,7 +960,6 @@ export class Battle {
       if (i < free) g.rect(13, yy, 27, 6).fill({ color: 0x78ff78 });
       else g.rect(13.5, yy + 0.5, 26, 5).stroke({ color: 0xe8ece8, width: 1 });
     }
-    if (s.reactor > 10) h.text("reacN", `${free}`, 26, 686 - 10 * BAR_PITCH - 12, fstyle("JustinFont8", 0x78ff78), [0.5, 0]);
     const systems = MAIN_SYS.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
     const right = SYS_X0 + 32 + (systems.length - 1) * SYS_DX + 20;
     for (let yy = 627; yy < 690; yy += 6) g.moveTo(44, yy + 6).lineTo(50, yy).stroke({ color: 0x8a948c, width: 2 });
@@ -1070,7 +1072,6 @@ export class Battle {
       const title = bp?.short ?? bp?.title ?? w.bp;
       h.text(`wn${i}`, title, bx + 54, by + 3, fstyle("JustinFont10", w.powered ? (ready ? 0xb8ffb8 : 0xffffff) : 0x9aa09a, { align: "center", wrap: 66 }), [0.5, 0]);
       if (bp?.chargeLevels && bp.chargeLevels > 1) h.text(`wcl${i}`, `${w.volleys}/${bp.chargeLevels}`, bx + 34, by + SLOT.h - 13, fstyle("JustinFont8", 0xffe070));
-      if (bp?.missiles) h.text(`wm${i}`, `${bp.missiles}▸`, bx + 34, by + SLOT.h - 13, fstyle("JustinFont8", s.missiles >= bp.missiles ? 0xb8c0b8 : 0xff6050));
       // Slot number tag in the bottom-right corner.
       g.rect(bx + SLOT.w - 12, by + SLOT.h - 12, 11, 11).fill({ color: 0x0f1414 }).stroke({ color: edge, width: 1 });
       h.text(`wnum${i}`, String(i + 1), bx + SLOT.w - 6.5, by + SLOT.h - 12, fstyle("JustinFont8", 0xe8ece8), [0.5, 0]);
@@ -1154,7 +1155,7 @@ export class Battle {
         if (!bp || !d.deployed) continue;
         const p = this.dronePos(owner, d.slot);
         if (!p) continue;
-        const t = texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_base.png`);
+        const t = texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
         const layer = layerFor(owner, bp.type);
         if (t) {
           const sp = new Sprite(t);
@@ -1357,7 +1358,7 @@ export class Battle {
     const v = this.view;
     if (v) {
       for (const c of this.crewHit) if (inBox(p, c.box)) this.hoverCrew = { id: c.id, mine: true };
-      const near = (s: ShipView, lx: number, ly: number) => s.crew.find((c) => !c.dead && Math.hypot(c.x + 0.5 - lx / 35, c.y + 0.5 - ly / 35) < 0.42);
+      const near = (s: ShipView, lx: number, ly: number) => s.crew.find((c) => !c.dead && !c.blip && Math.hypot(c.x + 0.5 - lx / 35, c.y + 0.5 - ly / 35) < 0.42);
       const mineHit = !this.hoverCrew && p.x < OWN.clipX ? near(v.ships[v.you], op.x, op.y) : undefined;
       if (mineHit) this.hoverCrew = { id: mineHit.id, mine: true };
       const theirs = !this.hoverCrew && inBox(p, WIN) ? near(v.ships[1 - v.you], ep.x, ep.y) : undefined;

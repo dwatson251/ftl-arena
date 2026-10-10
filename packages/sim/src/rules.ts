@@ -67,7 +67,8 @@ export const RULES = {
   /** Projectile flight seconds by weapon type (est; FTL's <speed> is screen-space). */
   flight: { LASER: 1.0, BURST: 1.1, MISSILES: 1.5, BOMB: 0.8, BEAM: 0.0 } as Record<string, number>,
   /** Delay between shots of one volley (est). */
-  shotSpacing: 0.18,
+  /** Gap between shots of one volley (est ~0.3 s from play; FTL's data has no field for it). */
+  shotSpacing: 0.3,
   /** Beam: seconds the beam sweeps, damage lands as it crosses each room (est). */
   beamSweep: 1.0,
   /** Skill XP thresholds for levels 1 and 2 (wiki). */

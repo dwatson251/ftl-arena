@@ -4,9 +4,10 @@
  */
 import type { GameDB, SystemId } from "@ftl/data";
 import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
+import { hasImg } from "./assets.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
-  AUGMENT_EFFECTS, baseLoadout, buyableDrones, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
+  AUGMENT_EFFECTS, baseLoadout, buyableDrones, fullPowerNeed, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
   type MatchConfig,
 } from "@ftl/sim";
 
@@ -303,9 +304,9 @@ export class Hangar {
         const lv = l.systems[s.id] ?? s.base;
         const bp = db.systems[s.id];
         const next = lv >= s.max ? "max" : lv === 0 ? `install ${bp?.cost ?? "?"}` : `next ${bp?.upgradeCost[lv - 1] ?? bp?.upgradeCost[bp.upgradeCost.length - 1] ?? "?"}`;
-        const bars = Array.from({ length: s.max }, (_, i) => `<i class="${i < s.base ? "on" : i < lv ? "new" : ""}"></i>`).join("");
+        const bars = Array.from({ length: s.max }, (_, i) => `<i class="${i < Math.min(s.base, lv) ? "on" : i < lv ? "new" : ""}"></i>`).join("");
         return `<div class="sys-row">${this.sysIcon(s.id)}<span class="sys-name">${s.id}</span><span class="bars">${bars}</span>
-          <button class="small" data-sys="${s.id}" data-d="-1" ${lv <= s.base ? "disabled" : ""}>−</button>
+          <button class="small" data-sys="${s.id}" data-d="-1" ${lv <= s.base && !(this.bayPair(s.id) && lv > 0 && hullSystems(db, l.ship).some((x) => x.id === this.bayPair(s.id) && x.base > 0)) ? "disabled" : ""}>−</button>
           <button class="small" data-sys="${s.id}" data-d="1" ${lv >= s.max ? "disabled" : ""}>+</button><span class="note">${next}</span></div>`;
       })
       .join("");
@@ -315,10 +316,19 @@ export class Hangar {
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>
         <button class="small" data-reactor="-1" ${l.reactor <= base.reactor ? "disabled" : ""}>−</button>
         <button class="small" data-reactor="1" ${l.reactor >= (unl ? RULES.unlimitedReactor : RULES.reactorMax) ? "disabled" : ""}>+</button><span class="note">${RULES.reactorPrice(l.reactor)} per bar</span></div>
-      <div class="sys-row"><span class="sysicon ph">⦿</span><span class="sys-name">missiles</span><span><b>${l.missiles}</b></span>
-        <button class="small" data-msl="-1" ${l.missiles <= 0 ? "disabled" : ""}>−</button>
-        <button class="small" data-msl="1">+</button><span class="note">${RULES.missilePrice} each (missile weapons and bombs use them)</span></div>
+      ${this.powerNote(l)}
       ${this.nav("Ship", "Weapons")}`;
+  }
+
+  private bayPair(id: string): SystemId | null {
+    return id === "medbay" ? "clonebay" : id === "clonebay" ? "medbay" : null;
+  }
+
+  /** Reactor vs what running everything at once would need. */
+  private powerNote(l: Loadout): string {
+    const need = fullPowerNeed(this.db, l);
+    const short = need - l.reactor;
+    return `<div class="note power-need">Full power needs <b>${need}</b> reactor bars · you have <b>${l.reactor}</b>${short > 0 ? ` <span class="err">(${short} short: some systems will run underpowered)</span>` : short < 0 ? ` (${-short} spare)` : ""}</div>`;
   }
 
   private stepWeapons(l: Loadout): string {
@@ -348,6 +358,10 @@ export class Hangar {
       .join("");
     return `<h2>3 · Weapons</h2>
       <div class="wslots-sticky"><div class="wslots">${slots}</div>
+      <div class="sys-row"><span class="sysicon ph">⦿</span><span class="sys-name">missiles</span><span><b>${l.missiles}</b></span>
+        <button class="small" data-msl="-1" ${l.missiles <= 0 ? "disabled" : ""}>−</button>
+        <button class="small" data-msl="1">+</button><span class="note">${RULES.missilePrice} scrap each</span></div>
+      ${this.powerNote(l)}
       <div class="note">Drag weapons onto a slot (or click a price). Drag an equipped weapon to another slot to reorder, or back to the store to sell it for half price.</div></div>
       <div class="shop-drop">${shop}</div>${this.nav("Systems", "Drones")}`;
   }
@@ -390,7 +404,7 @@ export class Hangar {
           <div class="note">${h(t.blurb)}</div></div><button class="small" data-hire="${r}" ${full ? "disabled" : ""}>${db.crew[r].cost}</button></div>`;
       })
       .join("");
-    return `<h2>4 · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
+    return `<h2>5 · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
       <div class="note">Starting crew are free. Rename anyone; dismissing gives no refund. Crew fight fires, repair and man stations: manned helm and engines add evasion, manned weapons charge faster, manned shields recharge faster.</div>
       ${crew}<h3>Hire</h3><div class="race-grid">${hire}</div>${this.nav("Drones", "Augments")}`;
   }
@@ -398,7 +412,9 @@ export class Hangar {
   private droneArt(id: string): string {
     const bp = this.db.droneBPs[id];
     if (!bp?.image || !this.hasArt()) return `<div class="ph-weapon">D</div>`;
-    return `<img class="drone-art" src="/assets/img/ship/drones/${h(bp.image)}_base.png" onerror="this.style.visibility='hidden'">`;
+    const f = [`ship/drones/${bp.image}_base.png`, `ship/drones/${bp.image}_off.png`].find(hasImg);
+    if (!f) return `<div class="ph-weapon">D</div>`;
+    return `<img class="drone-art" src="/assets/img/${h(f)}" onerror="this.style.visibility='hidden'">`;
   }
 
   private stepDrones(l: Loadout): string {
@@ -429,7 +445,8 @@ export class Hangar {
       <div class="wslots-sticky"><div class="wslots">${fitted}</div>
       <div class="sys-row"><span class="sysicon ph">⚙</span><span class="sys-name">drone parts</span><span><b>${l.droneParts ?? 0}</b></span>
         <button class="small" data-parts="-1" ${(l.droneParts ?? 0) <= 0 ? "disabled" : ""}>−</button>
-        <button class="small" data-parts="1">+</button><span class="note">${RULES.dronePartPrice} each; each launch uses one (hull came with ${base.droneParts ?? 0})</span></div></div>
+        <button class="small" data-parts="1">+</button><span class="note">${RULES.dronePartPrice} each; each launch uses one (hull came with ${base.droneParts ?? 0})</span></div>
+      ${this.powerNote(l)}</div>
       <div class="race-grid">${cards}</div>${this.nav("Weapons", "Crew")}`;
   }
 
@@ -457,18 +474,18 @@ export class Hangar {
         const effect = AUGMENT_EFFECTS[a.id];
         return `<div class="wcard aug ${effect ? "" : "inert"}"><div class="wcard-body"><b>${h(a.title)}</b>${a.stackable ? ` <span class="note">stacks</span>` : ""}
           <div class="note">${h(a.desc)}</div>
-          <div class="note ${effect ? "effect" : "noeffect"}">${effect ? `Arena: ${h(effect)}` : "No effect in the arena (kept for authenticity)."}</div></div>
+          <div class="note ${effect ? "effect" : "noeffect"}">${effect ? `Arena: ${h(effect)}` : "No effect in the arena."}</div></div>
           <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) ? "disabled" : ""}>${this.scrapIcon()}${a.cost}</button></div>`;
       })
       .join("");
-    return `<h2>5 · Augments (${augs.length}/${MAX_AUGMENTS})</h2>
+    return `<h2>6 · Augments (${augs.length}/${MAX_AUGMENTS})</h2>
       <div class="wslots-sticky"><div class="wslots">${fitted}</div>
       <div class="note">Up to ${MAX_AUGMENTS}. Starting augments are free; removing one gives no refund.</div></div>
       <div class="race-grid">${cards}</div>${this.nav("Crew", "Launch")}`;
   }
 
   private stepLaunch(l: Loadout, priced: ReturnType<typeof priceLoadout>): string {
-    return `<h2>5 · Launch</h2>
+    return `<h2>7 · Launch</h2>
       <p>${priced.ok ? "Your ship is ready. Press <b>Ready</b>; the battle starts when both captains are ready." : "Fix the problems listed on the right first."}</p>
       <div class="note">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
       ${this.nav("Augments", null)}`;
@@ -498,11 +515,14 @@ export class Hangar {
     if (d.sys) {
       const id = d.sys as SystemId;
       const base = hullSystems(this.db, l.ship, !!this.lobby?.config.unlimited).find((s) => s.id === id)!.base;
-      // Medbay and clone bay share a room: installing one removes the other.
-      const swapped = id === "medbay" && (l.systems.clonebay ?? 0) > 0;
-      l.systems[id] = Math.max(swapped ? 0 : base, (l.systems[id] ?? base) + Number(d.d));
-      if (Number(d.d) > 0 && id === "clonebay") l.systems.medbay = 0;
-      if (Number(d.d) > 0 && id === "medbay") l.systems.clonebay = 0;
+      // Medbay and clone bay share a room: installing one removes the other, and removing a swapped-in
+      // one puts the hull's original back.
+      const pair = this.bayPair(id);
+      const pairBase = pair ? (hullSystems(this.db, l.ship).find((s) => s.id === pair)?.base ?? 0) : 0;
+      const floor = pair && pairBase > 0 ? 0 : base;
+      l.systems[id] = Math.max(floor, (l.systems[id] ?? base) + Number(d.d));
+      if (pair && Number(d.d) > 0) l.systems[pair] = 0;
+      if (pair && l.systems[id] === 0 && pairBase > 0) l.systems[pair] = pairBase;
     } else if (d.reactor) l.reactor += Number(d.reactor);
     else if (d.msl) l.missiles = Math.max(0, l.missiles + Number(d.msl));
     else if (d.buy && l.weapons.length < ship.weaponSlots) l.weapons.push(d.buy);

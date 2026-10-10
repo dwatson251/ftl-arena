@@ -76,6 +76,8 @@ export interface CrewState {
   dying?: number;
   /** Clone bay progress 0..1 while this dead crew member is being cloned. */
   clone?: number;
+  /** Sensed only (telepathy / life scanner): a location with no race, health or action. */
+  blip?: boolean;
 }
 
 export type WeaponTarget =

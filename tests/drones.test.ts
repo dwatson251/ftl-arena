@@ -68,3 +68,25 @@ describe("drones", () => {
     }
   });
 });
+
+describe("stations", () => {
+  it("a crew member sharing the room takes over a station that was left", () => {
+    const db = dbWithDrones();
+    const m = new Match(db, DEFAULT_CONFIG, [baseLoadout(db, "PH_SKIFF"), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    const s = m.state.ships[0];
+    const sys = Object.values(s.systems).find((x) => x?.station && ["pilot", "shields", "weapons", "engines"].includes(x.id))!;
+    const others = Object.values(s.systems).filter((x) => x && x.room !== sys.room).map((x) => x!.room);
+    // Two crew in the system's room: one on the station, one beside it.
+    m.push(0, { c: "moveCrew", crew: [s.crew[0].id], room: sys.room });
+    m.push(0, { c: "moveCrew", crew: [s.crew[1].id], room: sys.room });
+    for (let i = 0; i < 30 * 15; i++) m.step();
+    const onStation = () => s.crew.find((c) => c.tile === sys.station && c.path.length === 0);
+    const first = onStation()!;
+    expect(first).toBeTruthy();
+    const other = s.crew.find((c) => c !== first && m.geo(s).tiles.get(c.tile)?.room === sys.room)!;
+    expect(other).toBeTruthy();
+    m.push(0, { c: "moveCrew", crew: [first.id], room: others[0] });
+    for (let i = 0; i < 30 * 6; i++) m.step();
+    expect(onStation()?.id).toBe(other.id);
+  });
+});

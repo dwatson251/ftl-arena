@@ -8,9 +8,30 @@ import type { GameDB } from "@ftl/data";
 const BASE = "/assets/img/";
 const cache = new Map<string, Promise<Texture | null>>();
 const ready = new Map<string, Texture | null>();
+/** Every file the extractor wrote (assets-local/manifest.json): paths not in it are never requested. */
+let manifest: Set<string> | null = null;
+
+export async function loadManifest(): Promise<void> {
+  try {
+    const r = await fetch("/assets/manifest.json");
+    if (r.ok) manifest = new Set(((await r.json()) as { files: string[] }).files);
+  } catch {
+    manifest = null;
+  }
+}
+
+/** True when the extracted files include img/<path> (always true before the manifest loads). */
+export function hasImg(path: string): boolean {
+  return !manifest || manifest.has(`img/${path}`);
+}
 
 export function tex(path: string): Promise<Texture | null> {
   let p = cache.get(path);
+  if (!p && !hasImg(path)) {
+    p = Promise.resolve(null);
+    ready.set(path, null);
+    cache.set(path, p);
+  }
   if (!p) {
     // One GET per asset (no HEAD probe: hundreds of HEADs through Vite's dev proxy get aborted). A
     // missing file just resolves to null and the renderer draws its fallback.
@@ -69,8 +90,16 @@ export function weaponFrame(db: GameDB, art: string, i: number): Texture | null 
   return frame(t, Math.min(i, a.frames - 1) * sh.fw, 0, sh.fw, sh.fh);
 }
 
+/** A hull's shield image: B/C variants without their own borrow the A hull's (kestral_2 -> kestral). */
+export function shieldFile(img: string): string {
+  const own = `ship/${img}_shields1.png`;
+  if (hasImg(own)) return own;
+  return `ship/${img.replace(/_\d+$/, "")}_shields1.png`;
+}
+
 export async function preload(db: GameDB): Promise<boolean> {
   if (db.source !== "ftl") return false;
+  await loadManifest();
   const files = new Set<string>();
   for (const id of db.hangar) {
     const s = db.ships[id];
@@ -86,7 +115,7 @@ export async function preload(db: GameDB): Promise<boolean> {
   for (const id of db.hangar) {
     const s = db.ships[id];
     for (const g of db.layouts[s.layout]?.gibs ?? []) files.add(`ship/${s.img}_gib${g.n}.png`);
-    files.add(`ship/${s.img}_shields1.png`);
+    files.add(shieldFile(s.img));
     files.add(`customizeUI/miniship_${s.img}.png`);
   }
   for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"]) {
@@ -99,7 +128,7 @@ export async function preload(db: GameDB): Promise<boolean> {
     for (const g of db.layouts[s.layout]?.gibs ?? []) files.add(`${s.artDir}/${s.img}_gib${g.n}.png`);
   }
   for (let i = 1; i <= 4; i++) files.add(`misc/crosshairs_placed${i}.png`), files.add(`misc/crosshairs_placed${i}_yellow.png`);
-  for (const d of Object.values(db.droneBPs ?? {})) if (d.image) for (const v of ["base", "on"]) files.add(`ship/drones/${d.image}_${v}.png`);
+  for (const d of Object.values(db.droneBPs ?? {})) if (d.image) for (const v of ["base", "on", "off", "gun_on"]) files.add(`ship/drones/${d.image}_${v}.png`);
   files.add("statusUI/top_drones_on.png");
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");

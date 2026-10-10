@@ -8,7 +8,7 @@
 import { Container, Graphics, Sprite, TilingSprite, type Texture } from "pixi.js";
 import type { GameDB, ShipLayout } from "@ftl/data";
 import { geometry, TILE, type CrewState, type Geometry, type ShipView } from "@ftl/sim";
-import { animFrame, frame, texNow, weaponFrame } from "../assets.ts";
+import { animFrame, frame, shieldFile, texNow, weaponFrame } from "../assets.ts";
 import { Imm, style } from "../imm.ts";
 
 const FLOOR = 0xe6e2db;
@@ -168,7 +168,7 @@ export class ShipRenderer {
       sp.position.set(r.x * TILE, r.y * TILE);
       this.interior.addChild(sp);
     }
-    const sh = texNow(bp.enemy ? "ship/enemy_shields.png" : `ship/${bp.img}_shields1.png`);
+    const sh = texNow(bp.enemy ? "ship/enemy_shields.png" : shieldFile(bp.img));
     const c = this.gridCentre();
     if (sh && !this.shieldArt) {
       this.shieldArt = new Sprite(sh);
@@ -387,6 +387,12 @@ export class ShipRenderer {
     const d = this.dyn;
     const px = (cd.x + 0.5) * TILE;
     const py = (cd.y + 0.5) * TILE;
+    if (c.blip) {
+      // Telepathic sense: a pulsing dot, no race or action.
+      const pulse = 0.65 + 0.35 * Math.sin(time * 4 + c.id);
+      d.gfx(`blip${c.id}`).circle(px, py, 8).fill({ color: 0xff7aa0, alpha: 0.25 * pulse }).circle(px, py, 4.5).fill({ color: 0xffb0c8, alpha: pulse });
+      return;
+    }
     const race = this.db.animSheets[c.race] ? c.race : "human";
     let anim = `${race}_walk_down`;
     let fr = 0;

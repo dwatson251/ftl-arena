@@ -40,8 +40,9 @@ export class Imm {
     this.z = 0;
   }
 
-  private place<T extends Container>(key: string, node: T): T {
-    this.used.add(key);
+  /** `kind` keeps sprite/text/gfx keys apart: a fallback text and its sprite may share a key. */
+  private place<T extends Container>(key: string, node: T, kind: string): T {
+    this.used.add(kind + key);
     node.visible = true;
     node.zIndex = this.z++;
     return node;
@@ -69,7 +70,7 @@ export class Imm {
     s.rotation = o.rotation ?? 0;
     s.tint = o.tint ?? 0xffffff;
     s.alpha = o.alpha ?? 1;
-    return this.place(key, s);
+    return this.place(key, s, "s:");
   }
 
   text(key: string, str: string, x: number, y: number, st: TextStyle, anchor: [number, number] = [0, 0], rotation = 0): Text {
@@ -84,7 +85,7 @@ export class Imm {
     t.anchor.set(anchor[0], anchor[1]);
     t.position.set(x, y);
     t.rotation = rotation;
-    return this.place(key, t);
+    return this.place(key, t, "t:");
   }
 
   gfx(key: string): Graphics {
@@ -95,12 +96,12 @@ export class Imm {
       this.root.addChild(g);
     }
     g.clear();
-    return this.place(key, g);
+    return this.place(key, g, "g:");
   }
 
   end(): void {
-    for (const m of [this.sprites, this.texts, this.gfxs] as Map<string, Container>[])
-      for (const [k, n] of m) if (!this.used.has(k)) n.visible = false;
+    for (const [kind, m] of [["s:", this.sprites], ["t:", this.texts], ["g:", this.gfxs]] as [string, Map<string, Container>][])
+      for (const [k, n] of m) if (!this.used.has(kind + k)) n.visible = false;
     this.root.sortableChildren = true;
   }
 }

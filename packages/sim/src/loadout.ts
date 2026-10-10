@@ -59,6 +59,21 @@ export function hullSystems(db: GameDB, shipId: string, unlimited = false): { id
   return out;
 }
 
+/**
+ * Reactor bars needed to run everything at once: every main system at its level, with weapons and drones
+ * capped by what's fitted (subsystems run without reactor power).
+ */
+export function fullPowerNeed(db: GameDB, l: Loadout): number {
+  let n = 0;
+  for (const [id, lv] of Object.entries(l.systems) as [SystemId, number][]) {
+    if (!lv || ["pilot", "sensors", "doors"].includes(id)) continue;
+    if (id === "weapons") n += Math.min(lv, l.weapons.reduce((a, w) => a + (db.weapons[w]?.power ?? 0), 0));
+    else if (id === "drones") n += Math.min(lv, (l.drones ?? []).reduce((a, d) => a + (db.droneBPs?.[d]?.power ?? 0), 0));
+    else n += lv;
+  }
+  return n;
+}
+
 export function baseLoadout(db: GameDB, shipId: string): Loadout {
   const s = db.ships[shipId];
   const systems: Partial<Record<SystemId, number>> = {};
@@ -112,8 +127,9 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   const base = baseLoadout(db, l.ship);
   for (const h of hullSystems(db, l.ship, unlimited)) {
     const want = l.systems[h.id] ?? h.base;
-    // Swapping the medbay for a clone bay (same room) is the one allowed removal.
-    const swapped = h.id === "medbay" && (l.systems.clonebay ?? 0) > 0;
+    // Swapping the medbay for a clone bay (or back; same room) is the one allowed removal.
+    const other = h.id === "medbay" ? "clonebay" : h.id === "clonebay" ? "medbay" : null;
+    const swapped = !!other && (l.systems[other] ?? 0) > 0;
     if (!Number.isInteger(want) || (want < h.base && !swapped)) errors.push(`${h.id}: can't go below level ${h.base}`);
     if (want > h.max) errors.push(`${h.id}: max level is ${h.max}`);
     const bp = db.systems[h.id];

@@ -682,6 +682,7 @@ export class Match {
     const god = this.god.has(ship.idx);
     const cb = ship.systems.clonebay;
     const dna = augCount(ship, "BACKUP_DNA") > 0;
+    this.refillStations(ship, g);
     for (const c of ship.crew) {
       if (c.dead && c.clone !== undefined) {
         // Clone bay: progress while powered; without power the queue is lost unless Backup DNA keeps it.
@@ -771,6 +772,24 @@ export class Match {
       } else if (sys && sys.station === c.tile && MANNABLE.includes(sys.id)) c.task = "man";
       else if (medbay && medbay.room === room && c.hp < c.maxHp) c.task = "heal";
       else c.task = "idle";
+    }
+  }
+
+  /**
+   * As in FTL: when a station is left empty (its crew member walked off or died), an idle crew member
+   * standing in the same room steps onto it.
+   */
+  private refillStations(ship: ShipState, g: Geometry): void {
+    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined);
+    for (const sys of Object.values(ship.systems)) {
+      if (!sys?.station || !MANNABLE.includes(sys.id)) continue;
+      if (alive.some((c) => c.home === sys.station || c.tile === sys.station)) continue;
+      const sub = alive.find((c) => c.path.length === 0 && c.stun <= 0 && c.task === "idle" && g.tiles.get(c.tile)?.room === sys.room);
+      if (!sub) continue;
+      const p = findPath(g, sub.tile, sys.station);
+      if (!p) continue;
+      sub.home = sys.station;
+      sub.path = p;
     }
   }
 
