@@ -502,7 +502,7 @@ export class Battle {
     });
     this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.animTime, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
-      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.weaponsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
+      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.systemsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
       destinations: true, flashTiles: this.flashTilesEnemy,
     });
     this.crewSounds(v);
@@ -1089,10 +1089,25 @@ export class Battle {
     const step = Math.min(30, 330 / Math.max(1, present.length));
     present.forEach((id, i) => {
       const s = en.systems[id]!;
-      const state = s.damage >= s.level ? "red" : s.damage > 0 ? "orange" : s.ion > 0 ? "blue" : en.weaponsKnown && s.power === 0 && !SUBSYSTEMS.includes(id) ? "grey" : "green";
+      const state = s.damage >= s.level ? "red" : s.damage > 0 ? "orange" : s.ion > 0 ? "blue" : en.systemsKnown && s.power === 0 && !SUBSYSTEMS.includes(id) ? "grey" : "green";
       const t = texNow(`icons/s_${baseSystemId(id)}_${state}1.png`);
       if (t) h.sprite(`eic${id}`, t, x + 74 + i * step, y + 502, { anchor: 0.5, scale: 0.85 * Math.min(1, step / 30 + 0.15), tint: s.hacked ? 0xd070ff : 0xffffff });
       if (s.locked) h.sprite(`eick${id}`, texNow("icons/s_hacked.png"), x + 82 + i * step, y + 494, { anchor: 0.5, scale: 0.6 });
+      // Level 4 sensors (manned level 3): each system's bars above its icon, powered, ionised, damaged and
+      // being repaired, as FTL shows them.
+      if (en.systemsKnown) {
+        const bx = x + 74 + i * step - 5;
+        const g2 = h.gfx(`ebars${id}`);
+        const cap = usable(s);
+        for (let b = 0; b < Math.min(s.level, 8); b++) {
+          const yy = y + 482 - b * 5;
+          const dmg = b >= s.level - s.damage;
+          const ion = !dmg && b >= cap;
+          const on = !dmg && !ion && (SUBSYSTEMS.includes(id) ? b < cap : b < Math.min(cap, s.power + (s.bonus ?? 0)));
+          const col = dmg ? (b === s.level - s.damage && s.repair > 0 ? 0xffe050 : 0xff3a2a) : ion ? 0x3a7fd0 : on ? 0x78ff78 : 0x40484a;
+          g2.rect(bx, yy, 10, 3).fill({ color: col });
+        }
+      }
     });
 
   }

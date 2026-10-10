@@ -462,12 +462,6 @@ export class ShipRenderer {
     const d = this.dyn;
     const px = (cd.x + 0.5) * TILE;
     const py = (cd.y + 0.5) * TILE;
-    if (c.blip) {
-      // Telepathic sense: a pulsing dot, no race or action.
-      const pulse = 0.65 + 0.35 * Math.sin(time * 4 + c.id);
-      d.gfx(`blip${c.id}`).circle(px, py, 8).fill({ color: 0xff7aa0, alpha: 0.25 * pulse }).circle(px, py, 4.5).fill({ color: 0xffb0c8, alpha: pulse });
-      return;
-    }
     // The boarding drone has no sheet of its own: it uses the anti-personnel drone's.
     const sheet = c.race === "boarder" ? "battle" : c.race;
     const race = this.db.animSheets[sheet] ? sheet : "human";
@@ -564,6 +558,15 @@ export class ShipRenderer {
     const t = animFrame(this.db, anim, fr) ?? animFrame(this.db, `${race}_walk_down`, 0);
     const key = `cr${c.id}`;
     const rot = this.upright;
+    if (c.blip) {
+      // Sensed by telepathy (a Slug, the Lifeform Scanner): FTL's silhouette of the crew member, moving as they
+      // do, in a pulsing glow; no name or health.
+      const sil = animFrame(this.db, anim, fr, `people/${race}_color.png`) ?? t;
+      const pulse = 0.7 + 0.3 * Math.sin(time * 4 + c.id);
+      if (sil) d.sprite(`${key}blip`, sil, px, py, { anchor: 0.5, rotation: rot, tint: 0xff7a8a, alpha: 0.85 * pulse });
+      else d.gfx(`${key}blip`).circle(px, py, 6).fill({ color: 0xff7a8a, alpha: pulse });
+      return;
+    }
     if (t) {
       // FTL's <race>_color sheet is the crew silhouette: drawn green behind a selected crew member.
       if (cd.selected) {

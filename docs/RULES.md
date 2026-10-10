@@ -199,3 +199,14 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Door sieges | Intruders' shots at a door add up; a boarder sent to a room joins a siege already under way on a door into it | FTL / wiki |
 | Consoles | A player hull's manned system with no interior named gets FTL's stock one for its room's shape, so its computer is drawn and the station sits at it | FTL default interiors |
 | Saved stations | Default to where the crew start | user |
+
+## Sensors (wiki)
+| Level | Shows | Source |
+|---|---|---|
+| 1 | Your own interior | wiki |
+| 2 | The enemy interior (crew, fires, O2); a cloaked enemy's interior is hidden, but its crew are still read | wiki |
+| 3 | Enemy weapons' charge | wiki |
+| 4 (manned 3) | Enemy systems' power, bars, ion and repair or sabotage progress (shown as bars over their icons) | wiki |
+| Flagship | Holds sensors to level 2 | wiki |
+| Telepathy (Slug, Lifeform Scanner) | Live crew in unseen rooms show as silhouettes (race and action, no name or health); drones give off no life signs | wiki ("functions exactly like the slugs' ability") |
+| Slug | Also sees into every room touching its own, walls or not, on whichever ship it stands | wiki |
