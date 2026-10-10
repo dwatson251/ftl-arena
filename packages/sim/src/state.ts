@@ -95,6 +95,8 @@ export interface CrewState {
   race: string;
   hp: number;
   maxHp: number;
+  /** Being healed by a working medbay this tick (drives the healing crosses and sound). */
+  healing?: boolean;
   /** Position in tile units (centre of tile x is x + 0.5). */
   x: number;
   y: number;

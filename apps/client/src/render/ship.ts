@@ -373,7 +373,7 @@ export class ShipRenderer {
         if (!m || !bp || !anim) return;
         const f = weaponFrame(this.db, bp.weaponArt, o.weaponFrame?.(i) ?? 0);
         if (!f) return;
-        const target = w.powered || w.charge < 0 ? 0 : 1;
+        const target = w.powered ? 0 : 1;
         const cur = (this.retract[i] ??= target);
         this.retract[i] = cur + Math.sign(target - cur) * Math.min(Math.abs(target - cur), dt * 2.5);
         const k = this.retract[i] * 14;
@@ -648,7 +648,7 @@ export class ShipRenderer {
     // Healing crosses while the medbay heals this crew member.
     const heal = texNow("people/healing_strip11.png");
     const tileRoom = this.geo.tiles.get(c.tile)?.room;
-    if (heal && c.dying === undefined && tileRoom === medRoom && c.hp < c.maxHp && c.path.length === 0) {
+    if (heal && c.dying === undefined && c.healing && c.hp < c.maxHp) {
       d.sprite(`${key}heal`, frame(heal, (Math.floor(time * 12) % 11) * 32, 0, 32, 32), px, py - 4, { anchor: 0.5, rotation: this.upright });
     }
   }

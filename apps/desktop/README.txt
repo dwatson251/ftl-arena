@@ -27,5 +27,10 @@ Over the internet (Online tab):
 Dedicated server (Online tab): everyone types the server's address. Whoever creates the match
 shares the code; the others type the address and the code and press Join.
 
+If a LAN code isn't found straight away, the app also checks each address on your network
+directly (a few seconds). Online with the host's address always works as well.
+
+The menu bar is hidden; Ctrl+Shift+F12 shows it (reload, fullscreen, developer tools).
+
 Your data (settings, the unpacked FTL files) lives in %APPDATA%\FTL Arena; delete that folder
 to start over.

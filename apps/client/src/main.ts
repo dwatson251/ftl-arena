@@ -407,7 +407,7 @@ async function act(kind: "create" | "practice" | "join"): Promise<void> {
     render();
   };
   if (kind === "join" && mode === "lan") {
-    busyNote = `Looking for match ${joinCode} on your network…`;
+    busyNote = `Looking for match ${joinCode} on your network (this can take a few seconds)…`;
     render();
     let found: { address: string; port: number; host: string }[] = [];
     try {

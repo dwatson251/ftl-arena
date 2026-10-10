@@ -147,6 +147,8 @@ export const RULES = {
   artilleryCharge: [1, 1, 0.8, 0.65, 0.5],
   /** Shield Overcharger drone: one super-shield point per cooldown, up to this many (est). */
   shieldDroneMax: 5,
+  /** The Shield Overcharger stops in its orbit for the last this-many seconds of each charge (its animation). */
+  shieldDroneCharge: 1.2,
   shieldDroneTimes: [8, 10, 13, 16, 20],
   /** Firing while cloaked cuts this many seconds off the cloak (est; Stealth Weapons prevents it). */
   cloakFirePenalty: 1.5,

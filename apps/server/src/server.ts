@@ -14,7 +14,7 @@ import { decode, encode, PROTOCOL_VERSION, type ClientMsg, type ServerMsg } from
 import { TICK_HZ } from "@ftl/sim";
 import { Lobby, type Client } from "./lobby.ts";
 import { forwardPort, lanAddresses, publicAddress, unforwardPort } from "./upnp.ts";
-import { lanFind, lanResponder } from "./lan.ts";
+import { LAN_TAG, lanFind, lanResponder } from "./lan.ts";
 
 export interface ServerOptions {
   /** TCP port (0 picks a free one). */
@@ -103,7 +103,17 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       return;
     }
     if (url === "/api/lan") {
-      void lanFind(String(query.get("code") ?? "")).then(json);
+      void lanFind(String(query.get("code") ?? ""), log).then(json);
+      return;
+    }
+    if (url === "/api/has") {
+      // The LAN sweep's direct question: do you hold this match?
+      const m = findLan(String(query.get("code") ?? "").toUpperCase());
+      if (!m) {
+        res.writeHead(404).end();
+        return;
+      }
+      json({ tag: LAN_TAG, server: serverId, ...m });
       return;
     }
     if (url.startsWith("/assets/") && serveFile(ASSETS, url.slice(8), res, head)) return;
@@ -115,6 +125,13 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
   });
 
   const lobbies = new Map<string, Lobby>();
+  /** This server's id in LAN answers (the same server heard twice counts once). */
+  const serverId = randomBytes(6).toString("hex");
+  function findLan(code: string): { host: string; players: number } | null {
+    const l = lobbies.get(code);
+    if (!l || l.practice) return null;
+    return { host: l.players.find((p) => p.id === l.host)?.name ?? "", players: l.players.length };
+  }
   const sessions = new Map<string, Client>();
   const newCode = () => {
     const A = "ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -205,17 +222,7 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
   let last = performance.now();
   let acc = 0;
   let secAcc = 0;
-  const responder =
-    opts.lan === false
-      ? null
-      : lanResponder(
-          () => (http.address() as AddressInfo | null)?.port ?? opts.port,
-          (code) => {
-            const l = lobbies.get(code);
-            if (!l || l.practice) return null;
-            return { host: l.players.find((p) => p.id === l.host)?.name ?? "", players: l.players.length };
-          },
-        );
+  const responder = opts.lan === false ? null : lanResponder(serverId, () => (http.address() as AddressInfo | null)?.port ?? opts.port, findLan, log);
   const timer = setInterval(() => {
     const now = performance.now();
     acc += now - last;

@@ -45,6 +45,8 @@ if (args.includes("--run")) {
   const [out] = await packager({
     dir: desktop, name: "FTL Arena", executableName: "FTL Arena", platform, arch: "x64", out: join(root, "release"), overwrite: true,
     asar: true, prune: false, extraResource: [join(stage, "client")],
+    // Our own icon (tools/make-icon.py); the mac build would want an .icns made on a Mac.
+    icon: platform === "win32" ? join(desktop, "icon.ico") : undefined,
     ignore: [/^\/src($|\/)/, /^\/node_modules($|\/)/, /^\/README\.txt$/],
     appCopyright: "Fan project. FTL: Faster Than Light is (c) Subset Games; you need your own copy.",
     win32metadata: { ProductName: "FTL Arena", FileDescription: "FTL Arena" },

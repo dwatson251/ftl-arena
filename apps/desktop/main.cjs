@@ -59,8 +59,17 @@ async function startGame() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1280, height: 760, title: "FTL Arena", backgroundColor: "#000000",
+    width: 1280, height: 760, title: "FTL Arena", backgroundColor: "#000000", icon: path.join(__dirname, "icon.png"),
+    // The menu bar stays hidden (and Alt doesn't bring it up); Ctrl+Shift+F12 toggles it for debugging.
+    autoHideMenuBar: false,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false },
+  });
+  win.setMenuBarVisibility(false);
+  win.webContents.on("before-input-event", (e, input) => {
+    if (input.type === "keyDown" && input.key === "F12" && input.control && input.shift && !input.alt) {
+      e.preventDefault();
+      win.setMenuBarVisibility(!win.isMenuBarVisible());
+    }
   });
   // Links to the outside world open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {

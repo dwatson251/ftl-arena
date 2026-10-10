@@ -1198,8 +1198,7 @@ export class Battle {
     const queued = own.crew.some((c) => c.dead && c.clone !== undefined);
     loop(this.db, "cloneBroken", !over && !!cbs && queued && (cbs.power + (cbs.bonus ?? 0) <= 0 || cbs.damage >= cbs.level || !!cbs.hacked) && !(own.augments ?? []).includes("BACKUP_DNA"), 0.7);
     loop(this.db, "extinguish", !over && alive.some((c) => c.task === "fire"), 0.8);
-    const med = own.systems.medbay;
-    loop(this.db, "healing", !over && !!med && alive.some((c) => c.hp < c.maxHp && roomOf(c) === med.room && c.path.length === 0), 0.7);
+    loop(this.db, "healing", !over && alive.some((c) => c.healing && c.hp < c.maxHp), 0.7);
     // Low-health beep for our own crew wherever they are (never for enemies, even aboard our ship): once per
     // threshold crossed (50 %, then the red-box level), re-armed when healed past it.
     for (const c of this.myCrew(v).filter((q) => !q.dead && q.dying === undefined && q.owner === v.you)) {
@@ -1338,6 +1337,12 @@ export class Battle {
     for (let i = 0; i < Math.max(max, en.shieldLayers); i++) {
       if (s1 && s2) h.sprite(`enS${i}`, i < en.shieldLayers ? s1 : s2, x + 22 + i * 24, y + 75);
       else g.roundRect(x + 22 + i * 24, y + 78, 18, 18, 4).fill({ color: i < en.shieldLayers ? 0x2a7bff : 0x101820 }).stroke({ color: 0xffffff, width: 2 });
+    }
+    // A hacking drone on their shields shows the next layer charging, like our own bar.
+    const layersShown = Math.max(max, en.shieldLayers);
+    if (en.shieldChargeKnown && en.shieldLayers < max && en.shieldCharge > 0) {
+      g.rect(x + 22, y + 96, layersShown * 24 - 6, 4).fill({ color: 0x101820 });
+      g.rect(x + 22, y + 96, Math.floor((layersShown * 24 - 6) * Math.min(1, en.shieldCharge)), 4).fill({ color: 0x2a7bff });
     }
     this.superBar("ezs", en.superShield ?? 0, x + 20, y + 99, (en.superShield ?? 0) > 5 ? "combatUI/box_hostiles_shield_super12.png" : "combatUI/box_hostiles_shield_super5.png", 10, 9);
     const bp = this.db.ships[en.bp];
@@ -1686,10 +1691,12 @@ export class Battle {
     const hk = s.hack;
     const attached = !!hk?.attached;
     const flying = !!hk && !attached;
-    const off = lv <= 0 || !!sys.hacked || flying || (attached && (hk?.cd ?? 0) > 0) || (!hk && (s.droneParts ?? 0) <= 0);
+    // A Zoltan super shield keeps the hacking drone out (it can't get through to latch on).
+    const superUp = (this.view!.ships[1 - this.view!.you].superShield ?? 0) > 0;
+    const off = lv <= 0 || !!sys.hacked || flying || (attached && (hk?.cd ?? 0) > 0) || (!hk && ((s.droneParts ?? 0) <= 0 || superUp));
     this.powerButton("hk", iconX, iconY, attached ? Math.max(1, lv) : 1, {
       left: hk?.pulse, duration: RULES.hackPulse[Math.max(1, lv)], off, selected: this.teleMode === "hack",
-      why: lv <= 0 ? "Hacking needs power" : flying ? "The hacking drone is on its way" : !hk ? "No drone parts left" : "Hacking is recharging",
+      why: lv <= 0 ? "Hacking needs power" : flying ? "The hacking drone is on its way" : !hk && superUp ? "Super shields block the hacking drone" : !hk ? "No drone parts left" : "Hacking is recharging",
       act: () => {
         if (!hk) {
           play(this.db, ["powerUpSystem"]);
@@ -1988,7 +1995,8 @@ export class Battle {
       }
       const short = bp.title.replace(/ Drone/, "").replace("Mark ", "").trim();
       h.text(`dn${i}`, short.length > 14 ? `${short.slice(0, 13)}.` : short, bx + 54, by + 4, fstyle("JustinFont8", usableHere ? (d.powered ? 0xffffff : 0x9aa09a) : 0x707070), [0.5, 0]);
-      const status = (d.rebuild ?? 0) > 0 ? `rebuilding ${Math.ceil(d.rebuild ?? 0)}s` : !usableHere ? "coming later" : d.deployed && !d.powered ? "offline" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
+      const blocked = bp.type === "BOARDER" && !d.deployed && d.powered && (this.view!.ships[1 - this.view!.you].superShield ?? 0) > 0;
+      const status = (d.rebuild ?? 0) > 0 ? `rebuilding ${Math.ceil(d.rebuild ?? 0)}s` : !usableHere ? "coming later" : blocked ? "super shield" : d.deployed && !d.powered ? "offline" : d.deployed ? (bp.type === "SHIP_REPAIR" ? `repair ${d.repairLeft ?? 0}` : "deployed") : d.powered ? ((s.droneParts ?? 0) > 0 ? "launching" : "no parts") : "";
       if (status) h.text(`ds${i}`, status, bx + 26, by + SLOT.h - 12, fstyle("JustinFont8", d.deployed ? 0x9fe89f : 0xffd040));
       this.droneHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
     }
@@ -2125,7 +2133,7 @@ export class Battle {
         const p = this.dronePos(owner, d.slot);
         if (!p) continue;
         // Offline drones (their power cut) go dark and drift where they are.
-        const t = (d.powered ? texNow(`ship/drones/${bp.image}_on.png`) : null) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
+        const t = (d.powered ? texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_charged.png`) : null) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
         const layer = layerFor(owner, bp.type);
         // The art points up: turn it toward what it last shot at, else the ship it circles (combat) or
         // away from its own ship (defense, repair).
@@ -2143,6 +2151,40 @@ export class Battle {
           sp.rotation = bp.type === "DEFENSE" ? 0 : rot;
           if (owner !== v.you) sp.tint = 0xffd0d0;
           layer.addChild(sp);
+          // Shield Overcharger mid-charge: it holds still (the sim stops its orbit), glows, and arcs energy
+          // into its ship's shield.
+          const sup = v.ships[owner].superShield ?? 0;
+          if (bp.type === "SHIELD" && d.powered && d.cd <= RULES.shieldDroneCharge && sup < RULES.shieldDroneMax) {
+            const k = 1 - Math.max(0, d.cd) / RULES.shieldDroneCharge;
+            const pulse = 0.55 + 0.45 * Math.sin(this.time * 18);
+            const glow = texNow(`ship/drones/${bp.image}_glow.png`);
+            if (glow) {
+              const gs = new Sprite(glow);
+              gs.anchor.set(0.5);
+              gs.position.set(p.x, p.y);
+              gs.scale.set(0.8 + 0.12 * k);
+              gs.rotation = rot;
+              gs.alpha = pulse;
+              layer.addChild(gs);
+            }
+            const g = new Graphics();
+            const dx = c.x - p.x;
+            const dy = c.y - p.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const reach = Math.min(len * 0.45, 34 + 30 * k);
+            for (let j = 0; j < 3; j++) {
+              const seed = Math.floor(this.time * 20) + j * 7;
+              g.moveTo(p.x, p.y);
+              for (let q = 1; q <= 4; q++) {
+                const f = (q / 4) * reach;
+                const off = (hash01(seed * 13 + q) - 0.5) * 9;
+                g.lineTo(p.x + (dx / len) * f - (dy / len) * off, p.y + (dy / len) * f + (dx / len) * off);
+              }
+            }
+            g.stroke({ color: 0x9cffc8, width: 1.5, alpha: 0.5 + 0.4 * pulse });
+            g.circle(p.x, p.y, 10 + 6 * pulse).stroke({ color: 0x9cffc8, width: 1, alpha: 0.35 * pulse });
+            layer.addChild(g);
+          }
           // Defense drones: a gun turret on top, turned toward the last shot it took down.
           const gun = bp.type === "DEFENSE" ? texNow(`ship/drones/${bp.image}_gun_on.png`) ?? texNow(`ship/drones/${bp.image}_gun.png`) : null;
           if (gun) {
@@ -2219,7 +2261,10 @@ export class Battle {
       if (usedR + extra > own.reactor + (own.reactorBonus ?? 0)) return this.fail("Not enough available power");
       // An offline drone is still out there: it comes back on without a new part.
       if (!offline && (own.droneParts ?? 0) <= 0) return this.fail("No drone parts left");
-      play(this.db, offline ? ["powerUpSystem"] : ["powerUpSystem", "droneLaunch"]);
+      // A boarding drone can be powered behind a super shield, but it waits until the shield is down.
+      const held = bp.type === "BOARDER" && !offline && (v.ships[1 - v.you].superShield ?? 0) > 0;
+      play(this.db, held || offline ? ["powerUpSystem"] : ["powerUpSystem", "droneLaunch"]);
+      if (held) this.say("Super shields: the boarding drone waits until they're down", 0xffd040);
       this.send({ c: "dronePower", slot: dh.slot, on: true });
       return;
     }
@@ -2284,6 +2329,7 @@ export class Battle {
         return this.send({ c: "artilleryTarget", room: eh.room });
       }
       if (mode === "hack") {
+        if ((v.ships[1 - v.you].superShield ?? 0) > 0) return this.fail("Super shields block the hacking drone");
         play(this.db, ["droneLaunch"]);
         return this.send({ c: "hackLaunch", room: eh.room });
       }

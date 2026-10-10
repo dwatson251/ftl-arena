@@ -455,7 +455,9 @@ export class Match {
         d.repairLeft = bp.type === "SHIP_REPAIR" ? RULES.shipRepairAmount : undefined;
       }
       if (UNIT_DRONES.includes(bp.type)) continue;
-      d.angle += DT * (0.25 + bp.speed * 0.02) * boost;
+      // A Shield Overcharger holds still while it pours the charge into the shield (same cycle length).
+      const charging = bp.type === "SHIELD" && d.cd <= RULES.shieldDroneCharge && (ship.superShield ?? 0) < RULES.shieldDroneMax;
+      if (!charging) d.angle += DT * (0.25 + bp.speed * 0.02) * boost;
       d.cd -= DT * boost;
       if (d.cd > 0) continue;
       if (bp.type === "COMBAT") {
@@ -981,7 +983,9 @@ export class Match {
       if (ownShip && augCount(ship, "NANO_MEDBAY") && !(medbay && medbay.room === room) && c.hp < c.maxHp) c.hp = Math.min(c.maxHp, c.hp + RULES.nanoMedbay * DT);
       if (tr.drainO2) rs.o2 = Math.max(0, rs.o2 - RULES.breachDrain * (4 / g.roomTiles.get(room)!.length) * tr.drainO2 * DT);
       if (this.god.has(c.owner)) c.hp = c.maxHp;
-      if (ownShip && medbay && !medbay.hacked && medbay.room === room && heal > 0 && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
+      // Only a working medbay heals (powered, not wrecked or hacked), and only its own ship's crew.
+      c.healing = ownShip && c.drone === undefined && !!medbay && !medbay.hacked && medbay.room === room && heal > 0 && c.path.length === 0 && c.hp < c.maxHp;
+      if (c.healing) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
       // Drone units repair themselves in their own drone room, like crew in a medbay.
       const dr = ship.systems.drones;
       if (ownShip && c.drone !== undefined && dr && dr.room === room && c.path.length === 0) c.hp = Math.min(c.maxHp, c.hp + RULES.medbayHeal[1] * DT);

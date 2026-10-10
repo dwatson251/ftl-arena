@@ -263,6 +263,30 @@
   - leaving mid-battle or after one kept a ghost seat ("full" or "already started" for anyone else);
   - reconnecting with a session token lost a held battle seat.
 
+## Playtest 2 fixes
+- **LAN search failed between two Windows PCs,** though TCP to the LAN address worked. Likely causes:
+  - broadcasts dropped by the router or mesh Wi-Fi;
+  - Windows sending `255.255.255.255` out a virtual adapter (Hyper-V/WSL/VPN);
+  - the firewall allowing TCP but not UDP.
+  The fix is a fallback: with no broadcast answer, the joiner's server sweeps its private /24 subnets over
+  TCP (`/api/has?code=` on 8787-8789, 160 at a time, 900 ms timeout), which takes about 6 s. Both sides log
+  what they found.
+- **Healing crosses and sound** now follow a `healing` flag the sim sets. They had only checked power, not
+  damage, hacking or crew owner.
+- **Enemy guns:** whether they're powered stays in the fogged view (it's visible on the hull), so they slide
+  in and out. Their charge is still hidden.
+- **Super shield:** the hacking drone button is greyed with a warning. A boarding drone can be powered but
+  waits, with a "super shield" status. The sim already refused both.
+- **Shield Overcharger:** it holds still for the last 1.2 s of each charge cycle (`RULES.shieldDroneCharge`,
+  so the timings are unchanged), with the `_glow` art pulsing and arcs into the ship. Its powered art is now
+  `_charged` (it had shown `_off`).
+- **Hacking their shields** shows their recharge bar (`shieldChargeKnown`).
+- **Icon:** drawn from scratch by `tools/make-icon.py`. FTL's logo is just block letters, redrawn from
+  rectangles, so no game art is shipped. A simpler design is used at 16-32 px. The packager embeds it with
+  resedit (no Wine).
+- **Menu bar:** hidden; Ctrl+Shift+F12 toggles it through `before-input-event`. Playwright key presses
+  don't reach that hook, but `webContents.sendInputEvent` does.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
