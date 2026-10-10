@@ -38,8 +38,9 @@ export class Hangar {
   /** The name typed into "Save as preset" (null = the default), and what was last saved. */
   private saveName: string | null = null;
   private savedNote = "";
-  /** A preset waiting for "delete?" confirmation. */
+  /** A preset waiting for "delete?" confirmation; "New ship" waiting for "discard your changes?". */
   private confirmDel: string | null = null;
+  private confirmNew = false;
   private lobby: LobbyState | null = null;
   private pendingRender = false;
 
@@ -379,7 +380,11 @@ export class Hangar {
     return `<h2>${this.num("Presets")} · Presets</h2>
       <div class="note">${list.length ? "Pick a saved ship to fly it (straight to Launch), or build a new one." : "No presets yet: build a ship, then save it from the Launch step to see it here."}</div>
       <div class="preset-grid">
-        <button class="preset-new" data-step="Ship"><span class="plus">+</span><span>New ship</span><span class="note">Choose a hull and build from scratch</span></button>
+        <div class="preset-card preset-new-card"><button class="preset-new" data-preset-new><span class="plus">+</span><span>New ship</span><span class="note">Start again from a bare hull</span></button>${
+          this.confirmNew
+            ? `<div class="preset-confirm"><div>Discard the unsaved changes to this build?</div><div class="note">Save it from Launch first to keep it.</div><div class="row"><button class="small danger" data-preset-new-yes>Discard</button><button class="small" data-preset-new-no>Keep</button></div></div>`
+            : ""
+        }</div>
         ${cards}
       </div>${this.nav(null, "Ship")}`;
   }
@@ -392,6 +397,24 @@ export class Hangar {
     return `<div class="save-box"><h2>Save as preset</h2>
       <div class="row"><input data-preset-name maxlength="40" placeholder="Preset name" value="${h(this.saveName ?? def)}"><button data-preset-save>Save preset</button></div>
       <div class="note">Saved on this computer; pick it from Presets next time.</div></div>`;
+  }
+
+  /** Has this build changed since it was loaded (a preset) or since the hull was picked (nothing bought)? */
+  private unsaved(l: Loadout): boolean {
+    return !isSame(l, this.loaded ? this.loaded.loadout : baseLoadout(this.db, l.ship));
+  }
+
+  /** "New ship": forget the preset and start over from the lobby's default hull, untouched. */
+  private newShip(): void {
+    const cfg = this.lobby!.config;
+    this.loaded = null;
+    this.savedNote = "";
+    this.saveName = null;
+    this.confirmNew = false;
+    this.confirmDel = null;
+    this.step = "Ship";
+    this.sfx("hoverBeep");
+    this.change(baseLoadout(this.db, cfg.shipPool[0] ?? this.db.hangar[0]));
   }
 
   private savePreset(): void {
@@ -699,9 +722,21 @@ export class Hangar {
       this.savedNote = "";
       this.saveName = null;
       this.confirmDel = null;
+      this.confirmNew = false;
       this.step = "Launch";
       this.sfx("powerUpSystem");
       return this.change(structuredClone(p.loadout));
+    }
+    if ("presetNew" in d) {
+      if (!this.unsaved(this.loadout)) return this.newShip();
+      this.confirmNew = true;
+      this.sfx("hoverBeep");
+      return this.render();
+    }
+    if ("presetNewYes" in d) return this.newShip();
+    if ("presetNewNo" in d) {
+      this.confirmNew = false;
+      return this.render();
     }
     if (d.presetAsk) {
       this.confirmDel = d.presetAsk;
@@ -817,9 +852,10 @@ export class Hangar {
       e.preventDefault();
       return go(-1);
     }
-    if (e.key === "Escape" && this.confirmDel) {
+    if (e.key === "Escape" && (this.confirmDel || this.confirmNew)) {
       e.preventDefault();
       this.confirmDel = null;
+      this.confirmNew = false;
       return this.render();
     }
     if (e.key === "Escape") {

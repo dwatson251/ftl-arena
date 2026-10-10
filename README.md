@@ -94,6 +94,8 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
   snapshot of the hull and guns on its own random backdrop. Picking one goes straight to Launch.
   Over-budget presets are flagged but can still be picked.
 - **Deleting:** the ✕ on a card, after a confirmation.
+- **New ship:** clears the build and any loaded preset, back to the default hull. It asks first if the
+  build has unsaved changes.
 - **Where they live:** this computer only: the desktop app's data folder (`presets.json`), or the
   browser's storage.
 
