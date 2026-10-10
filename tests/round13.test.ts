@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { placeholderDb } from "@ftl/data";
 import { loadDb } from "@ftl/extract";
-import { baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, enemyLoadout, Match, RULES } from "@ftl/sim";
+import { baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, enemyLoadout, findPath, Match, RULES } from "@ftl/sim";
 
 const real = existsSync("assets-local/data/blueprints.xml");
 
@@ -141,5 +141,39 @@ describe("mind control", () => {
     expect(sys).toBeDefined();
     expect(["sabotage", "fight", "walk"]).toContain(c.task);
     expect(Object.values(B.systems).some((s) => s && s.damage > 0)).toBe(true);
+  });
+});
+
+describe("doors and boarders", () => {
+  it("intruders walk straight through doors with no door system or a level-1 one, and must break level 2", () => {
+    for (const level of [1, 2]) {
+      const db = placeholderDb();
+      const lo = baseLoadout(db, "PH_SKIFF");
+      const host = { ...lo, systems: { ...lo.systems, doors: level } };
+      const m = new Match(db, DEFAULT_CONFIG, [host, lo], ["a", "b"]);
+      const [a, b] = m.state.ships;
+      const g = m.geo(a);
+      // One of b's crew aboard a, ordered to a room behind a closed door.
+      const c = b.crew[0];
+      b.crew = b.crew.filter((q) => q !== c);
+      const start = [...g.tiles.keys()][0];
+      const [x, y] = start.split(",").map(Number);
+      Object.assign(c, { tile: start, home: start, x, y, path: [] });
+      a.crew.push(c);
+      a.doors = a.doors.map(() => false);
+      for (const q of a.crew) if (q !== c) q.stun = 999;
+      const startRoom = g.tiles.get(start)!.room;
+      const far = [...g.roomTiles.keys()].find((r) => r !== startRoom)!;
+      const tiles = g.roomTiles.get(far)!;
+      const path = findPath(g, start, tiles[0])!;
+      c.path = path;
+      c.home = tiles[0];
+      let bashed = false;
+      for (let i = 0; i < 30 * 1.5; i++) {
+        m.step();
+        if ((c.bash ?? 0) > 0) bashed = true;
+      }
+      expect(bashed).toBe(level >= 2);
+    }
   });
 });

@@ -13,7 +13,7 @@ import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, ty
 import { animFrame, frame, texNow } from "./assets.ts";
 import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, setSound, soundOn, stopLoops, timeStop } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
-import { LOW_HP, ShipRenderer, type CrewDraw } from "./render/ship.ts";
+import { attackPhase, LOW_HP, SHOT_AT, ShipRenderer, type CrewDraw } from "./render/ship.ts";
 
 const W = 1280;
 const H = 720;
@@ -500,6 +500,7 @@ export class Battle {
       shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.weaponsKnown ? eng(enV) : 1, cloaked: (enV.cloak?.t ?? 0) > 0,
       destinations: true, flashTiles: this.flashTilesEnemy,
     });
+    this.crewSounds(v);
     this.drawTargets(ownV);
     this.drawProjectiles(v, k);
     this.drawDrones(v);
@@ -850,6 +851,36 @@ export class Battle {
     }
     if (v.pauseBank?.[v.you] === 0) return this.fail("Your pause clock is empty");
     this.send({ c: "pause", on: true });
+  }
+
+  private shotPhase = new Map<number, number>();
+
+  /**
+   * Crew small arms (FTL's crewLaser sounds) each time a shot leaves a gun, whether at a foe, a door or a
+   * system, for everyone we can see; FTL's brawling loop while anyone punches. The enemy ship is quieter.
+   */
+  private crewSounds(v: MatchView): void {
+    if (v.pause || v.winner !== null) return;
+    let punching = false;
+    for (const s of v.ships) {
+      const r = s.idx === v.you ? this.own : this.enemy;
+      for (const c of s.crew) {
+        if (c.task === "fight" && c.punch && !c.dead) punching = true;
+        const ph = attackPhase(c, this.animTime);
+        const was = this.shotPhase.get(c.id);
+        if (ph === null) {
+          this.shotPhase.delete(c.id);
+          continue;
+        }
+        this.shotPhase.set(c.id, ph);
+        if (was === undefined) continue;
+        const crossed = (was < SHOT_AT && ph >= SHOT_AT) || (ph < was && ph >= SHOT_AT);
+        const room = r.geo.tiles.get(c.tile)?.room ?? -1;
+        const seen = !s.visibleRooms || s.visibleRooms.includes(room);
+        if (crossed && seen) play(this.db, ["crewLaser1", "crewLaser2", "crewLaser3"], s.idx === v.you ? 0.9 : 0.5);
+      }
+    }
+    loop(this.db, "brawling", punching, 0.8);
   }
 
   private hoverCrew: { id: number; mine: boolean } | null = null;

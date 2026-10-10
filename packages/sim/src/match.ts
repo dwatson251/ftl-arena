@@ -967,7 +967,11 @@ export class Match {
             c.task = "idle";
             continue;
           }
-          if (!hackerCrew && (!ownShip || locked)) {
+          // FTL: with no door system or a level-1 one there's no security, so intruders just open the door and
+          // walk through; from level 2 (or a manned level 1) they have to shoot it down. A hacking lock is a
+          // blast door whatever the level.
+          const secure = locked || doorLevel >= 2;
+          if (!hackerCrew && (locked || (!ownShip && secure))) {
             c.bash = (c.bash ?? 0) + DT * Math.max(0.5, tr.combat);
             c.task = "fight";
             const dd = g.doors[door];
@@ -975,7 +979,8 @@ export class Match {
             c.aim = [dd.px / TILE - 0.5, dd.py / TILE - 0.5];
             c.punch = false;
             c.face = bestFit(c.aim[0] - c.x, c.aim[1] - c.y);
-            if (c.bash >= RULES.doorBreak[doorLevel]) {
+            // A hacked lock is as strong as level-3 blast doors (wiki).
+            if (c.bash >= RULES.doorBreak[locked ? Math.max(3, doorLevel) : doorLevel]) {
               ship.doorPass![door] = RULES.doorBrokenOpen;
               c.bash = 0;
               st.events.push({ e: "doorBroken", ship: ship.idx, door });

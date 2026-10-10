@@ -75,9 +75,10 @@ describe("boarding", () => {
     expect(m.state.winner).toBe(null);
   });
 
-  it("intruders have to break closed doors", () => {
+  it("intruders have to break closed doors (level 2 and up: below that they walk through)", () => {
     const db = boardingDb();
-    const m = new Match(db, DEFAULT_CONFIG, [boarder(db), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    const skiff = baseLoadout(db, "PH_SKIFF");
+    const m = new Match(db, DEFAULT_CONFIG, [boarder(db), { ...skiff, systems: { ...skiff.systems, doors: 2 } }], ["a", "b"]);
     const them = m.state.ships[1];
     const ids = padUp(m, 1);
     m.push(0, { c: "teleport", room: 5 });

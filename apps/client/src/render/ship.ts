@@ -26,6 +26,20 @@ export interface CrewDraw {
   offline?: boolean;
 }
 
+/** Point in a swing (0..1) where the shot leaves the gun. */
+export const SHOT_AT = 0.45;
+
+/**
+ * Where a shooter is in their swing (0..1), or null when they aren't shooting. Fights use the sim's swing
+ * timer; breaking a door and wrecking a system fire on a steady ~1.2 s rhythm of their own.
+ */
+export function attackPhase(c: CrewState, time: number): number | null {
+  if (c.dead || c.dying !== undefined || c.blip || (c.task !== "fight" && c.task !== "sabotage")) return null;
+  if (c.task === "fight" && c.punch) return null;
+  if (c.task === "fight" && c.atk !== undefined && c.atkDur) return Math.max(0, Math.min(0.999, 1 - c.atk / c.atkDur));
+  return (time * 0.85 + c.id * 0.37) % 1;
+}
+
 /** Share of health below which a crew member's box turns red and the low-health warning beeps. */
 export const LOW_HP = 0.25;
 
@@ -491,20 +505,26 @@ export class ShipRenderer {
         fr = pa ? Math.floor(k * pa.frames) : 0;
       } else {
         anim = this.db.anims[`${race}_shoot_${dir}`] ? `${race}_shoot_${dir}` : `${race}_shoot_right`;
-        fr = 0;
-        const aim = c.aim;
-        // Door breaking has no swing timer: a bolt every so often.
-        const ph = c.atk !== undefined ? k : (time * 0.9 + c.id * 0.37) % 1;
-        if (aim && c.task === "fight" && ph >= 0.45 && ph < 0.7) {
+        // A shot each swing: the gun's firing frames as the bolt leaves, aimed at the foe, the door, or (when
+        // wrecking a system) the console in front of them, with a spark where it lands.
+        const ph = attackPhase(c, time) ?? 0;
+        const frames = this.db.anims[anim]?.frames ?? 1;
+        fr = ph >= SHOT_AT && ph < SHOT_AT + 0.3 ? Math.min(frames - 1, 1 + Math.floor(((ph - SHOT_AT) / 0.3) * (frames - 1))) : 0;
+        const f = c.face ?? "up";
+        const [fx, fy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[f];
+        const aim: [number, number] | undefined = c.task === "sabotage" ? [cd.x + fx * 0.55, cd.y + fy * 0.55] : c.aim;
+        if (aim && ph >= SHOT_AT && ph < SHOT_AT + 0.25) {
           const tx = (aim[0] + 0.5) * TILE;
           const ty = (aim[1] + 0.5) * TILE;
-          const kk = (ph - 0.45) / 0.25;
+          const kk = (ph - SHOT_AT) / 0.25;
           const bx = px + (tx - px) * kk;
           const by = py + (ty - py) * kk;
           const len = Math.hypot(tx - px, ty - py) || 1;
           const ux = (tx - px) / len;
           const uy = (ty - py) / len;
-          d.gfx(`cr${c.id}bolt`).moveTo(bx - ux * 6, by - uy * 6).lineTo(bx + ux * 6, by + uy * 6).stroke({ color: cd.hostile ? 0xff5040 : 0xffd040, width: 2 });
+          const col = cd.hostile ? 0xff5040 : 0xffd040;
+          d.gfx(`cr${c.id}bolt`).moveTo(bx - ux * 5, by - uy * 5).lineTo(bx + ux * 5, by + uy * 5).stroke({ color: col, width: 2 });
+          if (kk > 0.75) d.gfx(`cr${c.id}spark`).circle(tx, ty, 2 + 4 * (kk - 0.75) * 4).fill({ color: 0xfff0a0, alpha: 0.9 });
         }
       }
     } else if (c.task === "man") {
@@ -551,7 +571,11 @@ export class ShipRenderer {
       }
       // Hostile crew get FTL's red cast; drone units keep their own colours.
       d.sprite(key, t, px, py, { anchor: 0.5, rotation: rot, tint: c.mind ? 0xd8a0ff : cd.hostile && c.drone === undefined ? 0xffb0a8 : 0xffffff });
-      if (cd.hostile) d.gfx(`${key}foe`).rect(px - 12, py + 12, 24, 2).fill({ color: 0xff4a3a, alpha: 0.9 });
+      // A red underline under hostile crew, on screen (the enemy view is rotated: draw it along the grid's y).
+      if (cd.hostile) {
+        if (!rot) d.gfx(`${key}foe`).rect(px - 12, py + 12, 24, 2).fill({ color: 0xff4a3a, alpha: 0.9 });
+        else d.gfx(`${key}foe`).rect(px - 14, py - 12, 2, 24).fill({ color: 0xff4a3a, alpha: 0.9 });
+      }
     } else {
       d.gfx(key).circle(px, py, 9).fill({ color: cd.hostile ? 0xe05555 : 0x5fa8ff }).stroke({ color: cd.selected ? 0x30ff30 : 0x000000, width: 2 });
     }

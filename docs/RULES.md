@@ -183,3 +183,9 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Pause clock | Space pauses everyone and spends your own 60 s (10-600); Space resumes; it resumes by itself when your clock is empty; the other captain can't resume it; unused time comes back at 5 s per minute of play (0-60) | design |
 | Practice | Defaults to an unlimited clock (0), i.e. FTL's free pause | design |
 | Time-stop effects | The world freezes under a cold blue wash with FTL's blinking PAUSED; the music winds down like a tape to half speed an octave lower and holds as a drone, other loops fall silent under a low hum; FTL's cloak whoosh on stopping, decloak on resuming | design |
+
+## Boarding nits
+| Rule | Value | Source |
+|---|---|---|
+| Doors vs intruders | No door system or level 1: intruders open the door and walk through; level 2+ (or a manned level 1) must be shot down; a hacking lock counts as level-3 blast doors | wiki |
+| Shooting | Fights, door breaking and system wrecking all fire a shot each swing (~1-1.3 s): the gun's firing frames, a bolt, a spark at the console, and FTL's small-arms sound (`crewLaser1-3`); punching plays FTL's brawling loop | FTL sounds.xml + design |
