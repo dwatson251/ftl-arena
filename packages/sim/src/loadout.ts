@@ -382,6 +382,8 @@ export function autoPower(db: GameDB, ship: ShipState): void {
     const need = db.weapons[w.bp]?.power ?? 1;
     const ws = ship.systems.weapons;
     if (!ws) break;
+    // A missile weapon with no missiles to fire stays off.
+    if ((db.weapons[w.bp]?.missiles ?? 0) > ship.missiles) continue;
     const used = ship.weapons.filter((x) => x.powered).reduce((a, x) => a + (db.weapons[x.bp]?.power ?? 1), 0);
     if (used + need > usable(ws)) continue;
     if (ws.power < used + need) give("weapons", used + need - ws.power);

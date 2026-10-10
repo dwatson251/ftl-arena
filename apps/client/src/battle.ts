@@ -1275,8 +1275,8 @@ export class Battle {
       if (on && off) h.sprite(`shS${i}`, i < s.shieldLayers ? on : off, x, 47);
       else g.roundRect(x + 4, 51, 20, 20, 4).fill({ color: i < s.shieldLayers ? 0x2a7bff : 0x101820 }).stroke({ color: 0x6fc0ff, width: 2 });
     }
-    // Zoltan Shield (augment): green-yellow pips above the normal layers.
-    for (let i = 0; i < (s.superShield ?? 0); i++) g.rect(34 + i * 18, 45, 14, 4).fill({ color: 0xc8ff40 });
+    // Zoltan shield (augment, Shield Overcharger): FTL's energy-shield box under the layers, one green bar a point.
+    this.superBar("zs", s.superShield ?? 0, 26, 86, "statusUI/energy_shield_box.png");
     // The blue bar only shows while a layer is recharging.
     if (s.shieldLayers < max && s.shieldCharge > 0) g.rect(32, 78, Math.floor((90 * s.shieldCharge) / 3) * 3, 6).fill({ color: 0x2a7bff });
     // Missiles (FTL's fuel slot is unused in the arena, so missiles take its place).
@@ -1297,6 +1297,19 @@ export class Battle {
     if (eo) h.sprite("eo", eo, 1, 89);
     h.text("evT", `${s.evasion}%`, 94, 95, fstyle("JustinFont10", 0xffffff), [1, 0]);
     h.text("o2T", `${o2}%`, 94, 116, fstyle("JustinFont10", o2Red ? 0xff8070 : 0xffffff), [1, 0]);
+  }
+
+  /** A Zoltan shield's points as FTL's green energy bars in their box (only while there are any). */
+  private superBar(key: string, n: number, x: number, y: number, box: string, step = 19, w = 17): void {
+    if (n <= 0) return;
+    const h = this.hud;
+    const b = texNow(box);
+    if (b) h.sprite(`${key}B`, b, x, y);
+    const bar = texNow("statusUI/energy_shield_bar.png");
+    for (let i = 0; i < Math.min(12, n); i++) {
+      if (bar) h.sprite(`${key}${i}`, bar, x + 3 + i * step, y + 3, { w, h: 6 });
+      else h.gfx(`${key}g${i}`).rect(x + 3 + i * step, y + 3, w, 6).fill({ color: 0x78ff50 });
+    }
   }
 
   /** The hostiles window header (TARGET, hull, shields, class) and its row of enemy system icons. */
@@ -1326,7 +1339,7 @@ export class Battle {
       if (s1 && s2) h.sprite(`enS${i}`, i < en.shieldLayers ? s1 : s2, x + 22 + i * 24, y + 75);
       else g.roundRect(x + 22 + i * 24, y + 78, 18, 18, 4).fill({ color: i < en.shieldLayers ? 0x2a7bff : 0x101820 }).stroke({ color: 0xffffff, width: 2 });
     }
-    for (let i = 0; i < (en.superShield ?? 0); i++) g.rect(x + 22 + i * 14, y + 98, 11, 4).fill({ color: 0xc8ff40 });
+    this.superBar("ezs", en.superShield ?? 0, x + 20, y + 99, (en.superShield ?? 0) > 5 ? "combatUI/box_hostiles_shield_super12.png" : "combatUI/box_hostiles_shield_super5.png", 10, 9);
     const bp = this.db.ships[en.bp];
     h.text("tgtClass", `Class: ${bp?.className?.split(" · ")[0] || bp?.title || en.bp}`, x + 382, y + 37, fstyle("JustinFont10", 0xffffff), [1, 0]);
     h.text("tgtRel", `Captain: ${en.player}`, x + 382, y + 53, fstyle("JustinFont10", 0xff5a50), [1, 0]);
@@ -2200,6 +2213,10 @@ export class Battle {
       if (!ds || ds.ion > 0) return this.fail(ds ? "Drones are locked by ion damage" : "No drone system");
       const load = (own.drones ?? []).filter((q) => q.powered).reduce((a, q) => a + (this.db.droneBPs[q.bp]?.power ?? 1), 0);
       if (load + bp.power > usable(ds)) return this.fail("Not enough drone system power");
+      // The drone system draws more reactor if it needs to; refuse (quietly, with FTL's buzz) if there's none.
+      const usedR = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
+      const extra = Math.max(0, load + bp.power - ds.power - (ds.bonus ?? 0));
+      if (usedR + extra > own.reactor + (own.reactorBonus ?? 0)) return this.fail("Not enough available power");
       // An offline drone is still out there: it comes back on without a new part.
       if (!offline && (own.droneParts ?? 0) <= 0) return this.fail("No drone parts left");
       play(this.db, offline ? ["powerUpSystem"] : ["powerUpSystem", "droneLaunch"]);
@@ -2480,12 +2497,13 @@ export class Battle {
     if (!w.powered) {
       const ws = own.systems.weapons;
       if (ws && ws.ion > 0) return this.fail("Weapons are locked by ion damage");
+      if ((bp?.missiles ?? 0) > own.missiles) return this.fail("No missiles left for this weapon");
       const load = own.weapons.filter((q) => q.powered).reduce((a, q) => a + (this.db.weapons[q.bp]?.power ?? 1), 0);
       const need = load + (bp?.power ?? 1);
       const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
       const extra = Math.max(0, need - (ws ? ws.power + (ws.bonus ?? 0) : 0));
       if (!ws || need > usable(ws)) return this.fail("Not enough weapon system power");
-      if (used + extra > own.reactor) return this.fail("Not enough available power");
+      if (used + extra > own.reactor + (own.reactorBonus ?? 0)) return this.fail("Not enough available power");
       play(this.db, ["powerUpSystem"]);
       return this.send({ c: "weaponPower", slot, on: true });
     }

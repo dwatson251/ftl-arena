@@ -153,6 +153,8 @@ export class Match {
           return true;
         }
         if (w.powered) return false;
+        // No missiles, no powering a weapon that fires them.
+        if (this.wbp(w.bp).missiles > ship.missiles) return false;
         const need = this.weaponLoad(ship) + this.wbp(w.bp).power;
         if (need > usable(ws)) return false;
         const extra = need - ws.power - (ws.bonus ?? 0);
@@ -230,8 +232,10 @@ export class Match {
           ds.power += extra;
         }
         d.powered = true;
-        // A new drone launches after a moment (using a drone part); an offline one just comes back on.
+        // A new drone launches after a moment (using a drone part); an offline one just comes back on. A Shield
+        // Overcharger's timer starts over when it gets power back (wiki).
         d.launch = d.deployed ? 0 : RULES.droneLaunch;
+        if (d.deployed && bp.type === "SHIELD") d.cd = RULES.shieldDroneTimes[Math.min(4, ship.superShield ?? 0)];
         return true;
       }
       case "swapWeapons": {
@@ -447,7 +451,7 @@ export class Match {
         if (UNIT_DRONES.includes(bp.type) && !this.launchUnit(ship, enemy, d, bp.id, bp.type)) continue;
         ship.droneParts = (ship.droneParts ?? 0) - 1;
         d.deployed = true;
-        d.cd = 1.2;
+        d.cd = bp.type === "SHIELD" ? RULES.shieldDroneTimes[Math.min(4, ship.superShield ?? 0)] : 1.2;
         d.repairLeft = bp.type === "SHIP_REPAIR" ? RULES.shipRepairAmount : undefined;
       }
       if (UNIT_DRONES.includes(bp.type)) continue;
@@ -478,9 +482,10 @@ export class Match {
           st.events.push({ e: "intercept", ship: ship.idx, projectile: incoming.id, drone: d.slot });
         } else d.cd = 0.1;
       } else if (bp.type === "SHIELD") {
-        // Shield Overcharger: tops up the Zoltan-style super shield one point at a time.
-        d.cd = bp.cooldown;
+        // Shield Overcharger: tops up the Zoltan super shield a point at a time, sooner the fewer it has
+        // (wiki: 8 / 10 / 13 / 16 / 20 s with 0-4 points).
         ship.superShield = Math.min(RULES.shieldDroneMax, (ship.superShield ?? 0) + 1);
+        d.cd = RULES.shieldDroneTimes[Math.min(4, ship.superShield ?? 0)];
       } else if (bp.type === "SHIP_REPAIR") {
         d.cd = RULES.shipRepairEvery;
         if (ship.hull < ship.maxHull && (d.repairLeft ?? 0) > 0) {

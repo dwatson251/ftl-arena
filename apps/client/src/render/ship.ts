@@ -86,6 +86,7 @@ export class ShipRenderer {
   private retract: number[] = [];
   private lastTime = 0;
   private shieldArt: Sprite | null = null;
+  private superArt: Sprite | null = null;
   private shieldG = new Graphics();
   readonly geo: Geometry;
   readonly layout: ShipLayout;
@@ -208,6 +209,15 @@ export class ShipRenderer {
         this.shieldArt.height = L.ellipse.b * 2;
       }
       this.root.addChildAt(this.shieldArt, 0);
+      // The Zoltan (super) shield: the same bubble in FTL's energy green, a little larger, over the hull.
+      this.superArt = new Sprite(sh);
+      this.superArt.anchor.set(0.5);
+      this.superArt.position.copyFrom(this.shieldArt.position);
+      this.superArt.width = this.shieldArt.width * 1.04;
+      this.superArt.height = this.shieldArt.height * 1.04;
+      this.superArt.tint = 0x8cff3a;
+      this.superArt.alpha = 0;
+      this.root.addChildAt(this.superArt, 1);
     }
     if (base && !bp.enemy) this.nozzles = findNozzles(base);
     this.built = Boolean(base) || this.db.source !== "ftl";
@@ -439,6 +449,11 @@ export class ShipRenderer {
     const sg = this.shieldG.clear();
     const c = this.gridCentre();
     const layers = v.shieldLayers;
+    if (this.superArt) {
+      this.superArt.visible = exploded === null;
+      const want = (v.superShield ?? 0) > 0 ? 0.55 + 0.08 * Math.sin(time * 3) : 0;
+      this.superArt.alpha += (want - this.superArt.alpha) * 0.2;
+    }
     if (this.shieldArt) this.shieldArt.alpha = layers > 0 ? Math.min(1, 0.3 + 0.17 * layers + Math.max(0, 0.5 - flash)) : Math.max(0, 0.6 - flash * 2);
     else if (layers > 0) {
       const b = this.bounds();

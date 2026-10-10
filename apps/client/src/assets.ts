@@ -179,6 +179,7 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   for (const f of ["solo", "bottom", "middle", "top", "fill"]) files.add(`systemUI/clonebar_small_${f}.png`);
   for (const f of ["1x2", "2x1", "2x2"]) files.add(`effects/low_o2_stripes_${f}.png`);
   files.add("effects/fire_smoke.png");
+  for (const f of ["statusUI/energy_shield_box.png", "statusUI/energy_shield_bar.png", "combatUI/box_hostiles_shield_super5.png", "combatUI/box_hostiles_shield_super12.png"]) files.add(f);
   // Hazard scenery and asteroids.
   for (const f of ["stars/planet_sun1.png", "effects/pulsar_backL.png", "effects/pulsar_frontL.png", "stars/nebula_large_a.png", "stars/nebula_large_b.png", "stars/nebula_large_c.png"]) files.add(f);
   for (let i = 0; i < 10; i++) files.add(`asteroids/asteroid${i}.png`);

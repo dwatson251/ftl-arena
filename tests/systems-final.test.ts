@@ -85,7 +85,25 @@ describe("artillery and the shield drone", () => {
     const m = new Match(db, DEFAULT_CONFIG, [{ ...b, drones: ["DRONE_SHIELD"], droneParts: 2, reactor: 20 }, b], ["a", "b"]);
     const me = m.state.ships[0];
     m.apply(me, { c: "dronePower", slot: 0, on: true });
-    run(m, 8);
-    expect(me.superShield).toBeGreaterThanOrEqual(2);
+    // The wiki's timings: the first point 8 s after it's out, the next 10 s later.
+    run(m, RULES.droneLaunch + RULES.shieldDroneTimes[0] + 0.3);
+    expect(me.superShield).toBe(1);
+    run(m, RULES.shieldDroneTimes[1] + 0.3);
+    expect(me.superShield).toBe(2);
+  });
+});
+
+describe("missile weapons", () => {
+  it("won't power up with no missiles to fire", () => {
+    const db = placeholderDb();
+    const b = baseLoadout(db, "PH_SKIFF");
+    const msl = Object.values(db.weapons).find((w) => w.missiles > 0);
+    if (!msl) return;
+    const m = new Match(db, DEFAULT_CONFIG, [{ ...b, weapons: [msl.id], missiles: 0, reactor: 20 }, b], ["a", "b"]);
+    const me = m.state.ships[0];
+    expect(me.weapons[0].powered).toBe(false);
+    expect(m.apply(me, { c: "weaponPower", slot: 0, on: true })).toBe(false);
+    me.missiles = 3;
+    expect(m.apply(me, { c: "weaponPower", slot: 0, on: true })).toBe(true);
   });
 });

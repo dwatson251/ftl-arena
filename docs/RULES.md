@@ -234,3 +234,9 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Ion storm | A nebula, and both reactors at half (rounded up); battery and Zoltan power unaffected |
 | Anti-ship batteries | Every 20-30 s, warned 5 s ahead, a 3-damage shot that pierces shields, goes through a Zoltan shield untouched and always breaches; evadable, can't be shot down. In 1v1 they take turns at each ship (left out of Random) |
 | Random | One of the first five |
+
+## Round 17 fixes
+| Rule | Value | Source |
+|---|---|---|
+| Shield Overcharger | One super-shield point after 8 / 10 / 13 / 16 / 20 s with 0-4 points; the timer restarts when it gets power back; shown as FTL's green bubble and energy-shield bars | wiki |
+| Missile weapons | Can't be powered (nor auto-powered at the start) without missiles to fire | FTL |
