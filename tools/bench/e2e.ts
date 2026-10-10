@@ -37,7 +37,7 @@ await b.fill("#code", code);
 await b.click("#join");
 await b.waitForSelector(".code");
 await a.waitForFunction(() => document.querySelectorAll(".players .p").length === 2);
-if (win === "crew") await a.selectOption('select[data-cfg="winCondition"]', "crew");
+if (win === "auto") await a.selectOption('select[data-cfg="winCondition"]', "auto");
 await a.fill('input[data-cfg="scrap"]', "400");
 await a.dispatchEvent('input[data-cfg="scrap"]', "change");
 if (args.includes("--limit")) {

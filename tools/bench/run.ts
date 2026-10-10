@@ -18,7 +18,7 @@ const db = args.includes("--placeholder") ? placeholderDb() : loadDb(resolve("as
 const a = get("--ship", db.hangar[0]);
 const b = get("--ship2", a);
 const config: MatchConfig = {
-  winCondition: get("--win", "hull") as "hull" | "crew", scrap: 0, shipPool: [], timeLimit: Number(get("--limit", "600")),
+  winCondition: get("--win", "hull") as "hull" | "auto", scrap: 0, shipPool: [], timeLimit: Number(get("--limit", "600")),
   seed: Number(get("--seed", "1")),
 };
 const m = new Match(db, config, [baseLoadout(db, a), baseLoadout(db, b)], ["bot-a", "bot-b"]);

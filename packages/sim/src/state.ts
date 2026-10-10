@@ -2,7 +2,12 @@
 import type { SystemId } from "@ftl/data";
 import type { SkillId } from "./rules.ts";
 
-export type WinCondition = "hull" | "crew";
+/**
+ * "hull": destroy the ship (a ship whose crew are all dead also loses, as in FTL). "auto": autonomous ships, like
+ * FTL's drone ships and the flagship once its crew are dead: with no crew aboard a ship runs itself (systems
+ * repair on their own, the helm flies itself) and only destroying it wins.
+ */
+export type WinCondition = "hull" | "auto";
 
 export interface MatchConfig {
   winCondition: WinCondition;
@@ -176,6 +181,8 @@ export interface ShipState {
   tele?: number;
   /** Doors held open for a moment (crew walking through, a broken door), seconds left per door. */
   doorPass?: number[];
+  /** Seconds of shooting each door has taken from intruders (several attackers add up); reset when it breaks. */
+  doorBash?: number[];
   /** Room whose doors an enemy hacking drone has locked (recomputed every tick). */
   lockedRoom?: number;
   /** Battery: seconds of bonus power left, and lock time after. */

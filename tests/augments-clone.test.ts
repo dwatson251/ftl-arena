@@ -81,7 +81,7 @@ describe("clone bay", () => {
       const db = dbWithAugs();
       const base = baseLoadout(db, "PH_SKIFF");
       const lo = { ...base, systems: { ...base.systems, medbay: 0, clonebay: 1 }, augments: ["BACKUP_DNA"] };
-      const m = new Match(db, { ...DEFAULT_CONFIG, winCondition: "crew" }, [lo, base], ["a", "b"]);
+      const m = new Match(db, { ...DEFAULT_CONFIG, winCondition: "hull" }, [lo, base], ["a", "b"]);
       const s = m.state.ships[0];
       const cb = s.systems.clonebay!;
       m.step();

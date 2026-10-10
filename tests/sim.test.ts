@@ -27,12 +27,24 @@ describe("win conditions", () => {
     const loser = m.state.ships[1 - (m.state.winner as number)];
     expect(loser.hull <= 0 || loser.crew.every((c) => c.dead) || m.state.endReason === "time limit").toBe(true);
   });
-  it("crew mode never destroys a hull", () => {
-    const m = run(mk({ winCondition: "crew", seed: 3 }));
-    for (const s of m.state.ships) expect(s.hull).toBeGreaterThanOrEqual(1);
+  it("autonomous mode: a crewless ship flies on (its systems mend themselves) and only destruction wins", () => {
+    const m = mk({ winCondition: "auto" });
+    const s = m.state.ships[1];
+    for (const c of s.crew) c.hp = -1;
+    for (let i = 0; i < 40; i++) m.step();
+    expect(s.crew.every((c) => c.dead)).toBe(true);
+    expect(m.state.winner).toBe(null);
+    expect(m.autonomous(s)).toBe(true);
+    const sys = s.systems.shields!;
+    sys.damage = 1;
+    for (let i = 0; i < 30 * 14; i++) m.step();
+    expect(sys.damage).toBe(0);
+    s.hull = 0;
+    m.step();
+    expect(m.state.winner).toBe(0);
   });
-  it("killing every crew member wins in either mode", () => {
-    for (const win of ["hull", "crew"] as const) {
+  it("killing every crew member wins (destroy-the-ship mode, as in FTL)", () => {
+    for (const win of ["hull"] as const) {
       const m = mk({ winCondition: win });
       for (const c of m.state.ships[1].crew) c.hp = 0.01;
       m.state.ships[1].crew.forEach((c) => (m.state.ships[1].rooms[0].o2 = 0));

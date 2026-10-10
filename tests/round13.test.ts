@@ -177,3 +177,42 @@ describe("doors and boarders", () => {
     }
   });
 });
+
+describe("round 15 nits", () => {
+  it("flak throws all its pieces at once; other volleys are staggered", () => {
+    const db = placeholderDb();
+    const flak = Object.values(db.weapons).find((w) => w.type === "BURST");
+    const laser = Object.values(db.weapons).find((w) => w.type === "LASER" && w.shots > 1);
+    const m = new Match(db, DEFAULT_CONFIG, [baseLoadout(db, "PH_SKIFF"), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    const launch = (m as unknown as { launch: (...a: unknown[]) => number }).launch.bind(m);
+    if (flak) {
+      launch(m.state.ships[0], { ...flak, shots: 3 }, { kind: "room", room: 0 }, 1, 0, 0);
+      expect(m.state.projectiles.filter((p) => p.kind === "BURST").every((p) => p.delay === 0)).toBe(true);
+    }
+    if (laser) {
+      launch(m.state.ships[0], laser, { kind: "room", room: 0 }, 1, 0, 0);
+      expect(m.state.projectiles.filter((p) => p.kind === "LASER").some((p) => p.delay > 0)).toBe(true);
+    }
+  });
+  it("a boarder wrecking a system's last bar costs the ship 1 hull", () => {
+    const db = placeholderDb();
+    const lo = baseLoadout(db, "PH_SKIFF");
+    const m = new Match(db, DEFAULT_CONFIG, [lo, lo], ["a", "b"]);
+    const [a, b] = m.state.ships;
+    const sys = Object.values(a.systems).find((s) => s && s.level === 1 && m.geo(a).roomTiles.get(s.room)!.length)!;
+    const tile = m.geo(a).roomTiles.get(sys.room)![0];
+    const c = b.crew[0];
+    b.crew = b.crew.filter((q) => q !== c);
+    const [x, y] = tile.split(",").map(Number);
+    Object.assign(c, { tile, home: tile, x, y, path: [] });
+    a.crew.push(c);
+    // The defenders stand (stunned) in another room, out of the fight.
+    const away = [...m.geo(a).tiles.keys()].find((t) => m.geo(a).tiles.get(t)!.room !== sys.room)!;
+    const [ax, ay] = away.split(",").map(Number);
+    for (const q of a.crew) if (q !== c) Object.assign(q, { tile: away, home: away, x: ax, y: ay, path: [], stun: 999 });
+    const hull = a.hull;
+    for (let i = 0; i < 30 * 30 && sys.damage < sys.level; i++) m.step();
+    expect(sys.damage).toBe(sys.level);
+    expect(a.hull).toBe(hull - 1);
+  });
+});

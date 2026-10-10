@@ -278,8 +278,7 @@ export class ShipRenderer {
         if (!visible(rs.id)) continue;
         // A breach is a state, not a loop: the crack shrinks back through its frames as it's repaired.
         for (const [t, hp] of Object.entries(rs.breaches)) this.tileAnim(`br${t}`, t, animFrame(this.db, "breach", Math.max(0, Math.min(6, Math.ceil((hp / 100) * 7) - 1))), 0x2a2a2a, 1);
-        // A fire burns down to FTL's small flame as it's beaten back.
-        for (const [t, hp] of Object.entries(rs.fires)) this.tileAnim(`fi${t}`, t, animFrame(this.db, hp < 50 ? "fire_small" : "fire_large", Math.floor(time * 10 + t.length)), 0xff7a1a, 0.9);
+        for (const t of Object.keys(rs.fires)) this.tileAnim(`fi${t}`, t, animFrame(this.db, "fire_large", Math.floor(time * 10 + t.length)), 0xff7a1a, 0.9);
       }
       // A fire that goes out leaves FTL's puff of smoke (fire_smoke, 7 frames).
       const now = new Set<string>();
@@ -512,7 +511,9 @@ export class ShipRenderer {
         fr = ph >= SHOT_AT && ph < SHOT_AT + 0.3 ? Math.min(frames - 1, 1 + Math.floor(((ph - SHOT_AT) / 0.3) * (frames - 1))) : 0;
         const f = c.face ?? "up";
         const [fx, fy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[f];
-        const aim: [number, number] | undefined = c.task === "sabotage" ? [cd.x + fx * 0.55, cd.y + fy * 0.55] : c.aim;
+        // Wrecking a system: shots go into the middle of the room (the system itself).
+        const sr = c.task === "sabotage" ? this.layout.rooms.find((r) => r.id === this.geo.tiles.get(c.tile)?.room) : undefined;
+        const aim: [number, number] | undefined = sr ? [sr.x + sr.w / 2 - 0.5, sr.y + sr.h / 2 - 0.5] : c.task === "sabotage" ? [cd.x + fx * 0.55, cd.y + fy * 0.55] : c.aim;
         if (aim && ph >= SHOT_AT && ph < SHOT_AT + 0.25) {
           const tx = (aim[0] + 0.5) * TILE;
           const ty = (aim[1] + 0.5) * TILE;

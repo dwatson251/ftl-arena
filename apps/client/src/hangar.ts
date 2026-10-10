@@ -202,10 +202,10 @@ export class Hangar {
       <h2 style="margin-top:14px">Rules ${host ? "" : "(host sets these)"}</h2>
       <div class="kv"><span>Win</span><select data-cfg="winCondition" ${host ? "" : "disabled"}>
         <option value="hull" ${cfg.winCondition === "hull" ? "selected" : ""}>Destroy the ship</option>
-        <option value="crew" ${cfg.winCondition === "crew" ? "selected" : ""}>Kill the crew</option></select></div>
+        <option value="auto" ${cfg.winCondition === "auto" ? "selected" : ""}>Autonomous ships</option></select></div>
       <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" ${host ? "" : "disabled"} style="width:90px"></div>
-      <div class="note">${cfg.winCondition === "crew" ? "Hulls can't drop below 1: only a dead crew ends it." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
+      <div class="note">${cfg.winCondition === "auto" ? "Only destroying the ship wins: with its crew dead a ship runs itself, like FTL's drone ships and the flagship (systems repair on their own, the helm flies itself)." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
       ${this.pauseRules(cfg, host, !!pc)}
       <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""} ${host ? "" : "disabled"}></label>
       <div class="kv"><span>Battle music</span><select data-music>

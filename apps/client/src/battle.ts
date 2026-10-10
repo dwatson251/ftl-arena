@@ -207,6 +207,11 @@ export class Battle {
     }
     this.prev = this.view ?? v;
     this.view = v;
+    // Saved positions start as everyone's starting spot, so "return to stations" works before any save.
+    if (!this.savedStations.size) {
+      const g = this.own.geo;
+      for (const c of v.ships[v.you].crew) if (c.owner === v.you && c.drone === undefined && !c.dead) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
+    }
     this.soundscape(v);
     this.snapAt = performance.now();
     for (const e of v.events) this.onEvent(e);
@@ -1125,6 +1130,7 @@ export class Battle {
       this.crewHit.push({ id: c.id, box: { x: 10, y, w: 86, h: 26 } });
       y += 30;
     }
+    this.crewListBottom = y + 50;
     // FTL's "save stations" and "return to stations" buttons.
     const base = texNow("statusUI/button_station_base.png");
     this.stationBtns = [];
@@ -1140,6 +1146,8 @@ export class Battle {
   }
 
   private stationBtns: { kind: "assign" | "return"; box: Box }[] = [];
+  /** Where the crew list (and its station buttons) ends: the reactor column fits below it. */
+  private crewListBottom = 0;
   /** AUTOFIRE mode: new targets autofire unless Shift is held (and vice versa). */
   private autoMode = false;
   /** Saved stations: crew id -> room. */
@@ -1257,13 +1265,17 @@ export class Battle {
     const bonus = Math.max(0, s.reactorBonus ?? 0);
     const free = s.reactor + (s.reactorBonus ?? 0) - used;
     const g = h.gfx("reactor");
-    // Reactor: free power green from the bottom, used power as outlines; hatch and wire to the systems.
-    const shown = Math.min(s.reactor + bonus, 10);
+    // Reactor: free power green from the bottom, used power as outlines; hatch and wire to the systems. Every
+    // bar the reactor has is shown: past what FTL's column holds, the bars squeeze to fit below the crew list.
+    const shown = s.reactor + bonus;
+    const room = 686 - Math.max(this.crewListBottom, 330);
+    const pitch = Math.max(2, Math.min(BAR_PITCH, Math.floor(room / Math.max(1, shown))));
+    const bh = Math.max(1, Math.min(6, pitch - 2));
     for (let i = 0; i < shown; i++) {
-      const yy = 686 - i * BAR_PITCH;
+      const yy = 686 - i * pitch;
       // Battery bars sit on top of the reactor's, in FTL's battery orange.
-      if (i < free) g.rect(13, yy, 27, 6).fill({ color: i >= s.reactor ? 0xffa030 : 0x78ff78 });
-      else g.rect(13.5, yy + 0.5, 26, 5).stroke({ color: 0xe8ece8, width: 1 });
+      if (i < free) g.rect(13, yy, 27, bh).fill({ color: i >= s.reactor ? 0xffa030 : 0x78ff78 });
+      else g.rect(13.5, yy + 0.5, 26, Math.max(1, bh - 1)).stroke({ color: 0xe8ece8, width: 1 });
     }
     const systems = MAIN_SYS.map((id) => s.systems[id]).filter(Boolean) as NonNullable<ShipView["systems"][SystemId]>[];
     const lastX = systems.length ? this.lay.sysX[systems[systems.length - 1].id]! : SYS_X0;

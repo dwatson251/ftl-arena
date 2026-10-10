@@ -189,3 +189,13 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 |---|---|---|
 | Doors vs intruders | No door system or level 1: intruders open the door and walk through; level 2+ (or a manned level 1) must be shot down; a hacking lock counts as level-3 blast doors | wiki |
 | Shooting | Fights, door breaking and system wrecking all fire a shot each swing (~1-1.3 s): the gun's firing frames, a bolt, a spark at the console, and FTL's small-arms sound (`crewLaser1-3`); punching plays FTL's brawling loop | FTL sounds.xml + design |
+
+## Round 15
+| Rule | Value | Source |
+|---|---|---|
+| Flak | All pieces leave at once and spread over the target area | FTL |
+| Autonomous ships (replaces kill-the-crew) | Only destruction wins. With none of its crew alive aboard, a ship runs itself: its helm flies without a pilot (no manning bonus) and damaged systems mend at 0.08 bar/s each, except in rooms with intruders | user, like FTL's drone ships and the flagship; repair rate est |
+| Wrecked systems | A system destroyed by boarders or fire (not a weapon hit) costs its ship 1 hull | wiki |
+| Door sieges | Intruders' shots at a door add up; a boarder sent to a room joins a siege already under way on a door into it | FTL / wiki |
+| Consoles | A player hull's manned system with no interior named gets FTL's stock one for its room's shape, so its computer is drawn and the station sits at it | FTL default interiors |
+| Saved stations | Default to where the crew start | user |

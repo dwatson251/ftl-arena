@@ -225,6 +225,25 @@ export function parseAnimations(xml: string, db: Pick<GameDB, "animSheets" | "we
   }
 }
 
+/** FTL's stock interior for a system, fitting its room (and its console on the fixed station tile, if any). */
+function stockInterior(
+  sys: ShipSystemSlot, room: { w: number; h: number } | undefined, computers: Record<string, { x: number; y: number; dir: string }>,
+  imageSize: (path: string) => { w: number; h: number } | undefined,
+): string | undefined {
+  if (!room) return undefined;
+  const names = [`room_${sys.id}`, ...Array.from({ length: 20 }, (_, i) => `room_${sys.id}_${i + 2}`)];
+  const fits = names.filter((n) => {
+    const sz = imageSize(`img/ship/interior/${n}.png`);
+    return sz && Math.round(sz.w / 35) === room.w && Math.round(sz.h / 35) === room.h && computers[n.replace(/^room_/, "")];
+  });
+  if (sys.station < 0) return fits[0];
+  return fits.find((n) => {
+    const pc = computers[n.replace(/^room_/, "")];
+    const tile = Math.floor(pc.y / 35) * room.w + Math.floor(pc.x / 35);
+    return tile === sys.station && (!sys.facing || pc.dir.toLowerCase() === sys.facing);
+  });
+}
+
 /** The Rebel flagship's three stages (BOSS_1..3 in blueprints.xml). */
 const FLAGSHIP = /^BOSS_[123]$/;
 const RULES_FLAGSHIP_CREW = 8;
@@ -242,7 +261,7 @@ const HANGAR = [
  * Load order mirrors the game: blueprints.xml, then dlcBlueprints.xml, then dlcBlueprintsOverwrite.xml;
  * later definitions win.
  */
-export function buildDbFromFtl(read: FileSource): GameDB {
+export function buildDbFromFtl(read: FileSource, imageSize?: (path: string) => { w: number; h: number } | undefined): GameDB {
   const text = { ...parseText(read("data/text_blueprints.xml") ?? ""), ...parseText(read("data/text_misc.xml") ?? "") };
   const db: GameDB = {
     source: "ftl", weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, animSheets: {}, weaponAnims: {},
@@ -328,6 +347,10 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   for (const s of Object.values(db.ships)) {
     const L = db.layouts[s.layout];
     for (const sys of s.systems) {
+      // A player hull's manned system with no interior named gets FTL's stock one for its room's shape
+      // (room_pilot, room_engines_3...), so its computer is drawn and its station sits at that console. When
+      // the blueprint fixes the station (<slot>), only an interior whose console is on that tile will do.
+      if (!sys.img && imageSize && !s.enemy && MANNED.has(sys.id)) sys.img = stockInterior(sys, L?.rooms.find((r) => r.id === sys.room), computers, imageSize);
       const pc = sys.img ? computers[sys.img.replace(/^room_/, "")] : undefined;
       // A <slot> without a <direction>: face the interior's computer.
       const bay = sys.id === "medbay" || sys.id === "clonebay";

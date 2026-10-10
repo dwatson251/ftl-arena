@@ -422,7 +422,8 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
     tacticalLength: clamp(Math.round(Number(c.tacticalLength ?? RULES.tacticalLength) || RULES.tacticalLength), 3, 60),
     pauseBank: bank === 0 && !practice ? RULES.pauseBank : bank,
     pauseRegen: clamp(Math.round(Number(c.pauseRegen ?? RULES.pauseRegen) || 0), 0, 60),
-    winCondition: c.winCondition === "crew" ? "crew" : "hull",
+    // "auto" replaced the old kill-the-crew mode (an old "crew" setting means it too).
+    winCondition: c.winCondition === "auto" || (c.winCondition as string) === "crew" ? "auto" : "hull",
     scrap: clamp(Math.round(Number(c.scrap) || 0), 0, 10000),
     shipPool: (Array.isArray(c.shipPool) ? c.shipPool : []).filter((s) => db.hangar.includes(s)),
     timeLimit: clamp(Math.round(Number(c.timeLimit) || 0), 0, 3600),

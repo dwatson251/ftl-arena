@@ -103,9 +103,9 @@ describe("boarding", () => {
     expect(doorsOut.some((i) => m.doorOpen(them, i))).toBe(true);
   });
 
-  it("a living boarder keeps a player in a crew-kill match", () => {
+  it("a living boarder keeps a player in the match", () => {
     const db = boardingDb();
-    const m = new Match(db, { ...DEFAULT_CONFIG, winCondition: "crew" }, [boarder(db), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
+    const m = new Match(db, { ...DEFAULT_CONFIG, winCondition: "hull" }, [boarder(db), baseLoadout(db, "PH_SKIFF")], ["a", "b"]);
     const [me] = m.state.ships;
     padUp(m, 1);
     m.push(0, { c: "teleport", room: 5 });
