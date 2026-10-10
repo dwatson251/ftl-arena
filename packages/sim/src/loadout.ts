@@ -52,11 +52,28 @@ export function hullSystems(db: GameDB, shipId: string, unlimited = false): { id
     if (seenRoom.has(slot.room) && !shared) continue;
     seenRoom.add(slot.room);
     const bp = db.systems[baseSystemId(slot.id)];
-    // Unrestricted mode only lifts the weapons system's cap (plus the reactor).
-    const max = unlimited && slot.id === "weapons" ? RULES.unlimitedLevel : bp ? bp.maxPower : Math.max(4, slot.power, slot.max ?? 0);
+    // Unrestricted mode lifts the weapons and drone systems to the most power their slots could ever use (the
+    // hungriest weapon or drone in every slot); the reactor follows (reactorCap).
+    let max = bp ? bp.maxPower : Math.max(4, slot.power, slot.max ?? 0);
+    if (unlimited && slot.id === "weapons") max = Math.max(max, (s.weaponSlots ?? 4) * maxPower(buyableWeapons(db).map((w) => db.weapons[w]?.power ?? 0)));
+    if (unlimited && slot.id === "drones") max = Math.max(max, (s.droneSlots ?? 0) * maxPower(buyableDrones(db).map((d) => db.droneBPs?.[d]?.power ?? 0)));
     out.push({ id: slot.id, base: slot.start ? slot.power : 0, max, room: slot.room });
   }
   return out;
+}
+
+const maxPower = (xs: number[]) => xs.reduce((a, b) => Math.max(a, b), 0);
+
+/**
+ * The most reactor a hull may buy: FTL's 25, or in unrestricted mode enough to run its eight biggest systems
+ * at their (raised) maximum at once (subsystems need none; the medbay and clone bay count once).
+ */
+export function reactorCap(db: GameDB, shipId: string, unlimited = false): number {
+  if (!unlimited) return RULES.reactorMax;
+  const main = hullSystems(db, shipId, true).filter((h) => !isSubsystem(h.id));
+  const bay = Math.max(0, ...main.filter((h) => h.id === "medbay" || h.id === "clonebay").map((h) => h.max));
+  const maxes = [...main.filter((h) => h.id !== "medbay" && h.id !== "clonebay").map((h) => h.max), ...(bay ? [bay] : [])].sort((a, b) => b - a);
+  return Math.max(RULES.reactorMax, maxes.slice(0, RULES.maxSystems).reduce((a, b) => a + b, 0));
 }
 
 /**
@@ -152,7 +169,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   const installed = Object.entries(l.systems).filter(([id, lv]) => (lv ?? 0) > 0 && !isSubsystem(id as SystemId)).length;
   if (installed > RULES.maxSystems) errors.push(`FTL allows at most ${RULES.maxSystems} systems (subsystems don't count)`);
   if (!Number.isInteger(l.reactor) || l.reactor < base.reactor) errors.push(`reactor can't go below ${base.reactor}`);
-  const reactorMax = unlimited ? RULES.unlimitedReactor : RULES.reactorMax;
+  const reactorMax = reactorCap(db, l.ship, unlimited);
   if (l.reactor > reactorMax) errors.push(`reactor max is ${reactorMax}`);
   let rc = 0;
   for (let lv = base.reactor; lv < l.reactor; lv++) rc += RULES.reactorPrice(lv);

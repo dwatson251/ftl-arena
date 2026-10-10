@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placeholderDb, type GameDB } from "@ftl/data";
-import { baseLoadout, DEFAULT_CONFIG, Match, priceLoadout, RULES, viewFor } from "@ftl/sim";
+import { baseLoadout, buyableWeapons, DEFAULT_CONFIG, hullSystems, Match, priceLoadout, reactorCap, RULES, viewFor } from "@ftl/sim";
 
 function dbWithAugs(): GameDB {
   const db = placeholderDb();
@@ -146,11 +146,19 @@ describe("doors and fog", () => {
     m.step();
     expect(viewFor(m, 0).ships[1].hull).toBeGreaterThan(0);
   });
-  it("unrestricted mode lifts only the weapons system", () => {
+  it("unrestricted mode lifts weapons (and drones) to the most their slots could use, and the reactor to match", () => {
     const db = placeholderDb();
     const base = baseLoadout(db, "PH_SKIFF");
-    expect(priceLoadout(db, { ...base, systems: { ...base.systems, weapons: 20 } }, 99999, [], true).ok).toBe(true);
+    const wmax = hullSystems(db, "PH_SKIFF", true).find((h) => h.id === "weapons")!.max;
+    const most = Math.max(...buyableWeapons(db).map((w) => db.weapons[w].power));
+    expect(wmax).toBe(Math.max(db.systems.weapons.maxPower, (db.ships.PH_SKIFF.weaponSlots ?? 4) * most));
+    expect(priceLoadout(db, { ...base, systems: { ...base.systems, weapons: wmax } }, 99999, [], true).ok).toBe(true);
+    expect(priceLoadout(db, { ...base, systems: { ...base.systems, weapons: wmax + 1 } }, 99999, [], true).ok).toBe(false);
     expect(priceLoadout(db, { ...base, systems: { ...base.systems, shields: 12 } }, 99999, [], true).ok).toBe(false);
+    const cap = reactorCap(db, "PH_SKIFF", true);
+    expect(cap).toBeGreaterThanOrEqual(RULES.reactorMax);
+    expect(priceLoadout(db, { ...base, reactor: cap }, 99999, [], true).ok).toBe(true);
+    expect(priceLoadout(db, { ...base, reactor: cap + 1 }, 99999, [], true).ok).toBe(false);
   });
 });
 

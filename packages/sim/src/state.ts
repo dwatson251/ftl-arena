@@ -13,7 +13,7 @@ export interface MatchConfig {
   /** Seconds before the match is called a draw by hull %; 0 = no limit. */
   timeLimit: number;
   seed: number;
-  /** "For fun": system levels up to 20 and reactor up to 60 in the hangar. */
+  /** Unrestricted hangar: weapons, drones and reactor up to the most the hull could ever use (loadout.ts). */
   unlimited?: boolean;
 }
 

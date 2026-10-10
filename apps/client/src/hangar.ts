@@ -7,7 +7,7 @@ import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
 import { hasImg } from "./assets.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
-  baseLoadout, buyableDrones, fullPowerNeed, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
+  baseLoadout, buyableDrones, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
   type MatchConfig,
 } from "@ftl/sim";
 
@@ -205,7 +205,7 @@ export class Hangar {
       <div class="kv"><span>Scrap</span><input data-cfg="scrap" type="number" min="0" max="5000" step="50" value="${cfg.scrap}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" ${host ? "" : "disabled"} style="width:90px"></div>
       <div class="note">${cfg.winCondition === "crew" ? "Hulls can't drop below 1: only a dead crew ends it." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
-      <label class="kv"><span>Unrestricted systems <span class="note">(for fun: 20 bars, 60 reactor)</span></span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""} ${host ? "" : "disabled"}></label>
+      <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""} ${host ? "" : "disabled"}></label>
       <div class="kv"><span>Battle music</span><select data-music>
         <option value="" ${battleTrackSetting() === "" ? "selected" : ""}>Random</option>
         <option value="off" ${battleTrackSetting() === "off" ? "selected" : ""}>Off</option>
@@ -322,7 +322,7 @@ export class Hangar {
       ${rows}
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>
         <button class="small" data-reactor="-1" ${l.reactor <= base.reactor ? "disabled" : ""}>−</button>
-        <button class="small" data-reactor="1" ${l.reactor >= (unl ? RULES.unlimitedReactor : RULES.reactorMax) ? "disabled" : ""}>+</button><span class="note">${RULES.reactorPrice(l.reactor)} per bar</span></div>
+        <button class="small" data-reactor="1" ${l.reactor >= reactorCap(db, l.ship, unl) ? "disabled" : ""}>+</button><span class="note">${RULES.reactorPrice(l.reactor)} per bar</span></div>
       ${this.powerNote(l)}
       ${this.nav("Ship", "Weapons")}`;
   }

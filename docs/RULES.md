@@ -171,3 +171,5 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Chain / charge weapons | Their `<boost>` glow lights up on the gun; no pips in the tray | animations.xml |
 | Death and repair sounds | Per race (`engiDeath`, `mantisDeath`, `rockDeath`, `crystalDeath`, `energyDeath`, `shrikeDeath` for Lanius, female names get `femaleDeath*`); Lanius repair `shrikeRepair`; Rockmen and Crystals hammer (`rockThud*`, a guess) | sounds.xml |
 
+| Clone bay and the crew win | With every crew member dead, the player stays in while the clone bay has someone queued; once it's destroyed (no one left to repair it) they lose, Backup DNA or not | user |
+| Unrestricted hangar | Weapons up to weapon slots × the hungriest weapon's power, drones up to drone slots × the hungriest drone's, and the reactor up to the hull's eight biggest systems at their maximum | user |

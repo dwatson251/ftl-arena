@@ -77,9 +77,6 @@ export const RULES = {
   missilePrice: 6,
   reactorPrice: (level: number) => 30 + 5 * Math.max(0, Math.floor((level - 5) / 5)),
   reactorMax: 25,
-  /** Unrestricted hangar ("for fun"): every system to 20 bars, reactor to 60. */
-  unlimitedLevel: 20,
-  unlimitedReactor: 60,
   /** Death animation length (5 frames). */
   deathAnim: 0.9,
   /** Clone bay: seconds to clone by power 0..3 (wiki), one crew member at a time; switched off, it loses the
