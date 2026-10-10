@@ -1,5 +1,5 @@
 /** The hangar: price a loadout against a base hull, validate it, and build the ship it describes. */
-import { SUBSYSTEMS, V1_SYSTEMS, type GameDB, type SystemId } from "@ftl/data";
+import { baseSystemId, SUBSYSTEMS, V1_SYSTEMS, type GameDB, type SystemId } from "@ftl/data";
 import { geometry, key } from "./geometry.ts";
 import { raceOf, RACES, RULES, SKILLS } from "./rules.ts";
 import type { CrewState, ShipState, SystemState } from "./state.ts";
@@ -51,9 +51,9 @@ export function hullSystems(db: GameDB, shipId: string, unlimited = false): { id
     const shared = slot.id === "medbay" || slot.id === "clonebay";
     if (seenRoom.has(slot.room) && !shared) continue;
     seenRoom.add(slot.room);
-    const bp = db.systems[slot.id];
+    const bp = db.systems[baseSystemId(slot.id)];
     // Unrestricted mode only lifts the weapons system's cap (plus the reactor).
-    const max = unlimited && slot.id === "weapons" ? RULES.unlimitedLevel : bp ? bp.maxPower : 3;
+    const max = unlimited && slot.id === "weapons" ? RULES.unlimitedLevel : bp ? bp.maxPower : Math.max(4, slot.power, slot.max ?? 0);
     out.push({ id: slot.id, base: slot.start ? slot.power : 0, max, room: slot.room });
   }
   return out;
@@ -255,6 +255,7 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     systems[h.id] = {
       id: h.id, room: slot.room, level, power: 0, damage: 0, repair: 0, ion: 0, ionTimer: 0, station, fireDmg: 0, bonus: 0,
       facing: station ? slot.facing ?? "up" : undefined,
+      ...(slot.weapon && db.weapons[slot.weapon] ? { weapon: slot.weapon, charge: 0 } : {}),
     } satisfies SystemState;
   }
   const ship: ShipState = {
@@ -347,9 +348,12 @@ export function autoPower(db: GameDB, ship: ShipState): void {
     if (ws.power < used + need) give("weapons", used + need - ws.power);
     if (ws.power >= used + need) w.powered = true;
   }
+  // Artillery is the hull's main gun (the Osprey starts with it powered).
+  for (const id of ["artillery", "artillery2", "artillery3", "artillery4"] as SystemId[]) give(id, 99);
   give("medbay", 1);
   give("clonebay", 1);
   give("teleporter", 99);
+  give("mind", 99);
   give("cloaking", 99);
   give("hacking", 99);
 }

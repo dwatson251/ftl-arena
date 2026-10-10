@@ -127,6 +127,22 @@ export const RULES = {
   hackMedbayDps: 8,
   hackWeaponDrain: 1,
   hackDroneKill: 0.33,
+  /** Battery ("Provides N bonus power"): +2/+4 for 30 s, then 30 s locked (est; Battery Charger halves the lock). */
+  batteryPower: [0, 2, 4],
+  batteryDuration: 30,
+  batteryCooldown: 30,
+  /** Mind control (est): control time by level, recharge after, and the level 2/3 health and damage boost. */
+  mindDuration: [0, 14, 20, 28],
+  mindCooldown: 20,
+  mindBoost: [0, 0, 0.3, 0.6],
+  /** Artillery (est): charge time multiplier by system level (the weapon's own cooldown at level 1). */
+  artilleryCharge: [1, 1, 0.8, 0.65, 0.5],
+  /** Shield Overcharger drone: one super-shield point per cooldown, up to this many (est). */
+  shieldDroneMax: 5,
+  /** Firing while cloaked cuts this many seconds off the cloak (est; Stealth Weapons prevents it). */
+  cloakFirePenalty: 1.5,
+  /** The Rebel flagship's crew (its blueprints don't list one; est). */
+  flagshipCrew: 8,
   maxCrew: 8,
   sellRefund: 0.5,
 };
@@ -199,4 +215,11 @@ export const AUGMENT_EFFECTS: Record<string, string> = {
   FIRE_EXTINGUISHERS: "Fires on your ship burn out on their own, quickly.",
   SLUG_GEL: "Hull breaches slowly seal themselves.",
   BACKUP_DNA: "The clone bay keeps its queue while unpowered or destroyed.",
+  DRONE_SPEED: "Drones fly, fire and recharge 25% faster.",
+  DEFENSE_SCRAMBLER: "Enemy defense drones can't target anything.",
+  CLOAK_FIRE: "Firing while cloaked no longer shortens the cloak.",
+  TELEPORT_HEAL: "Crew arrive fully healed whenever they teleport.",
+  BATTERY_BOOSTER: "The battery's lock time after use is halved.",
+  HACKING_STUN: "Everyone in the hacked room is stunned for the length of a pulse.",
+  ZOLTAN_BYPASS: "Teleporting, bombs and mind control work through a Zoltan super shield.",
 };

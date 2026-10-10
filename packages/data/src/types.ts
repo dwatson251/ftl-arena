@@ -49,14 +49,24 @@ export interface WeaponBP {
 
 export type SystemId =
   | "shields" | "engines" | "oxygen" | "weapons" | "medbay" | "pilot" | "sensors" | "doors"
-  | "drones" | "teleporter" | "cloaking" | "battery" | "mind" | "hacking" | "clonebay" | "artillery";
+  | "drones" | "teleporter" | "cloaking" | "battery" | "mind" | "hacking" | "clonebay" | "artillery"
+  // The Rebel flagship's extra guns: further artillery systems, each in its own room.
+  | "artillery2" | "artillery3" | "artillery4";
+
+/** Artillery ids (the flagship has up to four). Icons and rules share the "artillery" ones. */
+export const ARTILLERY_IDS: SystemId[] = ["artillery", "artillery2", "artillery3", "artillery4"];
+/** The id FTL's art and blueprints use for a system (artillery2 -> artillery). */
+export const baseSystemId = (id: SystemId): SystemId => (id.startsWith("artillery") ? "artillery" : id);
 
 /** Systems the arena simulates. Others are parsed but not installable yet. */
-export const V1_SYSTEMS: SystemId[] = ["shields", "engines", "oxygen", "weapons", "drones", "teleporter", "cloaking", "hacking", "medbay", "clonebay", "pilot", "sensors", "doors"];
+export const V1_SYSTEMS: SystemId[] = [
+  "shields", "engines", "oxygen", "weapons", "drones", "teleporter", "cloaking", "hacking", "mind", "artillery", "artillery2", "artillery3",
+  "artillery4", "medbay", "clonebay", "pilot", "sensors", "doors", "battery",
+];
 
 export type DroneType = "COMBAT" | "DEFENSE" | "SHIP_REPAIR" | "REPAIR" | "BATTLE" | "BOARDER" | "HACKING" | "SHIELD";
 /** Drone types the arena flies: space drones, plus interior and boarding drones (hacking and the shield drone come later). */
-export const SPACE_DRONES: DroneType[] = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER"];
+export const SPACE_DRONES: DroneType[] = ["COMBAT", "DEFENSE", "SHIP_REPAIR", "BATTLE", "REPAIR", "BOARDER", "SHIELD"];
 /** Drones that act as units inside a ship (anti-personnel, system repair, boarding). */
 export const UNIT_DRONES: DroneType[] = ["BATTLE", "REPAIR", "BOARDER"];
 
@@ -175,6 +185,8 @@ export interface ShipSystemSlot {
   facing?: "up" | "down" | "left" | "right";
   /** Interior image name (img/ship/interior/<img>.png). */
   img?: string;
+  /** Artillery: the weapon blueprint it fires. */
+  weapon?: string;
 }
 
 export interface ShipBP {

@@ -41,6 +41,9 @@ export interface SystemState {
   locked?: boolean;
   /** A hacking pulse is running on this system (recomputed every tick). */
   hacked?: boolean;
+  /** Artillery: the weapon it fires and its charge (seconds). */
+  weapon?: string;
+  charge?: number;
   /** Subsystems (sensors, doors) work one level higher while manned (recomputed every tick). */
   manBonus?: number;
   /** Direction a crew member at the station faces. */
@@ -88,6 +91,8 @@ export interface CrewState {
   drone?: number;
   /** Seconds of door-bashing / sabotage progress (boarders). */
   bash?: number;
+  /** Mind controlled: by which player, seconds left, the true owner, the damage boost and the max HP before. */
+  mind?: { by: 0 | 1; t: number; owner: 0 | 1; boost: number; maxHp: number };
 }
 
 export type WeaponTarget =
@@ -138,6 +143,14 @@ export interface ShipState {
   doorPass?: number[];
   /** Room whose doors an enemy hacking drone has locked (recomputed every tick). */
   lockedRoom?: number;
+  /** Battery: seconds of bonus power left, and lock time after. */
+  battery?: { t: number; cd: number };
+  /** Mind control recharge (seconds). */
+  mindCd?: number;
+  /** Artillery target room (null: a random room each shot). */
+  artilleryTarget?: number | null;
+  /** Extra reactor bars from the battery (minus a hacked battery's two), recomputed every tick. */
+  reactorBonus?: number;
   /** Cloaking: seconds of cloak left, and recharge left after it. */
   cloak?: { t: number; cd: number };
   /** This ship's hacking drone: in flight (attached false) or on an enemy room; pulse and recharge timers. */
@@ -200,6 +213,9 @@ export type MatchEvent =
   /** `ship`'s hacking drone landed on / started a pulse on the enemy `room`. */
   | { e: "hackLand"; ship: 0 | 1; room: number }
   | { e: "hackPulse"; ship: 0 | 1; room: number }
+  | { e: "battery"; ship: 0 | 1; on: boolean }
+  /** `ship` mind-controlled (on) or released (off) crew member `crew`. */
+  | { e: "mind"; ship: 0 | 1; crew: number; on: boolean }
   | { e: "end"; winner: 0 | 1 | -1; reason: string };
 
 export interface MatchState {

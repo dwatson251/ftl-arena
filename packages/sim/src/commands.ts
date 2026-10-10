@@ -21,4 +21,9 @@ export type Command =
   | { c: "cloak" }
   /** Launch the hacking drone at an enemy room (uses a drone part), then pulse it. */
   | { c: "hackLaunch"; room: number }
-  | { c: "hackPulse" };
+  | { c: "hackPulse" }
+  | { c: "battery" }
+  /** Mind control one hostile crew member in a room (on the enemy ship, or an intruder at home). */
+  | { c: "mind"; room: number; enemy: boolean }
+  /** Point the artillery at an enemy room (null: random rooms). */
+  | { c: "artilleryTarget"; room: number | null };

@@ -131,7 +131,12 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
 - **Hacking:** launch the drone at a room to lock that system, then pulse it for the system's FTL effect.
 - **Hulls:** all 28 player hulls, including the C variants, Zoltan, Stealth and Crystal ships.
 
-Planned next: mind control, battery and artillery (the hulls that carry them fly without them for now).
+- **Battery, mind control, artillery:** the Zoltan C battery, the Slug C / Lanius B mind control, and
+  the Federation artillery beam.
+- **The Rebel flagship:** stages 1-3 can be picked as single-player opponents.
+
+Every FTL system is in. Campaign-only augments (scrap, FTL jumps, the map) are kept and marked as having
+no effect in the arena.
 
 ## Layout
 | Path | What |

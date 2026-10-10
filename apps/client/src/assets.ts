@@ -136,6 +136,11 @@ export async function preload(db: GameDB): Promise<boolean> {
   files.add("icons/locking/s_ring_timer.png");
   files.add("icons/s_hacked.png");
   files.add("icons/locking/s_lock.png");
+  files.add("people/mindcontrol_strip8.png");
+  files.add("systemUI/button_battery3_base.png");
+  for (let i = 1; i <= 4; i++) files.add(`systemUI/button_artillery_${i}.png`);
+  for (const id of ["battery", "mind", "artillery"]) for (const c of ["green", "grey", "orange", "red", "blue"]) files.add(`icons/s_${id}_${c}1.png`);
+  for (const id of db.enemies ?? []) if (/^BOSS_/.test(id)) files.add(`ships_glow/${db.ships[id].img}_cloak.png`);
   for (let n = 1; n <= 3; n++) for (const f of ["base", "on", "off", "select2", "charging_on", "charging_off"]) files.add(`systemUI/button_cloaking${n}_${f}.png`);
   for (const f of ["hack2_top_base", "hack2_bottom_base", "hack_drone_on", "hack_drone_off", "hack_drone_select2", "hack_grid_on", "hack_grid_off", "hack_grid_purple_on"]) files.add(`systemUI/button_${f}.png`);
   for (const f of ["base", "land", "light1", "light2"]) files.add(`ship/drones/drone_hack_${f}.png`);

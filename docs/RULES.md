@@ -115,3 +115,18 @@ Driving the real game needs the owner's go-ahead, because it takes over their mo
 | Hacked medbay | Never heals; hurts its own crew while pulsed | FTL |
 | Drone units | Repair themselves in their own drone room, at medbay level-1 speed; go home below 40 % | user rule |
 | Boarding drones | Never player-controlled. They land in a random room (breaching it), then wander system rooms wrecking (or ionising) them. They fight only what's in their room. | FTL |
+
+## Final systems (round 10; effects from FTL's text, timings estimated)
+| Rule | Value | Source |
+|---|---|---|
+| Enemy hull bar | Always visible and always green, whatever your sensors | user rule |
+| Battery (subsystem) | +2 / +4 reactor bars for 30 s, then locked 30 s (Battery Charger halves the lock); bars come off the least vital systems when it ends | FTL text ("Provides N bonus power") + est |
+| Hacked battery | Takes 2 bars off the reactor while pulsed | FTL `hack_battery` |
+| Mind control | Pick a room: its healthiest hostile crew member fights for you for 14 / 20 / 28 s; levels 2 and 3 add +30 % / +60 % health and damage; 20 s recharge after; a Zoltan shield blocks it | FTL `mind_1..3` text + est |
+| Mind-controlled crew | Only fight (no orders, no work); still count as their owner's crew for the win | FTL |
+| Artillery | Fires its weapon by itself when charged, at the aimed room or a random one; the Fed beam charges in 40 / 32 / 26 / 20 s by level and pierces all shields | FTL tooltip + est |
+| Beams vs shields | Each layer takes a point off a beam, less the weapon's piercing | FTL |
+| Rebel flagship | Stages 1-3 as single-player enemies: four / three / two artillery guns at their listed cooldowns, stage 2's drones, 8 crew (est; FTL places them by event) | blueprints.xml |
+| Shield Overcharger drone | +1 super-shield point every 15 s, up to 5 | est |
+| Cloak fire | Each volley fired while cloaked takes 1.5 s off the cloak (Stealth Weapons prevents it) | FTL augment text + est |
+| Augments | Reconstructive Teleport (full heal on teleport), Hacking Stun (stun for the pulse), Zoltan Shield Bypass (teleport, bombs and mind control through super shields) | FTL text |

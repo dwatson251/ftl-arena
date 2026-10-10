@@ -182,6 +182,15 @@
   now sits under the crew and doors layer.
 - **Hangar:** it was a fixed list from round 1. It now has all 28 player hulls.
 
+## Round 10: the last systems and the flagship
+- **Flagship guns:** the flagship lists four `<artillery>` systems. They load as `artillery`,
+  `artillery2`..`artillery4`, each a real system with its own room, power and damage. Art and rules key
+  off `baseSystemId`.
+- **Flagship blueprints:** BOSS_1..3 are in `blueprints.xml`, which the enemy scan skipped (it only read
+  `*Blueprints.xml`). They have no crew or weapon list, so the crew is a fixed estimate. Their art is in
+  `ships_glow/` and is vertical, like every other enemy's.
+- **Fixed on the way:** beams ignored shield piercing.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

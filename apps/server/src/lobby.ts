@@ -91,7 +91,9 @@ export class Lobby {
     const seed = Math.abs(this.config.seed);
     if (pc.botShip === "@enemy" || this.db.enemies.includes(pc.botShip)) {
       // A single-player enemy hull: its own systems/weapon pool, scaled by difficulty, plus bonus hull.
-      const ship = pc.botShip === "@enemy" ? this.db.enemies[seed % this.db.enemies.length] : pc.botShip;
+      // A random enemy is an ordinary single-player ship; the flagship is picked on purpose.
+      const ordinary = this.db.enemies.filter((e) => !/^BOSS_/.test(e));
+      const ship = pc.botShip === "@enemy" ? ordinary[seed % ordinary.length] : pc.botShip;
       p.loadout = enemyLoadout(this.db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14));
       p.priced = { ok: true, total: 0, lines: [], errors: [] };
     } else {

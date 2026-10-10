@@ -112,7 +112,7 @@ export class Bot {
     const hurt = ship.crew.some((c) => !c.dead && c.owner === ship.idx && c.hp < c.maxHp * 0.45);
     const med = ship.systems.medbay;
     let medFree = !hurt && !!med && med.power > 0;
-    for (const id of ["hacking", "cloaking", "teleporter"] as SystemId[]) {
+    for (const id of ["artillery", "artillery2", "artillery3", "artillery4", "mind", "hacking", "cloaking", "teleporter"] as SystemId[]) {
       const s = ship.systems[id];
       if (!s || s.locked || s.power >= usable(s)) continue;
       if (used < ship.reactor) {
@@ -129,6 +129,34 @@ export class Bot {
   }
 
   private cloakAndHack(m: Match, ship: ShipState, enemy: ShipState, out: Command[]): void {
+    // Battery: switch it on whenever systems want more power than the reactor gives.
+    const bat = ship.systems.battery;
+    if (bat && m.eff(bat) > 0 && (ship.battery?.t ?? 0) <= 0 && (ship.battery?.cd ?? 0) <= 0) {
+      const want = Object.values(ship.systems).some((s) => s && !["pilot", "sensors", "doors", "battery", "medbay", "clonebay"].includes(s.id) && s.power < usable(s));
+      if (want) {
+        out.push({ c: "battery" });
+        this.note(m, "battery");
+      }
+    }
+    // Mind control: intruders at home first, else the enemy room with the most crew.
+    const ms = ship.systems.mind;
+    if (ms && m.eff(ms) > 0 && (ship.mindCd ?? 0) <= 0) {
+      const g = geometry(m.db.layouts[ship.layout]);
+      const intruder = ship.crew.find((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
+      if (intruder) out.push({ c: "mind", room: g.tiles.get(intruder.tile)!.room, enemy: false });
+      else if ((enemy.superShield ?? 0) <= 0) {
+        const eg = geometry(m.db.layouts[enemy.layout]);
+        const counts = new Map<number, number>();
+        for (const c of enemy.crew) if (c.owner === enemy.idx && !c.dead && c.drone === undefined && !c.mind) counts.set(eg.tiles.get(c.tile)!.room, (counts.get(eg.tiles.get(c.tile)!.room) ?? 0) + 1);
+        const best = [...counts].sort((a, b) => b[1] - a[1])[0];
+        if (best && best[1] >= 2) out.push({ c: "mind", room: best[0], enemy: true });
+      }
+    }
+    // Artillery: aim at the shields (then weapons) when the bot knows where they are.
+    if (ship.systems.artillery && this.level >= 0.4 && ship.artilleryTarget == null) {
+      const t = enemy.systems.shields ?? enemy.systems.weapons;
+      if (t) out.push({ c: "artilleryTarget", room: t.room });
+    }
     const cs = ship.systems.cloaking;
     if (cs && m.eff(cs) > 0 && (ship.cloak?.t ?? 0) <= 0 && (ship.cloak?.cd ?? 0) <= 0) {
       // Cloak as a volley leaves the enemy's guns (+60 evasion while it flies).
@@ -404,7 +432,7 @@ export function botLoadout(db: GameDB, shipId: string, scrap: number, level: num
   };
   const weaponsPower = (x: Loadout) => x.weapons.reduce((a, w) => a + (db.weapons[w]?.power ?? 1), 0);
   /** Reactor bars the main systems want: shields, engines, 1 oxygen, 1 medbay, and the weapons in use. */
-  const demand = (x: Loadout) => lv(x, "shields") + lv(x, "engines") + Math.min(1, lv(x, "oxygen")) + Math.min(1, lv(x, "medbay")) + Math.min(lv(x, "weapons"), weaponsPower(x)) + lv(x, "teleporter") + lv(x, "cloaking") + lv(x, "hacking");
+  const demand = (x: Loadout) => lv(x, "shields") + lv(x, "engines") + Math.min(1, lv(x, "oxygen")) + Math.min(1, lv(x, "medbay")) + Math.min(lv(x, "weapons"), weaponsPower(x)) + lv(x, "teleporter") + lv(x, "cloaking") + lv(x, "hacking") + lv(x, "mind") + lv(x, "artillery");
   const feedReactor = () => {
     while (demand(l) > l.reactor && tryApply((x) => void (x.reactor += 1)));
   };
@@ -488,7 +516,7 @@ export function enemyLoadout(db: GameDB, shipId: string, level: number, seed = 1
   const top = level >= 0.5 ? sorted.slice(Math.floor(sorted.length / 3)) : sorted.slice(0, Math.ceil((sorted.length * 2) / 3));
   const weapons: string[] = [];
   let used = 0;
-  for (let tries = 0; tries < 40 && weapons.length < mounts; tries++) {
+  for (let tries = 0; tries < 40 && weapons.length < mounts && sorted.length; tries++) {
     const w = rng.pick(top.length ? top : sorted);
     if (used + w.power > bars) continue;
     weapons.push(w.id);
@@ -499,5 +527,9 @@ export function enemyLoadout(db: GameDB, shipId: string, level: number, seed = 1
   const race = s.crewRaces[0] ?? "human";
   const crew = Array.from({ length: Math.max(1, n) }, (_, i) => ({ race: RACES[race] ? race : "human", name: randomCrewName(db, [], seed * 7 + i * 31) }));
   const demand = (systems.shields ?? 0) + (systems.engines ?? 0) + Math.min(1, systems.oxygen ?? 0) + Math.min(1, systems.medbay ?? 0) + used;
-  return { ship: shipId, systems, reactor: Math.max(s.maxPower, demand), weapons, crew, missiles: Math.max(s.missiles, 8), hull: s.health + hullBonus };
+  return {
+    ship: shipId, systems, reactor: Math.max(s.maxPower, demand), weapons, crew, missiles: Math.max(s.missiles, 8), hull: s.health + hullBonus,
+    drones: (s.drones ?? []).filter((d) => db.droneBPs?.[d]).slice(0, Math.max(s.droneSlots ?? 0, (s.drones ?? []).length)),
+    droneParts: Math.max(s.droneParts ?? 0, (s.drones ?? []).length ? 6 : 0),
+  };
 }

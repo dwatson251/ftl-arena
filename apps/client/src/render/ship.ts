@@ -6,7 +6,7 @@
  * Falls back to flat shapes without extracted art.
  */
 import { Container, Graphics, Sprite, TilingSprite, type Texture } from "pixi.js";
-import type { GameDB, ShipLayout } from "@ftl/data";
+import { baseSystemId, type GameDB, type ShipLayout } from "@ftl/data";
 import { geometry, TILE, type CrewState, type Geometry, type ShipView } from "@ftl/sim";
 import { animFrame, frame, shieldFile, texNow, weaponFrame } from "../assets.ts";
 import { Imm, style } from "../imm.ts";
@@ -95,7 +95,7 @@ export class ShipRenderer {
     return !!texNow(this.art("base"));
   }
 
-  /** Single-player enemy hulls are drawn vertically in their own art. */
+  /** Single-player enemy hulls (the flagship too) are drawn vertically in their own art. */
   get nativeVertical(): boolean {
     return !!this.db.ships[this.shipId].enemy;
   }
@@ -257,7 +257,7 @@ export class ShipRenderer {
       const cx = (r.x + r.w / 2) * TILE;
       const cy = (r.y + r.h / 2) * TILE;
       const tint = s.damage >= s.level ? 0xff3c30 : s.damage > 0 ? 0xffa830 : s.ion > 0 ? 0x5aa8ff : 0x8a8a8a;
-      const t = texNow(`icons/s_${s.id}_overlay.png`);
+      const t = texNow(`icons/s_${baseSystemId(s.id)}_overlay.png`);
       if (t) d.sprite(`ic${s.id}`, t, cx, cy, { anchor: 0.5, scale: r.w * r.h <= 1 ? 0.8 : 1, rotation: up, tint });
       else {
         d.gfx(`icg${s.id}`).circle(cx, cy, 12).fill({ color: tint }).stroke({ color: 0xffffff, width: 2 });
@@ -454,7 +454,7 @@ export class ShipRenderer {
         d.sprite(`${key}sel`, sil, px, py, { anchor: 0.5, rotation: rot, tint: 0x30ff30, scale: 1.14 });
       }
       // Hostile crew get FTL's red cast; drone units keep their own colours.
-      d.sprite(key, t, px, py, { anchor: 0.5, rotation: rot, tint: cd.hostile && c.drone === undefined ? 0xffb0a8 : 0xffffff });
+      d.sprite(key, t, px, py, { anchor: 0.5, rotation: rot, tint: c.mind ? 0xd8a0ff : cd.hostile && c.drone === undefined ? 0xffb0a8 : 0xffffff });
       if (cd.hostile) d.gfx(`${key}foe`).rect(px - 12, py + 12, 24, 2).fill({ color: 0xff4a3a, alpha: 0.9 });
     } else {
       d.gfx(key).circle(px, py, 9).fill({ color: cd.hostile ? 0xe05555 : 0x5fa8ff }).stroke({ color: cd.selected ? 0x30ff30 : 0x000000, width: 2 });
@@ -471,6 +471,11 @@ export class ShipRenderer {
       } else gx.rect(px + 17, py - 13, 4, 26 * hp).fill({ color: col });
     }
     if (c.stun > 0) d.gfx(`${key}s`).circle(px, py - 14, 4).fill({ color: 0x9fd0ff });
+    // Mind controlled: FTL's spinning swirl over their head, and a purple cast.
+    if (c.mind) {
+      const sw = texNow("people/mindcontrol_strip8.png");
+      if (sw) d.sprite(`${key}mc`, frame(sw, (Math.floor(time * 10) % 8) * 14, 0, 14, 14), px, py - 22, { anchor: 0.5, rotation: this.upright });
+    }
     // Healing crosses while the medbay heals this crew member.
     const heal = texNow("people/healing_strip11.png");
     const tileRoom = this.geo.tiles.get(c.tile)?.room;

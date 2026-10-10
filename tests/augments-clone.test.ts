@@ -108,3 +108,17 @@ describe("doors and fog", () => {
     expect(priceLoadout(db, { ...base, systems: { ...base.systems, shields: 12 } }, 99999, [], true).ok).toBe(false);
   });
 });
+
+describe("enemy hull", () => {
+  it("is visible with no working sensors at all", () => {
+    const db = placeholderDb();
+    const base = baseLoadout(db, "PH_SKIFF");
+    const m = new Match(db, DEFAULT_CONFIG, [base, base], ["a", "b"]);
+    const s = m.state.ships[0].systems.sensors!;
+    s.damage = s.level;
+    m.step();
+    const v = viewFor(m, 0);
+    expect(v.ships[1].interior).toBe(false);
+    expect(v.ships[1].hull).toBe(m.state.ships[1].hull);
+  });
+});

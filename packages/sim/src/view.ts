@@ -84,8 +84,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     w.autofire = false;
   }
   if (!over) {
-    // The enemy's evasion is never shown (a later hacking drone on its helm/engines would reveal it), and
-    // its hull only with level-3 sensors.
+    // The enemy's evasion is never shown; its hull always is, whatever your sensors.
     ev.evasion = -1;
   }
   return {

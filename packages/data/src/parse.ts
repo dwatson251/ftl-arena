@@ -96,19 +96,23 @@ const MANNED = new Set(["pilot", "shields", "weapons", "engines", "sensors", "do
 
 export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
   const systems: ShipSystemSlot[] = [];
+  let guns = 0;
   for (const s of kid(n, "systemList")?.children ?? []) {
     if (!SYSTEM_IDS.has(s.tag)) continue;
+    // Extra artillery (the flagship has four) become artillery2..4.
+    const id = (s.tag === "artillery" ? (++guns > 1 ? `artillery${guns}` : "artillery") : s.tag) as SystemId;
     const slotNum = kid(kid(s, "slot"), "number");
     const dir = kid(kid(s, "slot"), "direction")?.text.trim();
     // -2 = a manned system with no <slot>: resolved later from rooms.xml (the interior's computer).
     const station = slotNum ? Number(slotNum.text.trim()) : MANNED.has(s.tag) ? -2 : -1;
     systems.push({
-      id: s.tag as SystemId,
+      id,
       room: Number(s.attrs.room),
       power: Number(s.attrs.power) || 1,
       start: s.attrs.start !== "false",
       station: MANNED.has(s.tag) || s.tag === "medbay" ? station : -1,
       img: s.attrs.img,
+      weapon: s.attrs.weapon,
       max: s.attrs.max ? Number(s.attrs.max) : undefined,
       facing: (["up", "down", "left", "right"].includes(dir ?? "") ? dir : undefined) as ShipSystemSlot["facing"],
     });
@@ -216,6 +220,10 @@ export function parseAnimations(xml: string, db: Pick<GameDB, "animSheets" | "we
   }
 }
 
+/** The Rebel flagship's three stages (BOSS_1..3 in blueprints.xml). */
+const FLAGSHIP = /^BOSS_[123]$/;
+const RULES_FLAGSHIP_CREW = 8;
+
 /** Player hulls offered in the hangar, in FTL's order. Missing ones (no AE, say) are skipped. */
 const HANGAR = [
   "PLAYER_SHIP_HARD", "PLAYER_SHIP_HARD_2", "PLAYER_SHIP_HARD_3", "PLAYER_SHIP_CIRCLE", "PLAYER_SHIP_CIRCLE_2", "PLAYER_SHIP_CIRCLE_3",
@@ -266,7 +274,7 @@ export function buildDbFromFtl(read: FileSource): GameDB {
           image: txt(n, "droneImage") ?? "", icon: txt(n, "iconImage") ?? "", rarity: num(n, "rarity"), antiDrone: n.attrs.name === "ANTI_DRONE",
         };
       } else if (n.tag === "blueprintList" && n.attrs.name) lists[n.attrs.name] = kids(n, "name").map((x) => x.text.trim());
-      else if (n.tag === "shipBlueprint" && n.attrs.name && n.attrs.layout && f.includes("Blueprints")) enemyNodes.push(n);
+      else if (n.tag === "shipBlueprint" && n.attrs.name && n.attrs.layout && (f.includes("Blueprints") || FLAGSHIP.test(n.attrs.name))) enemyNodes.push(n);
     }
   }
   for (const id of HANGAR) {
@@ -280,8 +288,10 @@ export function buildDbFromFtl(read: FileSource): GameDB {
   // Single-player enemies (autoBlueprints): weapons come from a named pool, crew from amount..max.
   for (const n of enemyNodes) {
     const id = n.attrs.name;
-    // Skip bosses, the DLC re-tunes of the same hulls, and crewless Auto ships (they need the AI-ship rules).
-    if (db.ships[id] || /BOSS|FLAGSHIP|DRONE_|_PEACE|_DLC$|^AUTO_/.test(id)) continue;
+    // The Rebel flagship's three stages are in; other bosses, the DLC re-tunes of the same hulls and
+    // crewless Auto ships (they need the AI-ship rules) are skipped.
+    const flagship = FLAGSHIP.test(id);
+    if (db.ships[id] || (!flagship && /BOSS|FLAGSHIP|DRONE_|_PEACE|_DLC$|^AUTO_/.test(id))) continue;
     const wl = kid(n, "weaponList");
     const pool = (wl?.attrs.load ? lists[wl.attrs.load] : undefined) ?? kids(wl, "weapon").map((w) => w.attrs.name);
     const s = parseShip(n, text);
@@ -290,7 +300,12 @@ export function buildDbFromFtl(read: FileSource): GameDB {
     s.weaponPool = (pool ?? []).filter((w) => db.weapons[w]);
     s.crewMax = Number(crew?.attrs.max ?? s.crewCount) || s.crewCount;
     s.weaponSlots = 4;
-    if (!s.weaponPool.length && !s.weapons.length) continue;
+    if (flagship) {
+      // Its guns are artillery rooms; its crew comes from events in FTL, so it gets a fixed one here.
+      s.title = `${s.className || "Rebel Flagship"} (stage ${id.slice(-1)})`;
+      s.crewCount = s.crewMax = RULES_FLAGSHIP_CREW;
+      s.crewRaces = Array.from({ length: RULES_FLAGSHIP_CREW }, () => "human");
+    } else if (!s.weaponPool.length && !s.weapons.length) continue;
     const t = read(`data/${s.layout}.txt`);
     if (!t) continue;
     db.layouts[s.layout] ??= parseLayout(s.layout, t, read(`data/${s.layout}.xml`));
