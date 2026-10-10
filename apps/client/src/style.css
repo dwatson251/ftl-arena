@@ -43,10 +43,10 @@ input, select { font: inherit; color: var(--text); background: #11141a; border: 
 .hangar-screen { padding: 14px 18px; }
 .hg { max-width: 1500px; margin: 0 auto; }
 .hg-steps { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
-.hg-step { padding: 8px 16px; border-width: 2px; background: #1b1f27; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
+.hg-step { padding: 8px 14px 8px 12px; white-space: nowrap; border-width: 2px; background: #1b1f27; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
 .hg-step b { color: var(--warn); margin-right: 4px; }
 .hg-step.on { background: #2f5e3a; border-color: var(--ok); }
-.hg-scrap { margin-left: auto; }
+.hg-scrap { margin-left: auto; white-space: nowrap; }
 .hg-body { display: grid; grid-template-columns: 280px 1fr 300px; gap: 12px; height: calc(100vh - 90px); }
 .hg-side, .hg-main, .hg-summary { overflow: auto; }
 .hg-main h3 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--warn); }
@@ -100,7 +100,7 @@ body.ftl-fonts .hg-main h3 { font-size: 24px; }
 body.ftl-fonts .menu h1, body.ftl-fonts .overlay h1 { font-size: 48px; }
 body.ftl-fonts .code { font-size: 48px; }
 body.ftl-fonts .scrap { font-size: 36px; }
-body.ftl-fonts .hg-step { font-size: 24px; }
+body.ftl-fonts .hg-step { font-size: 21px; }
 body.ftl-fonts .debug { font-size: 19px; }
 body.ftl-fonts .debug-log { font-family: 'FTL-JustinFont10', monospace; font-size: 19px; line-height: 0.95; }
 body.ftl-fonts b { font-weight: 400; }
@@ -138,3 +138,27 @@ button.buy { display: inline-flex; align-items: center; min-width: 64px; justify
 .sys-info .lvl.have { border-color: #3e6a45; }
 .sys-info .lvl.now { border-color: var(--ok); color: var(--text); background: #1d3a1f; }
 .sys-row:has(+ .sys-info) { border-bottom: none; }
+/* Presets step */
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin: 10px 0; }
+.preset-card { position: relative; border: 1px solid var(--edge); border-radius: 4px; background: #11151c; }
+.preset-card:hover:not(.off) { border-color: var(--ok); }
+.preset-card.warn { border-color: var(--warn); }
+.preset-card.off { opacity: 0.55; }
+.preset-pick { display: block; width: 100%; text-align: left; background: none; border: none; padding: 0 0 8px; border-radius: 4px; }
+.preset-pick:hover:not(:disabled) { background: #1a2230; }
+.preset-snap { display: block; width: 100%; height: 145px; border-radius: 4px 4px 0 0; background: #05070c; }
+.preset-pick .pc-name { display: block; font-size: 15px; padding: 6px 10px 0; color: var(--text); }
+.preset-pick .pc-ship { display: block; }
+.preset-pick .note, .preset-pick .pc-cost { padding: 0 10px; }
+.pc-cost { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pc-warn { color: var(--warn); font-size: 12px; margin-left: 6px; }
+.preset-del { position: absolute; top: 6px; right: 6px; background: rgba(10, 12, 16, 0.75); }
+.preset-del:hover { border-color: var(--bad); color: var(--bad); }
+.preset-confirm { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 14px; background: rgba(8, 10, 14, 0.92); border-radius: 4px; text-align: center; }
+.preset-confirm .row { justify-content: center; }
+button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
+.preset-new { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 210px; border-style: dashed; background: #0e1218; }
+.preset-new .plus { font-size: 36px; line-height: 1; color: var(--ok); }
+.save-box { margin: 14px 0; padding: 10px 12px; border: 1px dashed var(--edge); border-radius: 4px; }
+.save-box input { flex: 1; min-width: 200px; }
+.save-note { margin: 12px 0; }

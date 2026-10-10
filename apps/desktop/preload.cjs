@@ -6,4 +6,6 @@ contextBridge.exposeInMainWorld("ftlArena", {
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
   extract: (folder) => ipcRenderer.invoke("extract", folder),
   onProgress: (fn) => ipcRenderer.on("extract-progress", (_e, done, total) => fn(done, total)),
+  // Ship presets (the game page), kept in the data folder whatever port the game is served on.
+  presets: { load: () => ipcRenderer.invoke("presets-load"), save: (list) => ipcRenderer.invoke("presets-save", list) },
 });

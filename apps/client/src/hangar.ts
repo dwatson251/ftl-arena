@@ -1,10 +1,13 @@
 /**
- * The hangar, as a stepped process: 1 Ship, 2 Systems, 3 Weapons, 4 Crew, then Launch. Prices are
+ * The hangar, as a stepped process: Presets (saved builds), Ship, Systems, Weapons, Drones, Crew, Augments,
+ * then Launch. Prices are
  * computed locally for instant feedback; the server re-prices every loadout before it accepts "ready".
  */
 import type { GameDB, SystemId } from "@ftl/data";
 import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
 import { hasImg } from "./assets.ts";
+import { copyName, isSame, presets } from "./presets.ts";
+import { drawSnapshot } from "./snapshot.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buyableDrones, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
@@ -12,7 +15,7 @@ import {
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-const STEPS = ["Ship", "Systems", "Weapons", "Drones", "Crew", "Augments", "Launch"] as const;
+const STEPS = ["Presets", "Ship", "Systems", "Weapons", "Drones", "Crew", "Augments", "Launch"] as const;
 type Step = (typeof STEPS)[number];
 
 export interface HangarHooks {
@@ -28,7 +31,15 @@ export interface HangarHooks {
 export class Hangar {
   el = document.createElement("div");
   loadout: Loadout | null = null;
-  step: Step = "Ship";
+  /** Saved presets open on Presets; with none yet, straight to the hull (Presets is still a tab). */
+  step: Step = presets.list().length ? "Presets" : "Ship";
+  /** The preset this build came from (unchanged = no "save as preset" offer). */
+  private loaded: { id: string; name: string; loadout: Loadout } | null = null;
+  /** The name typed into "Save as preset" (null = the default), and what was last saved. */
+  private saveName: string | null = null;
+  private savedNote = "";
+  /** A preset waiting for "delete?" confirmation. */
+  private confirmDel: string | null = null;
   private lobby: LobbyState | null = null;
   private pendingRender = false;
 
@@ -178,7 +189,7 @@ export class Hangar {
     const priced = priceLoadout(db, l, cfg.scrap, cfg.shipPool, cfg.unlimited);
     const me = lobby.players.find((p) => p.id === this.me());
     const scrollTop = this.el.querySelector(".hg-main")?.scrollTop ?? 0;
-    const body = { Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
+    const body = { Presets: () => this.stepPresets(), Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
     this.el.innerHTML = `
       <div class="hg">
         <div class="hg-steps">${STEPS.map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""}" data-step="${s}"><b>${i + 1}</b> ${s}</button>`).join("")}
@@ -191,6 +202,10 @@ export class Hangar {
       </div>`;
     const main = this.el.querySelector(".hg-main");
     if (main) main.scrollTop = scrollTop;
+    for (const c of this.el.querySelectorAll<HTMLCanvasElement>("canvas[data-snap]")) {
+      const p = presets.get(c.dataset.snap!);
+      if (p) void drawSnapshot(c, db, p.loadout, p.look, this.hasArt(), p.id);
+    }
   }
 
   private sidebar(lobby: LobbyState): string {
@@ -328,6 +343,70 @@ export class Hangar {
     return `<div class="hg-nav">${back ? `<button data-step="${back}">← ${back}</button>` : "<span></span>"}${next ? `<button class="primary" data-step="${next}">${next} →</button>` : ""}</div>`;
   }
 
+  /** A step's number as the tabs show it. */
+  private num(step: Step): number {
+    return STEPS.indexOf(step) + 1;
+  }
+
+  /** Saved builds: pick one (straight to Launch), start a new ship, or delete one (after a confirmation). */
+  private stepPresets(): string {
+    const db = this.db;
+    const cfg = this.lobby!.config;
+    const pool = cfg.shipPool.length ? cfg.shipPool : db.hangar;
+    const list = presets.list();
+    const cards = list
+      .map((p) => {
+        const ship = db.ships[p.loadout.ship];
+        const allowed = !!ship && pool.includes(p.loadout.ship);
+        const priced = ship ? priceLoadout(db, p.loadout, cfg.scrap, cfg.shipPool, cfg.unlimited) : null;
+        const over = !!priced && priced.total > cfg.scrap;
+        const other = priced?.errors.find((e) => !/budget/.test(e));
+        const warn = !allowed ? (ship ? "Not allowed in this lobby" : "Ship not found in your game data") : over ? `Costs ${priced!.total} (allowance ${cfg.scrap})` : other ?? "";
+        const confirm = this.confirmDel === p.id
+          ? `<div class="preset-confirm"><div>Delete “${h(p.name)}”? This can't be undone.</div><div class="row"><button class="small danger" data-preset-del-yes="${h(p.id)}">Delete</button><button class="small" data-preset-del-no>Keep</button></div></div>`
+          : "";
+        return `<div class="preset-card ${warn ? "warn" : ""} ${allowed ? "" : "off"}">
+          <button class="preset-pick" data-preset="${h(p.id)}" ${allowed ? "" : "disabled"}>
+            <canvas class="preset-snap" data-snap="${h(p.id)}"></canvas>
+            <span class="pc-name">${h(p.name)}</span>
+            <span class="note pc-ship">${h(ship?.title ?? p.loadout.ship)}${ship?.className ? ` · ${h(ship.className)}` : ""}</span>
+            <span class="pc-cost">${this.scrapIcon()}<b>${priced?.total ?? "?"}</b> <span class="note">scrap</span>${warn ? `<span class="pc-warn">${h(warn)}</span>` : ""}</span>
+          </button>
+          <button class="small preset-del" data-preset-ask="${h(p.id)}" title="Delete this preset">✕</button>${confirm}
+        </div>`;
+      })
+      .join("");
+    return `<h2>${this.num("Presets")} · Presets</h2>
+      <div class="note">${list.length ? "Pick a saved ship to fly it (straight to Launch), or build a new one." : "No presets yet: build a ship, then save it from the Launch step to see it here."}</div>
+      <div class="preset-grid">
+        <button class="preset-new" data-step="Ship"><span class="plus">+</span><span>New ship</span><span class="note">Choose a hull and build from scratch</span></button>
+        ${cards}
+      </div>${this.nav(null, "Ship")}`;
+  }
+
+  /** "Save as preset" on Launch: hidden while the build is an unchanged loaded preset. */
+  private saveBox(l: Loadout): string {
+    if (this.loaded && isSame(l, this.loaded.loadout))
+      return `<div class="note save-note">${h(this.savedNote || `Flying your preset “${this.loaded.name}”.`)}</div>`;
+    const def = this.loaded ? copyName(this.loaded.name) : (this.db.ships[l.ship]?.title ?? "My ship");
+    return `<div class="save-box"><h2>Save as preset</h2>
+      <div class="row"><input data-preset-name maxlength="40" placeholder="Preset name" value="${h(this.saveName ?? def)}"><button data-preset-save>Save preset</button></div>
+      <div class="note">Saved on this computer; pick it from Presets next time.</div></div>`;
+  }
+
+  private savePreset(): void {
+    if (!this.loadout) return;
+    const input = this.el.querySelector<HTMLInputElement>("[data-preset-name]");
+    const name = (input?.value ?? this.saveName ?? "").trim() || (this.db.ships[this.loadout.ship]?.title ?? "My ship");
+    const p = presets.save(name, this.loadout);
+    this.loaded = { id: p.id, name: p.name, loadout: structuredClone(p.loadout) };
+    this.saveName = null;
+    this.savedNote = `Saved as preset “${p.name}”.`;
+    this.sfx("powerUpSystem");
+    input?.blur();
+    this.render();
+  }
+
   private stepShip(l: Loadout): string {
     const db = this.db;
     const pool = this.lobby!.config.shipPool.length ? this.lobby!.config.shipPool : db.hangar;
@@ -342,7 +421,7 @@ export class Hangar {
           <span class="note">${s.crewRaces.length} crew (${h(races)}) · reactor ${s.maxPower}</span></button>`;
       })
       .join("");
-    return `<h2>1 · Choose a hull</h2><div class="note">Switching hulls resets your purchases.</div><div class="ship-grid">${cards}</div>${this.nav(null, "Systems")}`;
+    return `<h2>${this.num("Ship")} · Choose a hull</h2><div class="note">Switching hulls resets your purchases.</div><div class="ship-grid">${cards}</div>${this.nav("Presets", "Systems")}`;
   }
 
   private stepSystems(l: Loadout): string {
@@ -366,7 +445,7 @@ export class Hangar {
           ${this.sysInfo(s.id, lv, s.max)}`;
       })
       .join("");
-    return `<h2>2 · Systems <span class="note">${installed}/${RULES.maxSystems} systems</span></h2>
+    return `<h2>${this.num("Systems")} · Systems <span class="note">${installed}/${RULES.maxSystems} systems</span></h2>
       <div class="note">Green bars came with the hull; yellow ones are bought. Shields give a layer per 2 bars; engines give evasion; weapons bars power your guns. The medbay and clone bay share a room: installing one replaces the other.</div>
       ${rows}
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>
@@ -454,7 +533,7 @@ export class Hangar {
         })
         .join("")}</div>`)
       .join("");
-    return `<h2>3 · Weapons</h2>
+    return `<h2>${this.num("Weapons")} · Weapons</h2>
       <div class="wslots-sticky"><div class="wslots">${slots}</div>
       <div class="sys-row"><span class="sysicon ph">⦿</span><span class="sys-name">missiles</span><span><b>${l.missiles}</b></span>
         <button class="small" data-msl="-1" ${l.missiles <= 0 ? "disabled" : ""}>−</button>
@@ -502,7 +581,7 @@ export class Hangar {
           <div class="note">${h(t.blurb)}</div></div><button class="small" data-hire="${r}" ${full ? "disabled" : ""}>${db.crew[r].cost}</button></div>`;
       })
       .join("");
-    return `<h2>5 · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
+    return `<h2>${this.num("Crew")} · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
       <div class="note">Starting crew are free. Rename anyone; dismissing gives no refund. Crew fight fires, repair and man stations: manned helm and engines add evasion, manned weapons charge faster, manned shields recharge faster.</div>
       ${crew}<h3>Hire</h3><div class="race-grid">${hire}</div>${this.nav("Drones", "Augments")}`;
   }
@@ -545,7 +624,7 @@ export class Hangar {
       })
       .join("");
     const base = baseLoadout(db, l.ship);
-    return `<h2>4 · Drones</h2>
+    return `<h2>${this.num("Drones")} · Drones</h2>
       ${slots ? "" : `<p class="note">This hull has no drone slots.</p>`}
       ${slots && !has ? `<p class="err">No drone control system: you can still buy drones, but they can't be launched until it's installed (Systems step).</p>` : ""}
       <div class="wslots-sticky"><div class="wslots">${fitted}</div>
@@ -582,7 +661,7 @@ export class Hangar {
           <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) ? "disabled" : ""}>${this.scrapIcon()}${a.cost}</button></div>`;
       })
       .join("");
-    return `<h2>6 · Augments (${augs.length}/${MAX_AUGMENTS})</h2>
+    return `<h2>${this.num("Augments")} · Augments (${augs.length}/${MAX_AUGMENTS})</h2>
       <div class="wslots-sticky"><div class="wslots">${fitted}</div>
       <div class="note">Up to ${MAX_AUGMENTS}. Starting augments are free; removing one gives no refund.</div></div>
       <div class="race-grid">${cards}</div>${this.nav("Crew", "Launch")}`;
@@ -591,9 +670,10 @@ export class Hangar {
   private stepLaunch(l: Loadout, priced: ReturnType<typeof priceLoadout>): string {
     const ready = !!this.lobby?.players.find((p) => p.id === this.me())?.ready;
     const cd = this.lobby?.phase === "countdown" ? `<div class="code launch-count">Launch in ${this.lobby.countdown}…</div>` : "";
-    return `<h2>7 · Launch</h2>
+    return `<h2>${this.num("Launch")} · Launch</h2>
       <p>${priced.ok ? "Your ship is ready. Press <b>Ready</b> (or Enter); the battle starts when both captains are ready." : "Fix the problems listed on the right first."}</p>
       <div class="launch-ready">${this.readyButton(l, priced, ready)}${cd}</div>
+      ${this.saveBox(l)}
       <div class="note">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
       ${this.nav("Augments", null)}`;
     void l;
@@ -612,6 +692,34 @@ export class Hangar {
       this.sfx("hoverBeep");
       return this.render();
     }
+    if (d.preset) {
+      const p = presets.get(d.preset);
+      if (!p) return;
+      this.loaded = { id: p.id, name: p.name, loadout: structuredClone(p.loadout) };
+      this.savedNote = "";
+      this.saveName = null;
+      this.confirmDel = null;
+      this.step = "Launch";
+      this.sfx("powerUpSystem");
+      return this.change(structuredClone(p.loadout));
+    }
+    if (d.presetAsk) {
+      this.confirmDel = d.presetAsk;
+      this.sfx("hoverBeep");
+      return this.render();
+    }
+    if ("presetDelNo" in d) {
+      this.confirmDel = null;
+      return this.render();
+    }
+    if (d.presetDelYes) {
+      presets.remove(d.presetDelYes);
+      if (this.loaded?.id === d.presetDelYes) this.loaded = null;
+      this.confirmDel = null;
+      this.sfx("powerDownSystem");
+      return this.render();
+    }
+    if ("presetSave" in d) return this.savePreset();
     if (d.copy) {
       void navigator.clipboard?.writeText(d.copy).catch(() => {});
       this.sfx("hoverBeep");
@@ -689,6 +797,7 @@ export class Hangar {
     const press = (sel: string) => this.el.querySelector<HTMLButtonElement>(`${sel}:not(:disabled)`)?.click();
     if (e.key === "Enter") {
       e.preventDefault();
+      if (typing && "presetName" in t!.dataset) return this.savePreset();
       if (typing) return t!.blur();
       if (i < STEPS.length - 1) return go(1);
       // The last page: ready (or, past a warning, "Ready anyway").
@@ -708,6 +817,11 @@ export class Hangar {
       e.preventDefault();
       return go(-1);
     }
+    if (e.key === "Escape" && this.confirmDel) {
+      e.preventDefault();
+      this.confirmDel = null;
+      return this.render();
+    }
     if (e.key === "Escape") {
       e.preventDefault();
       if (this.confirming) {
@@ -724,6 +838,7 @@ export class Hangar {
 
   private onInput(e: Event): void {
     const t = e.target as HTMLInputElement;
+    if ("presetName" in t.dataset) this.saveName = t.value;
     if (t.dataset.prac === "difficulty") {
       const b = t.parentElement?.querySelector("b");
       if (b) b.textContent = t.value;

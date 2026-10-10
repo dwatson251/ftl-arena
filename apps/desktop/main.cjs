@@ -137,6 +137,24 @@ ipcMain.handle("extract", async (e, folder) => {
   }
 });
 
+// ---------------------------------------------------------------- ship presets
+
+const PRESETS = () => path.join(DATA(), "presets.json");
+ipcMain.handle("presets-load", () => {
+  try {
+    return JSON.parse(fs.readFileSync(PRESETS(), "utf8"));
+  } catch {
+    return [];
+  }
+});
+ipcMain.handle("presets-save", (_e, list) => {
+  if (!Array.isArray(list)) return;
+  // Write then rename, so a crash mid-save never leaves half a file.
+  fs.mkdirSync(DATA(), { recursive: true });
+  fs.writeFileSync(`${PRESETS()}.tmp`, JSON.stringify(list, null, 1));
+  fs.renameSync(`${PRESETS()}.tmp`, PRESETS());
+});
+
 // ---------------------------------------------------------------- app
 
 function menu() {

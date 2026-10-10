@@ -5,6 +5,10 @@ import type { MatchView } from "@ftl/sim";
 import { artReady, preload, registerOfflineCache } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
 import { music, preloadSounds } from "./audio.ts";
+import { presets } from "./presets.ts";
+
+// Saved ship presets: read now (the loading screen also waits for them).
+void presets.init();
 import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar } from "./hangar.ts";
 import { Net } from "./net.ts";
@@ -80,7 +84,7 @@ function onMsg(m: ServerMsg): void {
         // Everything (art, fonts, sound effects) loads behind FTL's loading bar before the first menu.
         let fonts = false;
         loadingProgress(0, "");
-        void preload(db, (k) => loadingProgress(k), [async () => (fonts = await loadFtlFonts()), ...preloadSounds(db)]).then((ok) => {
+        void preload(db, (k) => loadingProgress(k), [async () => (fonts = await loadFtlFonts()), () => presets.init().then(() => true), ...preloadSounds(db)]).then((ok) => {
           hasArt = ok;
           document.body.classList.toggle("ftl-fonts", fonts);
           loadingProgress(1);

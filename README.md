@@ -88,6 +88,15 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
   joining puts the match back in the hangar. A dropped connection mid-battle reconnects into its seat.
 - **Art and sound** always come from your own install; only the match itself runs on the server.
 
+## Ship presets
+- **Saving:** save a finished build from the hangar's **Launch** step, under a name of your choice.
+- **Using:** the next lobby opens on **Presets**. Each card shows the name, the ship and the cost, plus a
+  snapshot of the hull and guns on its own random backdrop. Picking one goes straight to Launch.
+  Over-budget presets are flagged but can still be picked.
+- **Deleting:** the ✕ on a card, after a confirmation.
+- **Where they live:** this computer only: the desktop app's data folder (`presets.json`), or the
+  browser's storage.
+
 ## Controls (FTL's)
 | Action | Input |
 |---|---|

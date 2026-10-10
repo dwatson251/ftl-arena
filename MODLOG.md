@@ -287,6 +287,22 @@
 - **Menu bar:** hidden; Ctrl+Shift+F12 toggles it through `before-input-event`. Playwright key presses
   don't reach that hook, but `webContents.sendInputEvent` does.
 
+## Ship presets
+- **Steps:** a Presets step before Ship. It's the default only when presets exist. Step numbers now come from
+  `STEPS`.
+- **Storage:** `apps/client/src/presets.ts`.
+  - In the desktop app, presets go through the preload bridge to `userData/presets.json` (written to a temp
+    file, then renamed). localStorage is per origin, and the origin is `localhost:<port>`, so a busy-port
+    fallback would strand them.
+  - In a browser, they use localStorage.
+  - Bad data reads as empty.
+- **Snapshot:** `apps/client/src/snapshot.ts` uses a 2D canvas.
+  - The background is a crop of a `stars/bg_*` image (offset and flip saved with the preset), plus an
+    optional planet.
+  - Charged guns are drawn on their mounts using ShipRenderer's maths, then the `_base` hull on top.
+- **Unchanged detection:** `isSame` compares the chosen parts of a loadout. Saving always makes a new preset,
+  named "<name> - Copy" after changes.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
