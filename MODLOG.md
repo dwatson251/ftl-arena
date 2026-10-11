@@ -693,6 +693,12 @@
   - damage a reinforced system has soaked toward its next bar.
 - **Test** in `survival.test.ts` (fails on the old code: repair came back as 0); 157 passing in total.
 
+## Round 38: Engi Bomber shield
+- The Engi Bomber's (`CIRCLE_BOMBER`) art has more empty canvas below the hull than above, so its shield
+  bubble, centred on the canvas, sat high.
+- New one-off table `SHIELD_NUDGE` in `render/ship.ts`; it moves this one down 16 px. Measured from a 2x
+  close-up (`tools/align/flagship-guns.ts CIRCLE_BOMBER`): the bubble is now centred on the hull.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

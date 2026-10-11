@@ -43,6 +43,12 @@ export function attackPhase(c: CrewState, time: number): number | null {
 /** Share of health below which a crew member's box turns red and the low-health warning beeps. */
 export const LOW_HP = 0.25;
 
+/** Shield bubble offsets (ship pixels) for hulls whose art isn't centred on the hull (measured by eye). */
+const SHIELD_NUDGE: Record<string, { x?: number; y?: number }> = {
+  // The Engi Bomber's art has more empty canvas below the hull than above: the bubble sat high.
+  CIRCLE_BOMBER: { y: 16 },
+};
+
 export interface ShipDrawOpts {
   hover: { room: number; door: number };
   /** Weapon art frame per slot (charging lights / firing). */
@@ -211,6 +217,9 @@ export class ShipRenderer {
       if (bp.enemy) this.shieldArt.position.set(L.img.x + L.img.w / 2, L.img.y + L.img.h / 2);
       // The flagship's art is so big that its canvas centre sits above the hull: centre on its rooms instead.
       if (/^BOSS_/.test(this.shipId)) this.shieldArt.position.set(c.x, c.y);
+      // One-off nudges where a hull's art canvas has uneven empty space, so its centre isn't the hull's.
+      const nudge = SHIELD_NUDGE[this.shipId];
+      if (nudge) this.shieldArt.position.set(this.shieldArt.position.x + (nudge.x ?? 0), this.shieldArt.position.y + (nudge.y ?? 0));
       if (bp.enemy && L.ellipse.a > 0) {
         this.shieldArt.width = L.ellipse.a * 2;
         this.shieldArt.height = L.ellipse.b * 2;
