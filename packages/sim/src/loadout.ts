@@ -18,6 +18,9 @@ export interface Loadout {
   hullNow?: number;
   /** Survival: system damage carried from the last fight. */
   damage?: Partial<Record<SystemId, number>>;
+  /** Survival: progress carried from the last fight, per system: repairs toward the next mended bar,
+   *  boarders' wrecking toward the next broken one, and damage a reinforced system has soaked. */
+  progress?: Partial<Record<SystemId, { repair?: number; wreck?: number; armour?: number }>>;
   /** Survival: systems reinforced by reward cards, once per stack (each stack: 10% more health per bar). */
   reinforced?: SystemId[];
   /** Survival: enemy boarders still aboard after the last fight; they fight on for the next enemy. */
@@ -283,6 +286,13 @@ export function blockedTiles(ship: ShipState): Set<string> {
   return new Set(Object.values(ship.systems).flatMap((s) => (s?.blocked ? [s.blocked] : [])));
 }
 
+/** A system's carried progress, each part clamped to 0..1 (only what's there). */
+function carried(p: { repair?: number; wreck?: number; armour?: number } | undefined): Partial<SystemState> {
+  if (!p) return {};
+  const c = (v: number | undefined) => Math.max(0, Math.min(0.999, Number(v) || 0));
+  return { ...(p.repair ? { repair: c(p.repair) } : {}), ...(p.wreck ? { wreck: c(p.wreck) } : {}), ...(p.armour ? { armour: c(p.armour) } : {}) };
+}
+
 export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pickName: (n: string[]) => string, unlimited = false): ShipState {
   const bp = db.ships[l.ship];
   const layout = db.layouts[bp.layout];
@@ -302,6 +312,7 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
       id: h.id, room: slot.room, level, power: 0, damage: Math.max(0, Math.min(level, Math.round(l.damage?.[h.id] ?? 0))), repair: 0, ion: 0, ionTimer: 0, station, fireDmg: 0, bonus: 0,
       facing: station ? slot.facing ?? "up" : undefined,
       ...(l.reinforced?.includes(h.id) ? { reinforced: l.reinforced.filter((x) => x === h.id).length } : {}),
+      ...carried(l.progress?.[h.id]),
       ...(blocked ? { blocked } : {}),
       ...(slot.weapon && db.weapons[slot.weapon] ? { weapon: slot.weapon, charge: 0 } : {}),
     } satisfies SystemState;

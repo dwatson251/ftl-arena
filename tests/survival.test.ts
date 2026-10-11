@@ -324,6 +324,38 @@ describe("survival: battles", () => {
     expect(l.state().survival!.rerolls).toBe(3);
   });
 
+    it("half-finished work survives the jump: repairs, boarders' wrecking, a reinforced system's soaked damage", () => {
+    const run = newRun(db, ship);
+    run.loadout.reinforced = ["engines"];
+    const m = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
+    const me = m.state.ships[0];
+    const g = m.geo(me);
+    // Shields: one bar broken, 40% repaired.
+    const sh = me.systems.shields!;
+    sh.damage = 1;
+    sh.repair = 0.4;
+    // Oxygen: a boarder at work in the room, 30% of the way to the next bar.
+    const ox = me.systems.oxygen!;
+    const tile = g.roomTiles.get(ox.room)![0];
+    const raider = structuredClone(m.state.ships[1].crew[0] ?? me.crew[0]);
+    Object.assign(raider, { id: 900, owner: 1, tile, home: tile, path: [] });
+    me.crew.push(raider);
+    ox.wreck = 0.3;
+    // Engines (reinforced): 0.5 of a point soaked toward the next bar.
+    me.systems.engines!.armour = 0.5;
+    carryOver(run, me);
+    const next = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 2, 2).loadout], ["me", "bot"]);
+    const n = next.state.ships[0];
+    expect(n.systems.shields!.damage).toBe(1);
+    expect(n.systems.shields!.repair).toBeCloseTo(0.4);
+    expect(n.systems.oxygen!.wreck).toBeCloseTo(0.3);
+    expect(n.systems.engines!.armour).toBeCloseTo(0.5);
+    // The boarder came along to the same room, so the wrecking goes on from where it was (not from zero).
+    expect(n.crew.some((c) => c.owner === 1 && c.tile === tile)).toBe(true);
+    next.step();
+    expect(n.systems.oxygen!.wreck ?? 0).toBeGreaterThanOrEqual(0.3);
+  });
+
     it("only practice lobbies get Survival", () => {
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, false).survival).toBe(false);
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, true).survival).toBe(true);

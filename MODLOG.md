@@ -685,6 +685,14 @@
 - **Tests:** per-bar stacking, rarer repeats, hand sizes 3→4→5 with the cap, re-rolls (2, then refused),
   a mini-boss earning one; 156 passing in total.
 
+## Round 37: progress carries over between jumps
+- **Survival:** each system's half-finished work now survives the jump (`Loadout.progress`):
+  - repairs toward the next mended bar;
+  - boarders' wrecking toward the next broken bar. Carried-over boarders are still in the room, so it goes
+    on from there instead of from zero;
+  - damage a reinforced system has soaked toward its next bar.
+- **Test** in `survival.test.ts` (fails on the old code: repair came back as 0); 157 passing in total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

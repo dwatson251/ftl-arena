@@ -475,7 +475,14 @@ export function carryOver(run: SurvivalRun, ship: ShipState): void {
     // Where each one stood, or was walking to, is where they'll be after the jump.
     .map((c) => ({ name: c.name, race: c.race, xp: { ...c.xp }, hp: Math.max(1, Math.round(c.hp)), tile: c.home || c.tile }));
   l.damage = {};
-  for (const s of Object.values(ship.systems)) if (s && s.damage > 0) l.damage[s.id] = s.damage;
+  l.progress = {};
+  for (const s of Object.values(ship.systems)) {
+    if (!s) continue;
+    if (s.damage > 0) l.damage[s.id] = s.damage;
+    // Half-finished work carries over too: repairs, boarders' wrecking, a reinforced system's soaked damage.
+    const p = { repair: s.damage > 0 ? s.repair : 0, wreck: s.wreck ?? 0, armour: s.armour ?? 0 };
+    if (p.repair || p.wreck || p.armour) l.progress[s.id] = p;
+  }
   // Enemy boarders still alive aboard come along (boarding drones don't: their ship is gone).
   l.boarders = ship.crew
     .filter((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined && c.drone === undefined)
