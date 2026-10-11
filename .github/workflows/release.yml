@@ -1,0 +1,86 @@
+# A tag (v0.1.0-alpha.1, v1.0.0, ...) builds the desktop app and the dedicated server for Windows and Linux and
+# publishes them as a GitHub release. Tags with alpha/beta/rc are marked as pre-releases.
+# No FTL file is in any build: each player's app unpacks their own copy of FTL on first start.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+env:
+  # The version the game shows (top right): the tag without its "v".
+  FTL_ARENA_VERSION: ${{ github.ref_name }}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx vitest run
+
+  windows:
+    needs: test
+    # Setting the .exe's icon and details (rcedit) needs Windows.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: node tools/build-desktop.mjs --win
+      - run: node tools/build-server.mjs --win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            release/FTL-Arena-win-x64.zip
+            release/server/FTL-Arena-Server-win-x64.zip
+          if-no-files-found: error
+
+  linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: appimagetool
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      - run: node tools/build-desktop.mjs --linux
+      - run: node tools/build-server.mjs --linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            release/FTL-Arena-linux-x64.tar.gz
+            release/FTL-Arena-x86_64.AppImage
+            release/server/FTL-Arena-Server-linux-x64.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Release notes (this version's CHANGELOG section)
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '/^## /{ if (on) exit; on = index($0, v) > 0; next } on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "FTL Arena $v" > notes.md
+          printf '\n---\nYou need your own copy of FTL: Faster Than Light (1.6+). See the README for setup.\n' >> notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: FTL Arena ${{ github.ref_name }}
+          body_path: notes.md
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          files: dist/**/*
+          fail_on_unmatched_files: true

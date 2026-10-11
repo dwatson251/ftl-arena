@@ -13,6 +13,9 @@ const path = require("node:path");
 // A separate data folder can be forced (two copies side by side, testing).
 if (process.env.FTL_ARENA_DATA) app.setPath("userData", process.env.FTL_ARENA_DATA);
 
+/** Steam's Gaming Mode on a Steam Deck (Steam sets these): fullscreen, controller on by default. */
+const DECK = process.env.SteamDeck === "1" || process.env.SteamGamepadUI === "1";
+
 const DATA = () => app.getPath("userData");
 const ASSETS = () => path.join(DATA(), "assets");
 const SETTINGS = () => path.join(DATA(), "settings.json");
@@ -54,12 +57,12 @@ async function startGame() {
       return;
     }
   }
-  win.loadURL(`http://localhost:${server.port}/`);
+  win.loadURL(`http://localhost:${server.port}/${DECK ? "?deck=1" : ""}`);
 }
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1280, height: 760, title: "FTL Arena", backgroundColor: "#000000", icon: path.join(__dirname, "icon.png"),
+    width: 1280, height: 760, title: "FTL Arena", backgroundColor: "#000000", icon: path.join(__dirname, "icon.png"), fullscreen: DECK,
     // The menu bar stays hidden (and Alt doesn't bring it up); Ctrl+Shift+F12 toggles it for debugging.
     autoHideMenuBar: false,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false },
@@ -104,9 +107,9 @@ function findInstalls() {
   return [...new Set(candidates)].filter((c) => datIn(c));
 }
 
-/** Where ftl.dat is for a chosen folder (the install itself, or inside the macOS app bundle). */
+/** Where ftl.dat is for a chosen folder (the install itself, its data/ folder on Linux, or inside the macOS app bundle). */
 function datIn(folder) {
-  for (const p of [folder, path.join(folder, "FTL.app", "Contents", "Resources"), path.join(folder, "Contents", "Resources")]) {
+  for (const p of [folder, path.join(folder, "data"), path.join(folder, "FTL.app", "Contents", "Resources"), path.join(folder, "Contents", "Resources")]) {
     const f = path.join(p, "ftl.dat");
     if (fs.existsSync(f)) return f;
   }

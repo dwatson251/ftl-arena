@@ -9,6 +9,7 @@ import { hasImg } from "./assets.ts";
 import { copyName, isSame, presets } from "./presets.ts";
 import { drawSnapshot } from "./snapshot.ts";
 import { HangarBay } from "./bay.ts";
+import { DEV_TOOLS } from "./version.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buildShip, buyableDrones, reactorUsed, usable, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
@@ -365,7 +366,7 @@ export class Hangar {
     return `<label class="kv"><span>Autonomous ships <span class="note">(not in Survival)</span></span><input type="checkbox" disabled></label>
       <div class="note">Pick a ship and fly its stock loadout. Battles come one after another against random enemies that get tougher each jump, a mini-boss (a rival player cruiser, fully fitted out) every ${SURVIVAL.miniEvery} battles, the Rebel flagship every ${SURVIVAL.bossEvery}, and the odd hazard. Your hull, crew, damage and supplies carry over. After each win you have ${SURVIVAL.aftermath} s to patch the ship up (${SURVIVAL.aftermathBoarders} s if enemy boarders are still aboard), then choose one reward: gear (rare finds are gold), an upgrade, or repairs and supplies. Lose the ship and the run ends with a score.</div>
       ${this.pauseRules(lobby.config, true, true)}
-      ${pc ? `<label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}`;
+      ${pc && DEV_TOOLS ? `<label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}`;
   }
 
   /** The rules for building and fighting (everything but Survival). */
@@ -406,7 +407,7 @@ export class Hangar {
           })()}
         </select></div>
         ${botShip ? `<div class="note">Bot flies: ${h(this.db.ships[botShip]?.className || this.db.ships[botShip]?.title || botShip)}${this.db.ships[botShip]?.enemy ? ` · hull ${lobby.players.find((p) => p.bot)?.loadout?.hull ?? ""}` : ""}</div>` : ""}
-        <label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}`;
+        ${DEV_TOOLS ? `<label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}` : ""}`;
   }
 
   /** The current build at a glance while shopping (no bill: the scrap counter at the top has the total). */

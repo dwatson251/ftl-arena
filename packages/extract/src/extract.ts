@@ -19,7 +19,7 @@ const SKIP = [/^img\/loc-/, /^img\/ipad\//, /^img\/achievements\//, /^img\/map\/
  * with a manifest.json is a finished extract (the desktop app's setup checks for it).
  */
 function* extractSteps(opts: ExtractOptions): Generator<{ done: number; total: number }, { files: number; bytes: number }> {
-  const datPath = opts.ftl.endsWith(".dat") ? opts.ftl : join(opts.ftl, "ftl.dat");
+  const datPath = opts.ftl.endsWith(".dat") ? opts.ftl : [join(opts.ftl, "ftl.dat"), join(opts.ftl, "data", "ftl.dat")].find((f) => existsSync(f)) ?? join(opts.ftl, "ftl.dat");
   if (!existsSync(datPath)) throw new Error(`no ftl.dat at ${datPath} (FTL 1.6+ required)`);
   const pkg = new PkgArchive(readFileSync(datPath));
   let files = 0;

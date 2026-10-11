@@ -64,7 +64,8 @@ describe("crew AI: getting out of trouble", () => {
     expect(out[0].room).not.toBe(here);
   });
 
-  it("the AI doesn't power a boarding drone into a super shield, and stands a waiting one down", () => {
+  // Needs a hull with a drone bay and FTL's boarding drone (not in the placeholder set).
+  it.runIf(!!db.drones?.BOARDER && db.ships[ship].systems.some((x) => x.id === "drones"))("the AI doesn't power a boarding drone into a super shield, and stands a waiting one down", () => {
     const withDrone = { ...baseLoadout(db, ship), systems: { ...baseLoadout(db, ship).systems, drones: 3 }, drones: ["BOARDER"], droneParts: 5, reactor: 12 };
     const m = new Match(db, DEFAULT_CONFIG, [withDrone, baseLoadout(db, ship)], ["a", "b"]);
     const bot = new Bot(1, 3);

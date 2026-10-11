@@ -1,10 +1,24 @@
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
 const p = (s: string) => fileURLToPath(new URL(s, import.meta.url));
 const server = process.env.ARENA_SERVER ?? "http://localhost:8787";
+/** The build's version: FTL_ARENA_VERSION (CI sets it from the tag), else this commit's tag, else its short hash. */
+function version(): string {
+  const git = (cmd: string) => {
+    try {
+      return execSync(cmd, { cwd: p("."), stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    } catch {
+      return "";
+    }
+  };
+  const v = process.env.FTL_ARENA_VERSION || git("git describe --tags --exact-match") || git("git rev-parse HEAD").slice(-7) || "dev";
+  return v.replace(/^v/, "");
+}
 export default defineConfig({
   root: p("."),
   publicDir: p("public"),
+  define: { __APP_VERSION__: JSON.stringify(version()) },
   resolve: {
     alias: {
       "@ftl/sim": p("../../packages/sim/src/index.ts"),

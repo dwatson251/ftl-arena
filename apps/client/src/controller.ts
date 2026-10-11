@@ -17,7 +17,10 @@ const KEY = "ftl-arena-controller";
 
 export function controllerEnabled(): boolean {
   try {
-    return localStorage.getItem(KEY) === "1";
+    const v = localStorage.getItem(KEY);
+    // On a Steam Deck (the desktop app adds ?deck=1 in Gaming Mode) it's on until switched off.
+    if (v === null) return typeof location !== "undefined" && new URLSearchParams(location.search).get("deck") === "1";
+    return v === "1";
   } catch {
     return false;
   }

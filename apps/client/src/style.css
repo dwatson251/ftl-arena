@@ -281,3 +281,6 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .screen > .menu { max-width: 620px; }
 
 .tabs .tab { white-space: nowrap; }
+.build-tag { position: fixed; top: 4px; right: 8px; z-index: 100; color: var(--bad); font: bold 12px system-ui, sans-serif; letter-spacing: 0.04em; text-shadow: 0 0 3px #000, 0 0 2px #000; pointer-events: none; user-select: none; }
+/* In battle the top line holds the controller hints: the tag sits under them. */
+.in-battle .build-tag { top: 24px; }

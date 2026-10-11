@@ -14,8 +14,15 @@ import { Hangar, hangarAfterBattle } from "./hangar.ts";
 import { Net } from "./net.ts";
 import { BTN, controllerEnabled, onPad, pad, setControllerEnabled, startPad } from "./controller.ts";
 import { menuNav } from "./menunav.ts";
+import { APP_VERSION, DEV_TOOLS } from "./version.ts";
 
 const ui = document.getElementById("ui")!;
+// The build tag, top right on every screen.
+const buildTag = document.createElement("div");
+buildTag.className = "build-tag";
+buildTag.textContent = `Alpha ${APP_VERSION}`;
+document.body.appendChild(buildTag);
+document.title = `FTL Arena (Alpha ${APP_VERSION})`;
 registerOfflineCache();
 
 /** The loading screen (index.html): fill FTL's bar to k (0..1); done removes it. */
@@ -144,7 +151,7 @@ function onMsg(m: ServerMsg): void {
       // The match menu says whether the game is paused: redraw it when that changes.
       if (escMenu && !!lastView?.pause !== !!m.view.pause) setTimeout(render, 0);
       lastView = m.view;
-      debugInfo = m.debug ?? null;
+      debugInfo = DEV_TOOLS ? m.debug ?? null : null;
       // Quit out of a battle: its last snapshots (the forfeit) mustn't bring it back.
       if (!battle && quitMatch) return;
       if (!battle) startBattle(m.view.you);
@@ -325,6 +332,7 @@ function startBattle(you: 0 | 1): void {
   hangar = null;
   hangarAfterBattle();
   battle = new Battle(app, db, (cmd) => net.send({ t: "cmd", cmd }), you);
+  document.body.classList.add("in-battle");
   battle.onEndReady = () => render();
   battle.onMenu = () => (escMenu ? closeMenu() : openMenu());
   battle.onControlCrew = (crew, on) => net.send({ t: "controlCrew", crew, on });
@@ -354,6 +362,7 @@ function endBattle(): void {
   app.stage.removeChild(battle.stage);
   battle.destroy();
   battle = null;
+  document.body.classList.remove("in-battle");
   lastView = null;
   debugInfo = null;
 }

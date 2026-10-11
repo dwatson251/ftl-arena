@@ -10,6 +10,11 @@ import {
   type MatchEvent, type SurvivalEnemy, type SurvivalRun, PRICING,
 } from "@ftl/sim";
 
+/** Release bundles (the desktop app's server, the dedicated server) are built with __RELEASE__ set: no debug
+ *  tools there. Run from source (`npm run dev`, tests), they're on. */
+declare const __RELEASE__: boolean | undefined;
+export const DEBUG_TOOLS = typeof __RELEASE__ === "undefined" || !__RELEASE__;
+
 export interface Client {
   id: string;
   name: string;
@@ -58,7 +63,7 @@ export class Lobby {
     // Practice pauses freely, as FTL's single player does (an unlimited pause clock).
     const pauseDefaults: Partial<MatchConfig> = practice ? { pause: "clock", pauseBank: 0 } : {};
     this.config = sanitizeConfig(db, { ...DEFAULT_CONFIG, seed: (Math.random() * 2 ** 31) | 0, ...pauseDefaults, ...cfg }, practice);
-    if (practice) this.practiceCfg = { difficulty: 40, botShip: "", debug: true };
+    if (practice) this.practiceCfg = { difficulty: 40, botShip: "", debug: DEBUG_TOOLS };
   }
 
   state(): LobbyState {
@@ -221,7 +226,7 @@ export class Lobby {
       const b = String(cfg.botShip);
       next.botShip = this.db.hangar.includes(b) || this.db.enemies.includes(b) || b === "@enemy" ? b : "";
     }
-    if (cfg.debug !== undefined) next.debug = !!cfg.debug;
+    if (cfg.debug !== undefined) next.debug = DEBUG_TOOLS && !!cfg.debug;
     this.practiceCfg = next;
     if (this.phase === "lobby") this.rebuildBot();
     else if (this.bot) this.bot.setLevel(difficultyToBot(next.difficulty).level);
@@ -230,7 +235,7 @@ export class Lobby {
   }
 
   debug(c: Client, d: DebugOp): string | null {
-    if (!this.practiceCfg?.debug) return "debug tools are off";
+    if (!DEBUG_TOOLS || !this.practiceCfg?.debug) return "debug tools are off";
     if (!this.players.some((p) => p.id === c.id)) return "not in this lobby";
     const m = this.match;
     const me = this.players.findIndex((p) => p.id === c.id) as 0 | 1;

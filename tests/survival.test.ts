@@ -266,7 +266,8 @@ describe("survival: battles", () => {
     expect(b[0].tile).toBe(me.crew[0].tile);
   });
 
-  it("stranded boarders never go home: the new enemy's teleporter can't pull them back, and its AI doesn't try", () => {
+  // Needs a hull with a teleporter slot (not in the placeholder set).
+  it.runIf(db.hangar.some((h) => db.ships[h].systems.some((x) => x.id === "teleporter")))("stranded boarders never go home: the new enemy's teleporter can't pull them back, and its AI doesn't try", () => {
     const run = newRun(db, ship);
     const first = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
     const raider = structuredClone(first.state.ships[1].crew[0]);

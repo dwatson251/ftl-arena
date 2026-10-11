@@ -28,7 +28,7 @@ const assets = join(data, "assets");
 
 function datIn(folder: string): string | null {
   const f = folder.replace(/^["']|["']$/g, "").trim();
-  for (const p of [f, join(f, "FTL.app", "Contents", "Resources"), join(f, "Contents", "Resources")]) if (existsSync(join(p, "ftl.dat"))) return join(p, "ftl.dat");
+  for (const p of [f, join(f, "data"), join(f, "FTL.app", "Contents", "Resources"), join(f, "Contents", "Resources")]) if (existsSync(join(p, "ftl.dat"))) return join(p, "ftl.dat");
   return f.endsWith("ftl.dat") && existsSync(f) ? f : null;
 }
 

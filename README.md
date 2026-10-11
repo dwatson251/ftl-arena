@@ -1,272 +1,105 @@
-# FTL Arena
+<p align="center">
+  <img src="apps/desktop/icon.png" width="160" alt="FTL Arena">
+</p>
 
-1v1 real-time multiplayer FTL: Faster Than Light combat, rebuilt in TypeScript with a Pixi.js renderer and
-an authoritative Node server. Each player spends a scrap budget in the hangar:
-- a hull;
-- system levels and reactor;
-- weapons;
-- crew and missiles.
+<h1 align="center">FTL Arena</h1>
 
-Then the two ships fight under FTL's combat rules, **with no pause**.
+<p align="center">
+  <b>Real-time 1-on-1 battles in the world of FTL: Faster Than Light.</b><br>
+  Build a ship, bring a friend, and find out whose crew holds together.
+</p>
 
-Before the match, the host picks the win condition:
-- **Destroy the ship:** hull to 0. Losing your whole crew also loses, as in FTL.
-- **Kill the crew:** hulls can't drop below 1, so only a dead crew ends it.
+<p align="center">
+  <a href="https://github.com/dwatson251/ftl-arena/releases"><b>⬇ Download (Windows, Linux, Steam Deck)</b></a>
+  &nbsp;·&nbsp; <a href="docs/PLAYING.md">Player's guide</a>
+  &nbsp;·&nbsp; <a href="https://subsetgames.com/ftl.html">Get FTL</a>
+</p>
 
-> This is a fan project and is not affiliated with Subset Games. It ships **no FTL files**. The ships, art,
-> sounds and blueprint numbers come from **your own copy of FTL** through a local extractor. Without one,
-> the arena runs on a small placeholder set of original ships and flat shapes.
-> It was built with an AI coding agent (Claude Code); see `MODLOG.md` for how.
+> **Alpha.** This is an early playtest build. Expect rough edges, and please
+> [report what you find](https://github.com/dwatson251/ftl-arena/issues).
 
-## Quick start
-```bash
-npm install
-npm run extract -- --ftl "/path/to/FTL Faster Than Light"   # needs FTL 1.6+ (ftl.dat); writes ./assets-local (gitignored), incl. music (--no-music to skip)
-npm run server                                                  # authoritative server on :8787
-npm run client                                                  # Vite dev client on :5173 (proxies /ws and /assets)
-```
-Or, for faster loads, build the client once (`npm run build`) and open http://localhost:8787: the server
-serves the build itself. Rebuild after pulling changes, or the server keeps serving the old build.
+![A battle](docs/images/battle.png)
 
-Everything loads behind FTL's loading bar before the first menu. On https or localhost, a service worker keeps
-the extracted art and sound in the browser's cache (cleared when you re-extract) and the code for when the
-server can't be reached; the game itself still needs the server.
+## Why this exists
+Ever since I first played FTL back in 2015, I couldn't stop thinking about one question: *what would a true
+1-on-1 battle mode look like?*
 
-Open http://localhost:5173 in two browsers:
-1. One player clicks **Create match** and shares the 4-letter code.
-2. The other player clicks **Join**.
-3. Both spend scrap and press **Ready**.
+While projects like Tachyons expanded the formula with new mechanics, I always wanted something that stuck
+purely to the core engine, weapons, upgrades and tactical pacing of the original game.
 
-**Single player → Create a match** gives you a solo opponent. Its **opponent** can be:
-- any player cruiser (built with its own scrap);
-- any of the **single-player enemy ships**, such as Rebel Fighter, Mantis Bomber or Zoltan Bomber. These
-  fly with their own vertical art, crew and weapon pool, scaled by difficulty. In the lobby, a **difficulty slider (0-100)** sets it:
-- **0-60:** raises its play skill: reaction time, mistakes, targeting, volley sync, beam timing, repairs,
-  medbay and firefighting, and power swaps.
-- **60-100:** skill is maxed, and the bot also gets up to +100% hangar scrap. It always spends that scrap on
-  a powered build.
+FTL Arena is that: two captains, two ships, and FTL's rules.
 
-Measured against a steady mid-level player, the bot wins 0% at difficulty 0, 40% at 20, about 75-80% at
-40-80, and 100% at 100 (`npx tsx tools/bench/difficulty.ts`). You can also choose the bot's hull.
+## Features
+- **1v1 multiplayer**, on your network (share a 4-letter code) or over the internet. Host from the app, or
+  run the dedicated server.
+- **FTL's combat, faithfully:**
+  - every system, weapon, drone, augment and crew race;
+  - all 28 player cruisers;
+  - fires, breaches, boarding, hacking, mind control and cloaking, with FTL's own numbers.
+- **The hangar:** spend a scrap budget on a hull, systems, weapons, drones, crew and augments, step by
+  step. Save your favourite builds as presets.
+- **Load from FTL:** bring the ship from your current FTL run straight into the arena.
+- **Single player:**
+  - fight a bot at any difficulty from 0 to 100, flying any cruiser, a single-player enemy or the Rebel
+    flagship;
+  - or play **Survival**: battle after battle, picking upgrades between jumps, with mini-bosses every 5
+    fights and the flagship at 25.
+- **Rules your way:**
+  - win by destroying the ship or by killing the crew;
+  - time limits, hazards and pause rules;
+  - scrap-cost modes, including **Tournament**: rarity prices, and only items a normal run can give you.
+- **Controller support** (experimental): selector wheels for aiming and boarding, while the AI handles the
+  crew. Works with Xbox, PlayStation and Steam controllers, and on the **Steam Deck**.
 
-**Debug tools** (practice lobbies; on by default) add a drawer on the right in battle:
-- sim speed from pause to 8×, and single-tick or 1-second steps;
-- restart the match;
-- reveal the enemy, god mode, and "autopilot me" (a level-1 bot flies your ship, so you can watch bot vs
-  bot);
-- change the bot's difficulty live;
-- quick sabotage on either ship: −5 hull, start a fire, break a system;
-- the bot's reasoning log.
-
-**LAN or internet:** one player runs the server and the client. The other opens
-`http://<host>:5173/?server=<host>:8787`, or the host builds the client (`npx vite build apps/client`) and
-the server serves it at `http://<host>:8787/`. To play with each player's own art, both players run
-`npm run extract` and `npm run client`, and point `?server=` at the host.
-
-## Playtesting with friends (desktop app and dedicated server)
-- **Desktop app:** `npm run desktop:win` makes `release/FTL-Arena-win-x64.zip`. It's a portable folder with
-  `FTL Arena.exe` and a `README.txt` for players, and friends install nothing.
-  - `npm run desktop:dev` runs it from source.
-  - `npm run desktop:mac` makes the macOS app. Build that on a Mac, then
-    `hdiutil create -volname "FTL Arena" -srcfolder "release/FTL Arena-darwin-x64" FTL-Arena.dmg`.
-- **Dedicated server:** `npm run server:dist` makes `release/server/FTL-Arena-Server-win-x64.zip` and
-  `…-linux-x64.tar.gz`.
-  - Each is a headless console program (a Node single-executable application) that logs to the terminal and
-    hosts any number of matches.
-  - Its options are `--port 8787`, `--ftl <FTL folder>`, `--data <folder>` and `--upnp`.
-- **First start:** each player (and the server) picks their own FTL folder, and its `ftl.dat` is unpacked
-  locally. No FTL file is in any package, and none is ever sent between players.
-- **Menu, LAN tab:**
-  - Create a match, and the friend joins with the code alone.
-  - Their app asks the network over UDP on port 47878, and only the server holding that code answers.
-  - If two matches on the network share a code, the app says so and doesn't guess.
-- **Menu, Online tab:** the server address, used when you press Create or Join.
-  - Blank means host on this computer. UPnP is tried, and the lobby shows the public and LAN addresses.
-  - An address is a dedicated server or a friend's host, and the lobby shows it back.
-  - A bad address or code just shows an error.
-- **Host leaving:** the other captain takes over as host, and the seat frees up. After a battle, a newcomer
-  joining puts the match back in the hangar. A dropped connection mid-battle reconnects into its seat.
-- **Art and sound** always come from your own install; only the match itself runs on the server.
-
-## Ship presets
-- **Saving:** save a finished build from the hangar's **Launch** step, under a name of your choice.
-- **Using:** the next lobby opens on **Presets**. Each card shows the name, the ship and the cost, plus a
-  snapshot of the hull and guns on its own random backdrop. Picking one goes straight to Launch.
-  Over-budget presets are flagged but can still be picked.
-- **Deleting:** the ✕ on a card, after a confirmation.
-- **New ship:** clears the build and any loaded preset, back to the default hull. It asks first if the
-  build has unsaved changes.
-- **Load from FTL:** appears on Presets when FTL has a run in progress on this computer (`continue.sav`).
-  It brings in that run's ship: hull, systems, reactor, weapons, drones, augments, missiles, drone parts, and
-  crew with their skills. It isn't saved until you save it from Launch. Scrap, fuel, hull damage and cargo
-  stay in FTL. Only your own app reads your save; the server never offers it to other players.
-- **Per Scrap costs mode:** presets saved under one Scrap costs rule only show in lobbies with the same rule
-  (ships from an FTL save show everywhere).
-- **Where they live:** this computer only: the desktop app's data folder (`presets.json`), or the
-  browser's storage.
-
-## Scrap costs (Arena)
-- **None:** the stock hull is free; only what you add costs scrap.
-- **Ship expenses:** hulls cost scrap. The price is their stock crew, weapons and systems, plus a premium
-  for how late FTL unlocks them (Kestrel A 725).
-- **Tournament:** hull prices, plus weapons and augments priced by FTL rarity, and only items a normal run
-  can give you (stock fits excepted).
-- **Allowance:** switching to either raises the allowance to 1500.
-- **Unobtainable items:** a separate rule, "Allow unobtainable crew, weapons and augments", gives the same
-  ban in any Arena match.
-- **Tuning:** all the numbers are in `packages/sim/src/pricing.ts`.
-
-## Survival (single player)
-- **Starting a run:** in a practice lobby, set **Game mode** to *Survival* on the Rules step. Pick a ship
-  on the Ship step and you go straight to Launch. You fly its stock FTL loadout: no building and no
-  presets.
-- **The run:** battles come one after another against random single-player enemies that get tougher each
-  jump. Every 5th battle is a mini-boss (a rival player cruiser, fully fitted out), the Rebel flagship turns up every 25th, and hazards now and then. Hull, crew (health,
-  skills and losses), system damage, missiles and drone parts carry over, and so do enemy boarders you
-  didn't finish off.
-- **After a win:** the ship carries on for 15 s (60 s if enemy boarders are still aboard, dropping to 15 s once they're dead), so the crew can repair, put out fires and deal with
-  boarders while FTL's jump drive charges. Then time stops and you pick one of 3 reward cards ("+1 choice" cards raise it to 5; re-rolls, 2 to start and 1 per boss or mini-boss, deal a fresh hand):
-  - gear (white, green, blue, or **gold** for rare finds);
-  - a weapon upgrade (damage, shots, charge time or power);
-  - a system level, reactor or crew;
-  - repairs and supplies, worth about the same as the gear on offer.
-
-  Gear the ship can't take never shows up. Picking a card makes the jump.
-- **Losing the ship** ends the run with a score: battles, bosses and rewards. The best score is kept on
-  this computer.
-- **Tuning:** the numbers live in `packages/sim/src/survival.ts` (`SURVIVAL`) and are first guesses.
-
-## Controller (experimental)
-- **Turning it on:** in the main menu, **Settings** → *Controller support*. It's off by default. The tab
-  shows the connected pad and its button map.
-- **Pads:** any pad the browser reports with the standard mapping works: Xbox, DualSense/DS4, Steam
-  Controller / Deck (through Steam Input).
-- **What you control:** with it on, the AI runs your crew and reactor, but leaves alone any gun or system
-  you've powered up or down yourself, and crew you've sent to the teleporter. You aim, board, hack and
-  mind-control with **selector wheels**: hold the button, point the left stick at a segment, and let go.
-- **Pausing:** the wheel pauses the game when the lobby's pause rules allow (practice and Survival always).
-- **Buttons:**
-  - **A/B/X/Y**: weapons 1-4. Hold for the room wheel (crew are grouped by room, plus an empty-room slot);
-    a pick always autofires; tap to clear.
-  - **RB**: teleport. Hold to send a crew member to the pad, tap to beam over.
-  - **LT**: hold to bring a boarder back.
-  - **RT**: hacking. Hold to aim the drone, tap to pulse.
-  - **D-pad ↑**: mind control (hold). **←** cloak · **→** battery.
-  - **LB + a button**: powers that gun or system down. The teleporter going off hands its crew back to the AI.
-  - **Start**: pause.
-- **Menus:** the D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to
-  submit, B to cancel).
-- **Lobby:** a gamepad icon shows beside players on a controller.
-
-## Controls (FTL's)
-| Action | Input |
+| | |
 |---|---|
-| Power a weapon / arm it for targeting | click its box, or `1`-`4` |
-| Target | with a weapon armed, click an enemy room (beams: click a start point, then the direction) |
-| Power a weapon off | right-click its box |
-| Autofire | the button under the weapon, or `A` while armed |
-| Select crew | click, drag a box, or `Tab` for all |
-| Move crew | right-click a room on your ship |
-| System power | click the system's bars for +1, right-click for −1 |
-| Doors | click a door; `Z`/`X` open/close all. Opening again when every inner door is open opens the airlocks and vents the ship |
-| Stations | the two buttons under the crew list save positions and return crew to them |
-| Music on/off | `N` |
-| Match menu (resume / quit) | `Escape` |
-| Reorder weapons | drag a weapon box onto another slot (the guns swap mounts) |
-| Autofire | the AUTOFIRE button sets the default for new targets (yellow reticle); Shift-click a target to do the opposite |
-| Weapons system | click its icon to power the next weapon, right-click to unpower the last |
+| ![Main menu](docs/images/menu.png) | ![The hangar](docs/images/hangar.png) |
+| ![Survival rewards](docs/images/survival.png) | ![Controller wheel](docs/images/wheel.png) |
+| ![Match rules](docs/images/rules.png) | |
 
-## The hangar
-Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew → Augments → Launch**.
-1. **Ship:** pick a hull from FTL's ship-select thumbnails.
-2. **Systems:** buy system levels, reactor bars and missiles.
-3. **Weapons:** buy weapons from a store that shows each weapon's art and stats.
-4. **Drones:** fit drones and buy drone parts. Combat, defense and ship-repair drones fly; interior
-   drones are listed but wait for boarding.
-5. **Augments:** up to 3, with FTL's prices. Each card says what it does in the arena; augments that only
-   matter in the campaign (FTL jumps, the map, scrap) are kept and marked as having no effect.
-6. **Crew:** hire named crew of any race (Human, Engi, Mantis, Rockman, Slug, Zoltan, Crystal, Lanius), each
-   at its blueprint price. Rename them or roll a name from FTL's name list.
+## You need FTL
+FTL Arena runs on **your own copy of FTL: Faster Than Light** (version 1.6 or later, from Steam, GOG or Humble).
+On first start, the app reads the ships, art, sound and music from your install. None of FTL's files come
+with the download.
 
-## What's in v1
-- **Systems:** shields, engines, piloting, oxygen, medbay, weapons, sensors and doors, with reactor power,
-  system damage, ion and repair.
-- **Weapons:** lasers, burst lasers, missiles, ion, beams, flak, bombs, chain weapons and charge weapons.
-- **Hazards:** fires (spread, starve, burn systems and crew), breaches, O2 per room, venting through
-  airlocks, suffocation.
-- **Crew:** pathfinding, manning bonuses, skills, firefighting, repair and medbay healing.
-- **Sensor fog**, enforced by the server: level 2 shows the enemy interior, level 3 shows enemy weapon
-  charge, and with broken sensors you only see rooms your own crew stand in.
-- **14 player hulls** from your install, with their starting crews.
-- **Races:**
-  - Engi: repairs twice as fast.
-  - Mantis: fast but repairs slowly.
-  - Rockman: 150 HP and immune to fire.
-  - Zoltan: 70 HP and powers the system it stands in.
-  - Slug: telepathic, so it sees enemy crew without sensors.
-  - Crystal: 125 HP and suffocates slowly.
-  - Lanius: doesn't breathe and drains O2 from its room.
+Don't have it? [Buy FTL from Subset Games](https://subsetgames.com/ftl.html). It's a great game.
 
-  Boarding isn't in v1, so combat strength doesn't matter yet.
-- **FTL's own fonts:** the extractor converts `fonts/*.font` (a bitmap format, decoded in
-  `packages/extract/src/font.ts`) to atlases, and the client turns them into web fonts. HL2 is used for
-  labels, JustinFont for text and num_font for counters.
-- **FTL's UI**, placed by matching each art piece against real 1280×720 screenshots (`tools/align/match.py`):
-  - the hull bar and frame, shield squares, the evade/O2 panel and the missile counter;
-  - the reactor wire and system power columns (repair progress fills the damaged bar);
-  - the weapon tray, whose charge lights fill as weapons ready;
-  - doors from FTL's door sheet, green destination tiles and selection glow;
-  - the enemy ship standing vertically in the hostiles window.
-- **Shots:** they leave one view, vanish, and enter the other view a moment later. Missed shots fly past.
-- **Destroyed ships** break into their gibs before the result screen.
+## Download and play
+1. Get the latest build from the [**releases page**](https://github.com/dwatson251/ftl-arena/releases):
 
-- **Clone bay:** dead crew are cloned back while it's powered. Backup DNA keeps the queue through power
-  loss. Losing every crew member still ends the match.
-- **Drones:** combat drones orbit and fire at the enemy; defense drones shoot down missiles (Defense II
-  also lasers); anti-drone drones knock out drones; ship-repair drones patch the hull. Launching uses a
-  drone part, and unpowering a drone loses it.
+   | Platform | File |
+   |---|---|
+   | Windows | `FTL-Arena-win-x64.zip` |
+   | Linux | `FTL-Arena-linux-x64.tar.gz` |
+   | Steam Deck (or any Linux) | `FTL-Arena-x86_64.AppImage` |
+   | Dedicated server | `FTL-Arena-Server-*` |
+2. **Run it:**
+   - **Windows:** unzip the folder anywhere and run `FTL Arena.exe`. The app isn't signed, so Windows may
+     warn you: choose *More info → Run anyway*.
+   - **Steam Deck:** in Desktop Mode, mark the AppImage executable, then add it to Steam as a non-Steam game
+     ([details](docs/PLAYING.md#steam-deck)).
+3. **First start:** point the app at your FTL folder. It finds Steam installs by itself.
+4. **Play:**
+   - **Single player → Create a match** to practice.
+   - To play a friend, use **LAN** or **Online** ([how](docs/PLAYING.md#hosting-and-joining)).
 
-- **Boarding:** the teleporter sends up to four crew from its pad into an enemy room and brings them back.
-  Crew fight hostiles in the same room, boarders wreck systems and break closed doors, and dead boarders
-  can be cloned at home. Anti-personnel, system repair and boarding drones work as units inside ships.
+The [player's guide](docs/PLAYING.md) covers the controls, the hangar, every game mode, and hosting.
 
-- **Cloaking:** +60 evasion, and enemy weapons stop charging while it lasts.
-- **Hacking:** launch the drone at a room to lock that system, then pulse it for the system's FTL effect.
-- **Hulls:** all 28 player hulls, including the C variants, Zoltan, Stealth and Crystal ships.
+## Made with AI
+FTL Arena is built with the help of AI coding agents (Anthropic's Claude, through Claude Code). The agents
+write most of the code, while the game design, playtesting and direction come from a human. The development
+journal is in [docs/MODLOG.md](docs/MODLOG.md).
 
-- **Battery, mind control, artillery:** the Zoltan C battery, the Slug C / Lanius B mind control, and
-  the Federation artillery beam.
-- **The Rebel flagship:** stages 1-3 can be picked as single-player opponents.
+## For developers
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) covers building from source, the architecture, the tests and the
+release process.
 
-Every FTL system is in. Campaign-only augments (scrap, FTL jumps, the map) are kept and marked as having
-no effect in the arena.
-
-## Layout
-| Path | What |
-|---|---|
-| `packages/sim` | Pure deterministic simulation (no DOM, no Node). Same seed + same commands = same state hash. |
-| `packages/data` | Tolerant XML reader, blueprint/layout/animation/sound parsers, placeholder set. |
-| `packages/extract` | `ftl.dat` (PKG) reader and extractor. |
-| `packages/protocol` | Wire messages. See `docs/CONTRACT.md`. |
-| `apps/server` | Lobbies, hangar validation, 30 Hz tick, per-player fogged snapshots. |
-| `apps/client` | Vite + Pixi.js v8 client: menu, hangar, battle. |
-| `tools/bench` | Headless bot-vs-bot bench, network smoke test, browser e2e and hull screenshots. |
-| `docs/RULES.md` | Every combat number and where it came from, with the parity status. |
-
-## Tests
-```bash
-npm test                      # vitest: parsers, PKG round trip (if FTL is installed), sim rules, hangar, fog
-npm run bench -- --seed 3     # headless bot vs bot, prints winner + state hash
-npx tsx tools/bench/netsmoke.ts ws://localhost:8787/ws 15
-npx tsx tools/bench/e2e.ts --secs 60 [--win crew] [--limit 90] [--video]   # two Chromium pages, screenshots in traces/
-npx tsx tools/bench/practice-e2e.ts [--gibs] [--burst]                      # practice walkthrough: hangar steps, debug drawer, explosion
-npx tsx tools/bench/ladder.ts --levels 0,0.5,1                              # bot level vs bot level win matrix
-npx tsx tools/bench/difficulty.ts                                           # the 0-100 slider vs a fixed player
-npx tsx tools/bench/ab.ts                                                   # A/B one bot behaviour against level 0.5
-```
-
-## Credits
-- FTL: Faster Than Light is by Subset Games. You need your own copy for the real ships, art and sound.
-- The PKG layout was cross-checked against the community's notes (Slipstream Mod Manager); combat numbers
-  come from the FTL wiki and your blueprints (see `docs/RULES.md`).
-- Built with Pixi.js, ws, Vite, vitest and Playwright.
+## Credits and notice
+- **Not official:** FTL: Faster Than Light is © Subset Games. FTL Arena is an unofficial fan project, **not
+  affiliated with or endorsed by Subset Games**.
+- **No FTL files:** it includes none of FTL's game files. Everything from FTL comes from your own copy. The
+  screenshots and the icon show FTL's art.
+- **Sources:** combat numbers come from the [FTL wiki](https://ftl.fandom.com) and FTL's own blueprints (see
+  [docs/RULES.md](docs/RULES.md)). The data-file layout was cross-checked against the community's notes
+  (Slipstream Mod Manager).
+- **Built with** Pixi.js, Electron, ws, Vite, vitest and Playwright.

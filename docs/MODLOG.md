@@ -854,6 +854,45 @@
   suffocating crew member. This follows FTL players' reports; the wiki wasn't reachable.
 - **Tests:** `round46.test.ts` (6); 182 passing in total.
 
+## Round 48: getting ready for wider playtests (0.1.0-alpha.1)
+- **Version label:** "Alpha <version>" in red, top right on every screen (under the controller hints in
+  battle). Vite defines `__APP_VERSION__` from `FTL_ARENA_VERSION` (CI: the tag), else the commit's tag, else
+  the last 7 characters of the hash. The window title carries it too.
+- **Releases on tag:** `.github/workflows/release.yml` runs four jobs.
+  1. The tests, with no FTL data.
+  2. Windows, on `windows-latest`: the desktop zip and the server.
+  3. Linux, on `ubuntu-latest`: the tar.gz, the AppImage and the server.
+  4. A GitHub release, marked as a pre-release for alpha/beta/rc. Its notes are the version's
+     `CHANGELOG.md` section.
+
+  `ci.yml` runs the typecheck and tests on pushes and pull requests.
+- **Linux and the Steam Deck:**
+  - `build-desktop.mjs --linux` makes a tar.gz and an AppImage (appimagetool; `--no-sandbox` in its `AppRun`).
+  - In Steam's Gaming Mode (`SteamDeck=1`), the app goes fullscreen and loads with `?deck=1`, which turns
+    controller support on until switched off.
+  - `ftl.dat` is now also found in the Linux install's `data/` folder (desktop app, dedicated server,
+    extractor).
+  - I smoke-tested the AppImage under WSL: setup page, Deck mode, label.
+  - Flatpak is not done: it needs a manifest, a runtime and flatpak-builder in CI. The AppImage covers the
+    Deck for now.
+- **Build scripts on Windows:** they run vite and postject through node (no `.cmd` shims) and use `python`
+  there.
+  - `build-server.mjs` takes `--win`/`--linux`.
+  - On Windows it injects into the running `node.exe`.
+- **Debug tools are dev-only:**
+  - The server bundles are built with `__RELEASE__` (lobby `DEBUG_TOOLS = false`): debug is never on, and
+    debug commands are refused.
+  - The client shows the drawer and the lobby checkbox only under Vite dev.
+- **CI without FTL data:** `loadDb(undefined)` is the placeholder set. Two tests that need a teleporter or
+  drone-bay hull now skip on it. Result: 173 passed and 9 skipped without data; 181 passed and 1 skipped with
+  it.
+- **Docs:**
+  - The README is now for players: the story, features, screenshots, the FTL requirement and link, the
+    downloads, an AI disclosure, and the not-affiliated notice.
+  - Technical material moved to `docs/DEVELOPMENT.md`; the player's reference to `docs/PLAYING.md`.
+  - This journal moved to `docs/`, and there's a new `CHANGELOG.md`.
+  - The screenshots come from `tools/align/readme-shots.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
