@@ -594,6 +594,13 @@
   explosion (the "hit" event, `bombBurst`) instead of in the last 30% of the flight, so the art no longer
   explodes ahead of the blast.
 
+## Round 31: window resize
+- **Bug:** the battle only re-fitted to the window on the next resize. Pixi's `resizeTo` resizes the canvas on
+  the next animation frame, but our resize handler laid out straight away against the old size.
+- **Fix:** the handler calls `app.resize()` first, then lays out, and does both once more on the next frame.
+- **Check:** `tools/align/resize.ts`. On the old build, one resize to 900x560 left the 1280x720 layout
+  spilling past the canvas; now it fits at once.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

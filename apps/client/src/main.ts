@@ -292,8 +292,15 @@ function layoutBattle(): void {
   battle.stage.position.set((w - LOGICAL.W * s) / 2, (app.screen.height - LOGICAL.H * s) / 2);
 }
 window.addEventListener("resize", () => {
+  // Pixi's own resize (resizeTo) waits for the next frame, so the canvas would still have its old size here
+  // and the layout would lag a resize behind. Resize it now, lay out, and once more next frame to be sure.
+  app.resize();
   layoutBattle();
   render();
+  requestAnimationFrame(() => {
+    app.resize();
+    layoutBattle();
+  });
 });
 
 app.ticker.add((t) => battle?.frame(Math.min(0.1, t.deltaMS / 1000)));
