@@ -140,6 +140,25 @@ export class Match {
     st.rng = this.rng.s;
   }
 
+  /** How much punishment a system's bars take: 1, or for a reinforced one 10% more per bar it has. */
+  toughness(s: SystemState): number {
+    return s.reinforced ? 1 + RULES.reinforcePerBar * s.level : 1;
+  }
+
+  /** `n` points of system damage; a reinforced system soaks some, carrying the rest toward the next bar. */
+  private hurtSystem(s: SystemState, n: number): void {
+    const t = this.toughness(s);
+    let bars = n;
+    if (t > 1) {
+      s.armour = (s.armour ?? 0) + n / t;
+      bars = Math.floor(s.armour + 1e-9);
+      s.armour -= bars;
+    }
+    if (bars <= 0) return;
+    s.damage = Math.min(s.level, s.damage + bars);
+    s.repair = 0;
+  }
+
   /**
    * Survival's aftermath: the enemy is gone, but the winner's own ship carries on for a while (crew repair,
    * fight fires and boarders, seal breaches, heal, air flows). Nothing fires and nothing reaches the wreck.
@@ -163,6 +182,20 @@ export class Match {
     this.environmentTick(s);
     this.restorePower(s);
     this.updateDerived(s);
+    // Shots already in the air fly on: the beaten ship's last volleys can still land on us; ours carry on
+    // to where the wreck was and fizzle out.
+    const keep: Projectile[] = [];
+    for (const p of st.projectiles) {
+      if (p.delay > 0) {
+        p.delay -= DT;
+        keep.push(p);
+        continue;
+      }
+      p.t += DT;
+      if (p.t < p.flight) keep.push(p);
+      else if (p.from !== idx) this.resolve(p);
+    }
+    st.projectiles = keep;
     st.tick++;
     st.rng = this.rng.s;
     return false;
@@ -995,10 +1028,7 @@ export class Match {
       const sd = dmg + bp.sysDamage;
       // Titanium System Casing: a chance to negate system damage.
       const casing = augCount(T, "SYSTEM_CASING") && this.rng.chance(this.db.augments?.SYSTEM_CASING?.value ?? 0.15);
-      if (sd > 0 && !casing) {
-        sys.damage = Math.min(sys.level, sys.damage + sd);
-        sys.repair = 0;
-      }
+      if (sd > 0 && !casing) this.hurtSystem(sys, sd);
       if (bp.ion > 0 && !this.ionNegated(T)) this.addIon(sys, bp.ion);
     }
     const pers = (dmg + bp.persDamage) * RULES.crewDamagePerPoint;
@@ -1206,7 +1236,7 @@ export class Match {
           // The progress belongs to the system: every boarder working it adds to it, a fight in the room pauses
           // it (nobody's wrecking while they brawl), and it's only lost once the last boarder has left the
           // room. Breaking a door on the way in doesn't count.
-          sys.wreck = (sys.wreck ?? 0) + RULES.sabotageRate * Math.max(0.5, tr.combat) * (tr.sabotage ?? 1) * DT;
+          sys.wreck = (sys.wreck ?? 0) + (RULES.sabotageRate * Math.max(0.5, tr.combat) * (tr.sabotage ?? 1) * DT) / this.toughness(sys);
           if (sys.wreck >= 1) {
             sys.wreck = 0;
             if (tr.ionBoarder) this.addIon(sys, 1);
@@ -1469,10 +1499,7 @@ export class Match {
       if (this.god.has(ship.idx) || !this.rng.chance(n === 1 ? 0.33 : 0.66)) continue;
       ship.hull = Math.max(0, ship.hull - 1);
       const sys = Object.values(ship.systems).find((s) => s && s.room === rs.id);
-      if (sys) {
-        sys.damage = Math.min(sys.level, sys.damage + 1);
-        sys.repair = 0;
-      }
+      if (sys) this.hurtSystem(sys, 1);
     }
   }
 
@@ -2006,7 +2033,7 @@ export class Match {
       const sys = Object.values(ship.systems).find((s) => s && s.room === rs.id);
       const burning = Object.keys(rs.fires).length;
       if (sys && burning && !this.god.has(ship.idx)) {
-        sys.fireDmg += (DT * burning) / RULES.fireSysSeconds;
+        sys.fireDmg += (DT * burning) / RULES.fireSysSeconds / this.toughness(sys);
         if (sys.fireDmg >= 1) {
           sys.fireDmg = 0;
           if (sys.damage < sys.level) {

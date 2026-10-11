@@ -269,3 +269,5 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Boarding drones on board | Walk at half crew speed | user |
 | Wrecking a system | The progress is the system's: boarders working it add together, a fight in the room pauses it, and it's lost only when the last boarder leaves | user |
 | Low crew health beep | Once below 30% health, re-armed above it | user |
+| Repair rate | One bar per 12.5 s for an untrained human (Engi 6.25 s, Mantis 25 s), plus the repair-skill bonus | FTL wiki |
+| Reinforced system (Survival card) | Bars take 1 + 0.1 × level times the punishment (weapons, flares, fire, boarders); fractions carry | user |

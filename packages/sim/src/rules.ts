@@ -29,9 +29,12 @@ export const RULES = {
   humanHp: 100,
   /** Tiles per second (est). */
   crewSpeed: 2.2,
-  /** Bars repaired per second by one crew, before the repair-skill bonus (est). */
-  repairRate: 1 / 6,
+  /** Bars repaired per second by one crew, before the repair-skill bonus: one bar per 12.5 s for an untrained
+   *  human (FTL wiki), so 6.25 s for an Engi and 25 s for a Mantis. */
+  repairRate: 1 / 12.5,
   repairSkillBonus: [0, 0.1, 0.2],
+  /** Survival's reinforced systems: extra health per bar the system has (10% each). */
+  reinforcePerBar: 0.1,
   /** Breach/fire HP removed per second by one crew (est). */
   breachRepair: 20,
   firefight: 28,

@@ -304,10 +304,16 @@ export class Battle {
     // The aimed gun lost its power (a right-click, the system bars, damage, ion, or an order queued in a
     // pause that lands on unpause): drop the targeting mode with it.
     if (this.armed !== null && this.prev.ships[v.you].weapons[this.armed]?.powered && !v.ships[v.you].weapons[this.armed]?.powered) this.disarm();
-    // Saved positions start as everyone's starting spot, so "return to stations" works before any save.
+    // Saved positions start as everyone's starting spot, so "return to stations" works before any save. In a
+    // Survival run, the stations the player saved carry on from jump to jump (by name: ids change).
     if (!this.savedStations.size) {
       const g = this.own.geo;
-      for (const c of v.ships[v.you].crew) if (c.owner === v.you && c.drone === undefined && !c.dead) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
+      const kept = this.survival ? Battle.keptStations : null;
+      for (const c of v.ships[v.you].crew) {
+        if (c.owner !== v.you || c.drone !== undefined || c.dead) continue;
+        const room = kept?.get(c.name);
+        this.savedStations.set(c.id, room !== undefined && g.roomTiles.has(room) ? room : g.tiles.get(c.home)!.room);
+      }
     }
     this.soundscape(v);
     this.snapAt = performance.now();
@@ -818,8 +824,13 @@ export class Battle {
   private drawProjectiles(v: MatchView, k: number): void {
     this.projOwn.removeChildren();
     this.projWin.removeChildren();
-    const dtSnap = k / SNAP_HZ;
+    // Between snapshots shots are carried forward by the time since the last one. Paused, they hold still
+    // (snapshots keep coming with the same positions; carrying them forward made them wobble). Once the
+    // match is over, snapshots stop: shots still in the air fly on until they'd have arrived.
+    const ended = v.winner !== null && this.survival?.phase !== "aftermath";
+    const dtSnap = v.pause ? 0 : ended ? (performance.now() - this.snapAt) / 1000 : k / SNAP_HZ;
     for (const p of v.projectiles) {
+      if (ended && p.t + dtSnap - Math.max(0, p.delay) > p.flight) continue;
       const mine = p.from === v.you;
       if (p.drone !== undefined) {
         // Drone shots: straight from the drone (already beside the target ship) to a room on it.
@@ -1193,6 +1204,9 @@ export class Battle {
   private live(v: MatchView): boolean {
     return v.winner === null || (this.survival?.phase === "aftermath" && this.jumpAt === null);
   }
+
+  /** Survival: the crew stations the player saved, by crew name, kept across the run's battles (main.ts clears them for a new run). */
+  static keptStations: Map<string, number> | null = null;
 
   /** Survival: the run and the lobby phase (main.ts sets them on every lobby update). */
   survival: { s: SurvivalState; phase: string; at: number } | null = null;
@@ -2856,6 +2870,15 @@ export class Battle {
       if (b.kind === "assign") {
         // Only crew aboard (and not mind controlled) are saved; boarders and the dead keep their old spot, or none.
         for (const c of own.crew) if (!c.dead && c.dying === undefined && c.owner === v.you && c.drone === undefined && !c.mind && !c.beam) this.savedStations.set(c.id, g.tiles.get(c.home)!.room);
+        // A Survival run remembers them for the battles to come.
+        if (this.survival) {
+          const byName = new Map(Battle.keptStations ?? []);
+          for (const [id, room] of this.savedStations) {
+            const c = own.crew.find((q) => q.id === id);
+            if (c) byName.set(c.name, room);
+          }
+          Battle.keptStations = byName;
+        }
         play(this.db, ["powerUpSystem"]);
         this.say("Crew positions saved");
       } else {

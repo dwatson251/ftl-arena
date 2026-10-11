@@ -98,12 +98,35 @@ describe("survival: rewards", () => {
       const run = newRun(db, ship);
       run.battle = 1 + (seed % 9);
       const hand = drawCards(db, run, seed);
-      expect(hand.some((c) => c.kind === "system" || c.kind === "reactor")).toBe(true);
+      expect(hand.some((c) => c.kind === "system" || c.kind === "reactor" || c.kind === "reinforce")).toBe(true);
       expect(hand.length).toBeGreaterThanOrEqual(4);
     }
   });
 
-  it("taking a card puts it on the ship", () => {
+  it("reinforcement: a rare card for one system, whose bars then take 10% more punishment per bar", () => {
+    let card: Card | undefined;
+    for (let seed = 1; seed < 400 && !card; seed++) card = drawCards(db, newRun(db, ship), seed).find((c) => c.kind === "reinforce");
+    expect(card).toBeTruthy();
+    expect(card!.tier).toBe(4);
+    const run = newRun(db, ship);
+    applyCard(db, run, { ...card!, system: "shields" });
+    const m = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
+    const sh = m.state.ships[0].systems.shields!;
+    expect(sh.reinforced).toBe(true);
+    sh.level = 4; // toughness 1.4: seven 1-point hits break five bars... capped at its four
+    const hits = (n: number) => { for (let i = 0; i < n; i++) (m as any).hurtSystem(sh, 1); };
+    hits(4);
+    expect(sh.damage).toBe(2); // 4 / 1.4 = 2.86 → 2 whole bars
+    hits(3);
+    expect(sh.damage).toBe(4);
+    // An ordinary system takes every point.
+    const en = m.state.ships[0].systems.engines!;
+    en.damage = 0;
+    (m as any).hurtSystem(en, 2);
+    expect(en.damage).toBe(Math.min(en.level, 2));
+  });
+
+    it("taking a card puts it on the ship", () => {
     const run = newRun(db, ship);
     const before = run.loadout.missiles;
     applyCard(db, run, { kind: "supplies", title: "Supplies", blurb: "", tier: 1, value: 30, missiles: 5 } as Card);
@@ -236,7 +259,28 @@ describe("survival: battles", () => {
     expect(m.state.ships[1].crew.some((c) => c.id === b.id)).toBe(false);
   });
 
-  it("only practice lobbies get Survival", () => {
+  it("after the win, shots already in the air fly on: the beaten ship's can still land, ours fizzle out", () => {
+    const run = newRun(db, ship);
+    const m = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
+    const me = m.state.ships[0];
+    const room = me.systems.engines!.room;
+    const base = { slot: 0, kind: "LASER" as const, delay: 0, t: 0, flight: 0.5, px: 0, py: 0, damageBonus: 0 };
+    const w = Object.values(db.weapons).find((x) => x.type === "LASER" && x.damage > 0 && !x.id.startsWith("__"))!.id;
+    m.state.projectiles.push({ ...base, id: 990, from: 1, weapon: w, target: { kind: "room", room } }, { ...base, id: 991, from: 0, weapon: w, target: { kind: "room", room: 0 } });
+    me.shieldLayers = 0;
+    m.state.winner = 0;
+    const seen: { e: string; ship?: number }[] = [];
+    for (let i = 0; i < 30; i++) {
+      m.aftermathStep(0);
+      seen.push(...(m.state.events as { e: string; ship?: number }[]));
+    }
+    expect(m.state.projectiles.length).toBe(0);
+    // The enemy's shot arrived at us (a hit, or a miss off our evasion); ours never touched the wreck.
+    expect(seen.some((e) => (e.e === "hit" || e.e === "miss" || e.e === "shield") && e.ship === 0)).toBe(true);
+    expect(seen.some((e) => (e.e === "hit" || e.e === "miss" || e.e === "shield") && e.ship === 1)).toBe(false);
+  });
+
+    it("only practice lobbies get Survival", () => {
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, false).survival).toBe(false);
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, true).survival).toBe(true);
   });

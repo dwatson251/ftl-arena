@@ -109,6 +109,8 @@ function onMsg(m: ServerMsg): void {
     case "lobby": {
       const was = lobby?.phase;
       lobby = m.lobby;
+      // A new Survival run (or none): its saved crew stations start over.
+      if (!lobby?.survival || lobby.phase === "lobby") Battle.keptStations = null;
       // Survival: upgraded guns the run has fitted, so their names and art resolve here too.
       if (db && lobby?.survival) Object.assign(db.weapons, lobby.survival.weapons);
       if (battle) battle.survival = lobby?.survival ? { s: lobby.survival, phase: lobby.phase, at: performance.now() } : null;
@@ -252,7 +254,7 @@ function menuOverlay(): HTMLDivElement {
 function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement {
   const o = document.createElement("div");
   o.className = "overlay reward";
-  const kind: Record<string, string> = { weapon: "Weapon", upgrade: "Weapon upgrade", drone: "Drone", augment: "Augment", system: "System", reactor: "Reactor", crew: "Crew", supplies: "Supplies" };
+  const kind: Record<string, string> = { weapon: "Weapon", upgrade: "Weapon upgrade", drone: "Drone", augment: "Augment", system: "System", reactor: "Reactor", crew: "Crew", supplies: "Supplies", reinforce: "Reinforcement" };
   const cards = (sv.offer ?? []).map((c, i) => `<button class="rcard tier${c.tier}" data-pick="${i}">
       <span class="rkind">${esc(kind[c.kind] ?? c.kind)}${c.tier === 4 ? " · RARE" : ""}</span>
       <span class="rtitle">${esc(c.title)}</span>

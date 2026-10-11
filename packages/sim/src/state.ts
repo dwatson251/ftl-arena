@@ -70,6 +70,10 @@ export interface SystemState {
   sabotage?: number;
   /** That progress itself: kept while any boarder is in the room, paused while they fight, lost when they all leave. */
   wreck?: number;
+  /** Survival: reinforced, its bars take 10% more punishment per bar it has (see Match.toughness). */
+  reinforced?: boolean;
+  /** Damage soaked by reinforcement, carried toward the next whole bar. */
+  armour?: number;
   /** Ion stacks lock bars; `ionTimer` counts down the current stack. */
   ion: number;
   ionTimer: number;

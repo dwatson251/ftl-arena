@@ -37,6 +37,8 @@ export const SURVIVAL = {
   maxUpgrades: 3,
   /** A point of max hull (reinforced plating: what a supplies card turns into once the hull is full). */
   platingValue: 12,
+  /** How often the system card is instead a (rare) reinforcement for one installed system. */
+  reinforceChance: 0.16,
   /** Most missiles one supplies card brings. */
   maxMissiles: 8,
   /** Augments that do something in a fight (FTL's campaign-only ones, like scrap or Rebel-fleet delays, don't). */
@@ -64,7 +66,7 @@ export interface SurvivalRun {
   over: boolean;
 }
 
-export type CardKind = "weapon" | "upgrade" | "drone" | "augment" | "system" | "reactor" | "crew" | "supplies";
+export type CardKind = "weapon" | "upgrade" | "drone" | "augment" | "system" | "reactor" | "crew" | "supplies" | "reinforce";
 
 export interface Card {
   kind: CardKind;
@@ -200,6 +202,9 @@ export function applyToLoadout(db: GameDB, l0: Loadout, c: Card): Loadout {
     case "reactor":
       l.reactor += 2;
       break;
+    case "reinforce":
+      l.reinforced = [...new Set([...(l.reinforced ?? []), c.system!])];
+      break;
     case "crew":
       l.crew.push({ name: c.name!, race: c.race! });
       break;
@@ -313,6 +318,14 @@ function systemCard(db: GameDB, l: Loadout, rng: Rng): Card | null {
     out.push({ kind: "system", system: h.id, title: lv === 0 ? `Install ${bp.title ?? h.id}` : `${bp.title ?? h.id} level ${lv + 1}`, blurb: lv === 0 ? "A new system for your ship" : `Upgrade your ${(bp.title ?? h.id).toLowerCase()}${isSubsystem(h.id) ? "" : " (needs reactor power)"}`, tier: cost >= 80 ? 3 : 2, value: cost });
   }
   const ok = out.filter((c) => installable(db, l, c));
+  // Now and then (rare, gold): reinforce one installed system, 10% more health per bar it has.
+  const solid = hullSystems(db, l.ship).filter((h) => (l.systems[h.id] ?? h.base) > 0 && !(l.reinforced ?? []).includes(h.id));
+  if (solid.length && rng.chance(SURVIVAL.reinforceChance)) {
+    const h = rng.pick(solid);
+    const lv = l.systems[h.id] ?? h.base;
+    const name = db.systems[h.id]?.title ?? h.id;
+    return { kind: "reinforce", system: h.id, title: `Reinforced ${name}`, blurb: `+${Math.round(RULES.reinforcePerBar * 100)}% health per bar: takes ${Math.round(RULES.reinforcePerBar * lv * 100)}% more punishment now (more as it's upgraded)`, tier: 4, value: 90 };
+  }
   // The reactor comes up a third of the time (more power is what most upgrades end up needing).
   const reactor: Card = { kind: "reactor", title: "Reactor +2", blurb: "Two more bars of reactor power", tier: 2, value: RULES.reactorPrice(l.reactor) + RULES.reactorPrice(l.reactor + 1) };
   const canReactor = l.reactor + 2 <= reactorCap(db, l.ship) && installable(db, l, reactor);

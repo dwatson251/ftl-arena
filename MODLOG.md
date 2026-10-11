@@ -633,6 +633,30 @@
   random enemy, which can be a crewless automated ship. It now falls back to a copy of one of ours (12/12
   runs pass).
 
+## Round 34: repair pace, reinforced systems, shots after a win, steady pauses, saved stations
+- **Repair is 2x slower:** 12.5 s per bar for an untrained human (the FTL wiki's figure, via search; the
+  wikis block automated reads), so 6.25 s for an Engi and 25 s for a Mantis (`RULES.repairRate`). It was
+  6 s.
+  - The wiki gives no per-bar system health: FTL bars break by damage points.
+  - I found no published rate for boarders wrecking a system, so that stays at 20 s per bar for one human
+    boarder (`sabotageRate`).
+- **Reinforced systems (Survival):**
+  - A rare, gold card for one installed system. Its bars take 10% more punishment per bar the system has
+    (`toughness = 1 + 0.1 × level`; a 4-bar shield takes 40% more).
+  - Weapon damage, solar flares, fire and boarders are all divided by it, with fractions carried toward
+    the next bar (`SystemState.armour`).
+  - The card takes the system slot about 1 hand in 6.
+- **Shots after a win:** projectiles in the air keep flying.
+  - In Survival's aftermath the sim moves them: the beaten ship's last volleys can still land, and ours
+    fizzle where the wreck was.
+  - When a match ends, the client flies them on until they'd have arrived.
+- **Pause wobble:** while paused, shots were carried forward between snapshots (which keep coming with the
+  same positions) and snapped back each time. Paused, they now hold still.
+- **Saved crew stations (Survival):** the stations the player saves now carry over from jump to jump (by
+  crew name). Each new battle used to reset them to where the crew stood. A new run clears them.
+- **Tests:** reinforcement (card, toughness, bars soaked) and aftermath shots (the enemy's land, ours
+  don't); 152 passing in total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
