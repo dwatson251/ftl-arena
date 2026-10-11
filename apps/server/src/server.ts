@@ -223,6 +223,8 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
           return err(c.lobby ? c.lobby.debug(c, m.d) : "not in a lobby");
         case "rematch":
           return c.lobby?.rematch(c);
+        case "pick":
+          return err(c.lobby ? c.lobby.pick(c, m.card) : "not in a lobby");
       }
     });
     ws.on("close", () => {
@@ -259,7 +261,7 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       secAcc -= 1000;
       for (const [code, l] of lobbies) {
         l.secondTick();
-        if (l.clients.size === 0 && l.phase !== "battle") lobbies.delete(code);
+        if (l.clients.size === 0 && l.phase !== "battle" && !l.midRun()) lobbies.delete(code);
       }
     }
   }, 4);

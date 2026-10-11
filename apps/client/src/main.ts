@@ -2,9 +2,9 @@ import { Application } from "pixi.js";
 import type { GameDB } from "@ftl/data";
 import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
 import type { MatchView } from "@ftl/sim";
-import { artReady, preload, registerOfflineCache } from "./assets.ts";
+import { artReady, BACKDROPS, PLANETS, preload, registerOfflineCache } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
-import { music, preloadSounds } from "./audio.ts";
+import { music, play, preloadSounds } from "./audio.ts";
 import { presets } from "./presets.ts";
 
 // Saved ship presets: read now (the loading screen also waits for them).
@@ -103,7 +103,13 @@ function onMsg(m: ServerMsg): void {
       }
       break;
     case "lobby": {
+      const was = lobby?.phase;
       lobby = m.lobby;
+      // Survival: upgraded guns the run has fitted, so their names and art resolve here too.
+      if (db && lobby?.survival) Object.assign(db.weapons, lobby.survival.weapons);
+      if (battle) battle.survival = lobby?.survival ? { s: lobby.survival, phase: lobby.phase, at: performance.now() } : null;
+      // The reward is picked: the FTL jump (the next battle's "start" ends it).
+      if (battle && lobby?.phase === "jump" && was !== "jump") jumpOut();
       // Back in touch, but the server has no match for us any more (the host's game closed and came back,
       // or we reached a different server): the battle can't go on, and it wasn't us who left.
       if (battle && !lobby && lastView && lastView.winner === null) {
@@ -116,8 +122,15 @@ function onMsg(m: ServerMsg): void {
       break;
     }
     case "start":
-      if (battle) endBattle(); // debug restart
+      if (battle) endBattle(); // debug restart, or Survival's next battle
       startBattle(m.you);
+      if (battle && lobby?.survival) {
+        battle.survival = { s: lobby.survival, phase: "battle", at: performance.now() };
+        // Each battle is a new beacon: a fresh backdrop, sometimes with a planet.
+        const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+        battle.backdrop = { bg: pick(BACKDROPS), planet: Math.random() < 0.6 ? pick(PLANETS) : undefined, px: 0.1 + Math.random() * 0.25, py: 0.2 + Math.random() * 0.6 };
+      }
+      if (jumpVeil) arrive();
       break;
     case "snap": {
       const wasOver = lastView?.winner != null;
@@ -142,6 +155,89 @@ function onMsg(m: ServerMsg): void {
       break;
   }
   render();
+}
+
+/** Survival's jump: the ship streaks away (battle.ts), then a white flash fades to black until the next battle. */
+let jumpVeil: HTMLDivElement | null = null;
+function jumpOut(): void {
+  battle?.jumpOut();
+  jumpVeil?.remove();
+  const v = document.createElement("div");
+  v.className = "jump-veil";
+  document.body.appendChild(v);
+  jumpVeil = v;
+  setTimeout(() => v.classList.add("flash"), 1500);
+  setTimeout(() => v.classList.replace("flash", "black"), 1750);
+}
+
+/** Out of the jump at the next beacon: the new battle fades in from black. */
+function arrive(): void {
+  const v = jumpVeil;
+  if (!v) return;
+  jumpVeil = null;
+  v.classList.remove("flash");
+  v.classList.add("black");
+  play(db!, ["jumpArrive"], 1);
+  battle?.arriveIn();
+  requestAnimationFrame(() => {
+    v.classList.add("out");
+    setTimeout(() => v.remove(), 1400);
+  });
+}
+
+/** The reward cards after a Survival win (the sim is paused until one is picked). */
+function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement {
+  const o = document.createElement("div");
+  o.className = "overlay reward";
+  const kind: Record<string, string> = { weapon: "Weapon", upgrade: "Weapon upgrade", drone: "Drone", augment: "Augment", system: "System", reactor: "Reactor", crew: "Crew", supplies: "Supplies" };
+  const cards = (sv.offer ?? []).map((c, i) => `<button class="rcard tier${c.tier}" data-pick="${i}">
+      <span class="rkind">${esc(kind[c.kind] ?? c.kind)}${c.tier === 4 ? " · RARE" : ""}</span>
+      <span class="rtitle">${esc(c.title)}</span>
+      <span class="rblurb">${esc(c.blurb)}</span></button>`).join("");
+  o.innerHTML = `<div class="menu reward-menu"><h1>${sv.boss ? "FLAGSHIP DOWN" : `BATTLE ${sv.battle} WON`}</h1>
+    <p class="note">Choose one. Your ship jumps to the next fight as soon as you do.</p>
+    <div class="rcards">${cards}</div>
+    <p class="note">Score ${sv.score} · ${sv.won} won${sv.bosses ? ` · ${sv.bosses} boss${sv.bosses > 1 ? "es" : ""}` : ""}</p></div>`;
+  o.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) =>
+    b.addEventListener("click", () => {
+      o.querySelectorAll("button").forEach((x) => (x.disabled = true));
+      b.classList.add("picked");
+      play(db!, ["acceptUpgrades"], 1);
+      net.send({ t: "pick", card: Number(b.dataset.pick) });
+    }),
+  );
+  return o;
+}
+
+/** This computer's best Survival score (a convenience: lost with the browser's storage). */
+let bestSeen: { score: number; best: number; isNew: boolean } | null = null;
+function bestScore(score: number): { best: number; isNew: boolean } {
+  // Once per finished run (the overlay re-renders; the "new best" mark must survive that).
+  if (bestSeen?.score === score) return bestSeen;
+  let best = 0;
+  try {
+    best = Number(localStorage.getItem("ftl-arena-survival-best")) || 0;
+    if (score > best) localStorage.setItem("ftl-arena-survival-best", String(score));
+  } catch {}
+  bestSeen = { score, best: Math.max(best, score), isNew: score > best };
+  return bestSeen;
+}
+
+function gameOverOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement {
+  const o = document.createElement("div");
+  o.className = "overlay";
+  const b = bestScore(sv.score);
+  o.innerHTML = `<div class="menu"><h1>SHIP DESTROYED</h1>
+    <p>Survival ended in battle ${sv.battle}.</p>
+    <div class="score-rows">
+      <div class="kv"><span>Battles won</span><b>${sv.won}</b></div>
+      <div class="kv"><span>Bosses</span><b>${sv.bosses}</b></div>
+      <div class="kv"><span>Rewards taken</span><b>${sv.picks.length}${sv.rare ? ` (${sv.rare} rare)` : ""}</b></div>
+      <div class="kv score-total"><span>Score</span><b>${sv.score}</b></div>
+      <div class="kv"><span>Best on this computer</span><b>${b.best}${b.isNew ? " · new best!" : ""}</b></div>
+    </div>
+    <div class="row" style="justify-content:center"><button class="primary" id="rematch">New run</button><button id="leave">Leave</button></div></div>`;
+  return o;
 }
 
 function startBattle(you: 0 | 1): void {
@@ -305,7 +401,18 @@ function render(): void {
   if (battle) {
     for (const n of [...ui.children]) if (n.id !== "debug") n.remove();
     const v = lastView;
-    if (v && v.winner !== null && battle.endReady()) {
+    const sv = lobby?.survival;
+    if (sv && lobby?.phase === "reward" && sv.offer) ui.appendChild(rewardOverlay(sv));
+    if (sv && sv.over && v && v.winner !== null && battle.endReady()) {
+      const o = gameOverOverlay(sv);
+      ui.appendChild(o);
+      o.querySelector("#rematch")!.addEventListener("click", () => net.send({ t: "rematch" }));
+      o.querySelector("#leave")!.addEventListener("click", () => {
+        net.send({ t: "leave" });
+        endBattle();
+        render();
+      });
+    } else if (!sv && v && v.winner !== null && battle.endReady()) {
       const won = v.winner === v.you;
       // The server that ran it is gone (the host's game closed): there's no hangar to go back to.
       const stranded = localEnd || !net.connected;

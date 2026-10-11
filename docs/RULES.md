@@ -245,3 +245,23 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Rule | Value | Source |
 |---|---|---|
 | Launch countdown | 5 s once both captains are ready, a beep each second (sharper on the last); Unready or Escape calls it off; Ready (and the countdown) also on the Launch page | user |
+
+## Survival (single player; all values are first guesses, `SURVIVAL` in packages/sim/src/survival.ts)
+| Rule | Value | Source |
+|---|---|---|
+| Ship | The chosen hull's stock FTL loadout, with its missiles; building and presets are off | user |
+| Difficulty | Battle n: 5 + 5(n−1), capped at 95. The bot's skill comes from `difficultyToBot`. The enemy is a random single-player hull via `enemyLoadout`, with budget 150 + 5d (more above 60) | est |
+| Bosses | Battles 10, 20 and 30 are the flagship's stages 1-3. From battle 40 they cycle through the Hard layouts | user |
+| Hazards | From battle 4: a 12% chance of a random hazard (never with a boss) | user (rare) |
+| Carried over | Hull and max hull; live crew aboard with their HP and XP (anyone left on the wreck is lost); system damage; missiles; drone parts | user |
+| Reset at the jump | Fires, breaches, ion, O2, weapon charge, deployed drones, boarders | est |
+| Aftermath | 15 s of the winner's own ship (crew, systems, air, power); nothing fires; orders and pause work. Then the sim pauses for the cards | user |
+| Cards | Gear (weapon 5 : drone 2 : augment 2 weight; drones only with a drone system), a ship card (weapon upgrade, system level or install, reactor +2, crew), and supplies. A boss win adds a 4th card and makes the gear rare | user + est |
+| Tiers | From FTL's price and rarity: T1 ≤ 35, T2 ≤ 55, T3 ≤ 75, T4 (gold) ≥ 80 or rarity 5. Tier weights at difficulty d: [max(0.4, 3 − d/25), 2, 0.5 + d/40, 0.12 + d/60] | est |
+| Supplies value | Matches the gear card (at least 30 + 3n): hull 3, missile 6 (8 a card at most), drone part 8, and +1 max hull (plating) 12 once the hull is full | est |
+| Weapon upgrades | +1 damage, +1 shot (lasers, bursts, missiles), −20% charge time, −1 power (minimum 1); 3 per gun; worth 25 each | user + est |
+| Can it be installed? | The card is applied to a copy and priced with unlimited scrap; any rule error (slots, max level, augment limit, crew limit) drops it | — |
+| Augments offered | Only the ones the arena simulates (no campaign-only scrap or fleet effects) | — |
+| Score | 100 per win, 500 per boss, 10 per card, 25 per rare card | user (arbitrary) |
+| Autonomous ships | A Rules checkbox (no longer a Game mode). Only the hull counts, and builds may launch with no crew. Off in Survival | user |
+

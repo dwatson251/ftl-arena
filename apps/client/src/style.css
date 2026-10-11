@@ -235,3 +235,26 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .hg-step.locked { filter: grayscale(1); opacity: 0.45; cursor: not-allowed; }
 .preset-new:disabled { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; }
 .preset-card.off { filter: grayscale(1); }
+
+/* Survival: reward cards (tier colours: white, green, blue, gold for rare), the game-over tally, the jump veil. */
+.reward .reward-menu { max-width: 860px; }
+.rcards { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 14px 0; }
+.rcard { display: flex; flex-direction: column; gap: 6px; width: 190px; min-height: 150px; padding: 12px; text-align: left; border: 2px solid var(--edge); background: #222833; cursor: pointer; transition: transform 0.08s, border-color 0.08s; }
+.rcard:hover:not(:disabled) { transform: translateY(-3px); border-color: #fff; }
+.rcard .rkind { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.rcard .rtitle { font-size: 16px; font-weight: 700; color: var(--text); }
+.rcard .rblurb { font-size: 12px; color: var(--dim); line-height: 1.35; }
+.rcard.tier2 { border-color: #5fa86a; }
+.rcard.tier3 { border-color: #5b8fd6; background: #1d2636; }
+.rcard.tier3 .rtitle { color: #a9cbff; }
+.rcard.tier4 { border-color: #f0c040; background: linear-gradient(160deg, #3a3014, #222833 70%); box-shadow: 0 0 14px rgba(240, 192, 64, 0.35); }
+.rcard.tier4 .rkind, .rcard.tier4 .rtitle { color: #ffd76a; }
+.rcard.picked { border-color: #fff; transform: scale(1.04); }
+.rcard:disabled:not(.picked) { opacity: 0.45; }
+.score-rows { margin: 12px auto; max-width: 300px; text-align: left; }
+.score-rows .score-total { font-size: 20px; color: var(--accent); border-top: 1px solid var(--edge); margin-top: 6px; padding-top: 6px; }
+.jump-veil { position: fixed; inset: 0; pointer-events: none; background: #fff; opacity: 0; z-index: 50; transition: opacity 0.25s ease-in, background-color 0.5s; }
+.jump-veil.flash { opacity: 1; }
+.jump-veil.black { opacity: 1; background: #000; }
+.jump-veil.black.out { opacity: 0; transition: opacity 1.2s ease-out; }
+@media (max-width: 700px) { .rcard { width: 100%; min-height: 0; } }

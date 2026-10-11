@@ -12,8 +12,12 @@ export interface Loadout {
   weapons: string[];
   crew: CrewPick[];
   missiles: number;
-  /** Server-built bot loadouts only: hull points override (enemy hulls are small). */
+  /** Server-built loadouts only: hull points override (enemy hulls are small; Survival's carried max hull). */
   hull?: number;
+  /** Survival: hull points the ship starts the battle with (carried from the last fight). */
+  hullNow?: number;
+  /** Survival: system damage carried from the last fight. */
+  damage?: Partial<Record<SystemId, number>>;
   /** Augment ids, up to 3 (FTL's limit); stackable augments may repeat. */
   augments?: string[];
   /** Drone ids (up to the hull's drone slots) and drone parts. */
@@ -30,6 +34,8 @@ export interface CrewPick {
   race: string;
   /** Skill experience to start with (imported from an FTL run); clamped to each skill's maximum. */
   xp?: Partial<Record<SkillId, number>>;
+  /** Survival: health carried from the last fight. */
+  hp?: number;
 }
 
 export interface PriceLine {
@@ -139,7 +145,8 @@ export function buyableWeapons(db: GameDB): string[] {
     .map((w) => w.id);
 }
 
-export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string[] = [], unlimited = false): Priced {
+/** `crewless`: autonomous ships are on, so a build may start with no crew at all. */
+export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string[] = [], unlimited = false, crewless = false): Priced {
   const errors: string[] = [];
   const lines: PriceLine[] = [];
   const ship = db.ships[l.ship];
@@ -199,7 +206,8 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     const bp = db.weapons[w];
     if (bp) lines.push({ item: `sell ${bp.title}`, scrap: -Math.floor(bp.cost * RULES.sellRefund) });
   }
-  if (!Array.isArray(l.crew) || l.crew.length < 1 || l.crew.length > RULES.maxCrew) errors.push(`crew must be 1-${RULES.maxCrew}`);
+  const minCrew = crewless ? 0 : 1;
+  if (!Array.isArray(l.crew) || l.crew.length < minCrew || l.crew.length > RULES.maxCrew) errors.push(`crew must be ${minCrew}-${RULES.maxCrew}`);
   else {
     // Starting crew are free; each extra member of a race costs that race's blueprint price.
     const free = new Map<string, number>();
@@ -285,14 +293,14 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     // or 0 in a one-tile room).
     const blocked = bay && slot.station >= 0 && tiles.length > 1 ? tiles[slot.station] ?? tiles[0] : undefined;
     systems[h.id] = {
-      id: h.id, room: slot.room, level, power: 0, damage: 0, repair: 0, ion: 0, ionTimer: 0, station, fireDmg: 0, bonus: 0,
+      id: h.id, room: slot.room, level, power: 0, damage: Math.max(0, Math.min(level, Math.round(l.damage?.[h.id] ?? 0))), repair: 0, ion: 0, ionTimer: 0, station, fireDmg: 0, bonus: 0,
       facing: station ? slot.facing ?? "up" : undefined,
       ...(blocked ? { blocked } : {}),
       ...(slot.weapon && db.weapons[slot.weapon] ? { weapon: slot.weapon, charge: 0 } : {}),
     } satisfies SystemState;
   }
   const ship: ShipState = {
-    idx, player, bp: l.ship, layout: bp.layout, hull: l.hull ?? bp.health, maxHull: l.hull ?? bp.health, reactor: l.reactor, systems,
+    idx, player, bp: l.ship, layout: bp.layout, hull: Math.min(l.hull ?? bp.health, l.hullNow ?? l.hull ?? bp.health), maxHull: l.hull ?? bp.health, reactor: l.reactor, systems,
     rooms: layout.rooms.map((r) => ({ id: r.id, o2: 100, fires: {}, breaches: {} })),
     doors: layout.doors.map(() => false),
     crew: [],
@@ -333,7 +341,7 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     const t = raceOf(pick.race);
     ship.crew.push({
       id: idx * 100 + i, name: String(pick.name || pickName(NAMES)).slice(0, 16), race: RACES[pick.race] && !RACES[pick.race].drone ? pick.race : "human",
-      hp: t.hp, maxHp: t.hp, x, y, tile,
+      hp: Math.max(1, Math.min(t.hp, pick.hp ?? t.hp)), maxHp: t.hp, x, y, tile,
       path: [], home: tile, task: "idle",
       xp: Object.fromEntries(SKILLS.map((s) => [s, Math.max(0, Math.min(RULES.skillXp[s][1], Math.round(Number(pick.xp?.[s]) || 0)))])) as CrewState["xp"],
       stun: 0, dead: false, owner: idx,

@@ -1,11 +1,13 @@
 /** Lobbies: two seats, host-set rules, hangar validation, then an authoritative match at 30 Hz. */
-import type { GameDB } from "@ftl/data";
+import type { GameDB, WeaponBP } from "@ftl/data";
 import {
   PROTOCOL_VERSION, SNAP_EVERY, type DebugInfo, type DebugOp, type LobbyPlayer, type LobbyState, type PracticeConfig, type ServerMsg,
+  type SurvivalState,
 } from "@ftl/protocol";
 import {
-  baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, difficultyToBot, enemyLoadout, Match, priceLoadout, RULES, viewFor, type Command, type Loadout,
-  type MatchConfig, type MatchEvent,
+  applyCard, baseLoadout, Bot, botLoadout, carryOver, DEFAULT_CONFIG, difficultyToBot, drawCards, enemyLoadout, Match, newRun, nextEnemy,
+  priceLoadout, registerWeapons, RULES, score, stockLoadout, SURVIVAL, TICK_HZ, viewFor, type Card, type Command, type Loadout, type MatchConfig,
+  type MatchEvent, type SurvivalEnemy, type SurvivalRun,
 } from "@ftl/sim";
 
 export interface Client {
@@ -38,6 +40,13 @@ export class Lobby {
   private wallTicks = 0;
   private reveal = false;
   private loadouts: [Loadout, Loadout] | null = null;
+  /** Survival: the run, this battle's opponent, the cards on offer, the aftermath clock, the jump timer. */
+  run: SurvivalRun | null = null;
+  private enemy: SurvivalEnemy | null = null;
+  private offer: Card[] | null = null;
+  private aftermathLeft = 0;
+  private jumpTimer: ReturnType<typeof setTimeout> | null = null;
+  private upgraded: Record<string, WeaponBP> = {};
 
   constructor(public code: string, public host: string, public db: GameDB, cfg: Partial<MatchConfig>, public practice: boolean, private log: (s: string) => void = () => {}) {
     // Practice pauses freely, as FTL's single player does (an unlimited pause clock).
@@ -49,8 +58,51 @@ export class Lobby {
   state(): LobbyState {
     return {
       code: this.code, host: this.host, phase: this.phase, config: this.config, players: this.players, countdown: this.countdown,
-      practice: this.practiceCfg,
+      practice: this.practiceCfg, survival: this.config.survival ? this.survivalState() : null,
     };
+  }
+
+  private survivalState(): SurvivalState {
+    const r = this.run;
+    return {
+      battle: r?.battle ?? 1, won: r?.won ?? 0, bosses: r?.bosses ?? 0, score: r ? score(r) : 0, boss: !!this.enemy?.boss,
+      hazard: this.enemy?.hazard ?? "none", aftermathLeft: Math.max(0, Math.ceil(this.aftermathLeft)), offer: this.offer,
+      picks: r?.picks ?? [], rare: r?.rare ?? 0, over: !!r?.over, weapons: this.upgraded,
+    };
+  }
+
+  /** Between a Survival run's battles (the run lives on through a reload). */
+  midRun(): boolean {
+    return this.phase === "aftermath" || this.phase === "reward" || this.phase === "jump";
+  }
+
+  /** The human seat (Survival is single player: the other seat is the bot). */
+  private humanIdx(): 0 | 1 {
+    return this.players.findIndex((p) => !p.bot) === 1 ? 1 : 0;
+  }
+
+  /** Survival: take one of the cards on offer, then jump to the next battle. */
+  pick(c: Client, i: number): string | null {
+    if (!this.run || this.phase !== "reward" || !this.offer) return "nothing to pick";
+    if (this.players[this.humanIdx()]?.id !== c.id) return "not your run";
+    const card = this.offer[Math.floor(Number(i))];
+    if (!card) return "no such card";
+    applyCard(this.db, this.run, card);
+    Object.assign(this.upgraded, registerWeapons(this.db, this.run.loadout.weapons));
+    this.log(`survival: took ${card.title} after battle ${this.run.battle}`);
+    this.offer = null;
+    this.run.battle++;
+    this.phase = "jump";
+    if (this.jumpTimer) clearTimeout(this.jumpTimer);
+    this.jumpTimer = setTimeout(() => {
+      this.jumpTimer = null;
+      if (this.phase !== "jump" || !this.clients.size) return;
+      this.config = { ...this.config, seed: (Math.random() * 2 ** 31) | 0 };
+      this.start();
+      this.broadcast();
+    }, SURVIVAL.jump * 1000);
+    this.broadcast();
+    return null;
   }
 
   broadcast(): void {
@@ -228,6 +280,9 @@ export class Lobby {
       case "restart":
         if (this.loadouts) this.start();
         break;
+      case "skipAftermath":
+        if (this.phase === "aftermath") this.aftermathLeft = 0;
+        break;
     }
     this.sendSnaps();
     return null;
@@ -238,7 +293,7 @@ export class Lobby {
     this.clients.delete(c.id);
     c.lobby = null;
     if (!p) return;
-    if (this.phase === "battle" && !hard) {
+    if ((this.phase === "battle" || this.midRun()) && !hard) {
       // Disconnected mid-battle: hold the seat for a grace period, then forfeit.
       p.connected = false;
       this.dropTimers.set(c.id, setTimeout(() => {
@@ -304,7 +359,7 @@ export class Lobby {
 
   /** Price a build under the rules ("Bring your own ship" has no scrap allowance). */
   private price(l: Loadout) {
-    return priceLoadout(this.db, l, this.config.ftlOnly ? Number.MAX_SAFE_INTEGER : this.config.scrap, this.config.shipPool, this.config.unlimited);
+    return priceLoadout(this.db, l, this.config.ftlOnly || this.config.survival ? Number.MAX_SAFE_INTEGER : this.config.scrap, this.config.shipPool, this.config.unlimited, this.config.winCondition === "auto");
   }
 
   setConfig(c: Client, cfg: Partial<MatchConfig>): string | null {
@@ -318,6 +373,8 @@ export class Lobby {
         p.loadout = baseLoadout(this.db, this.config.shipPool[0]);
       // Switching to "Bring your own ship": everyone else's hangar build is cleared (they bring theirs).
       if (this.config.ftlOnly && !wasFtl && p.id !== this.host && p.loadout?.origin !== "ftl") p.loadout = baseLoadout(this.db, this.config.shipPool[0] ?? this.db.hangar[0]);
+      // Survival flies the stock ship.
+      if (this.config.survival && p.loadout) p.loadout = stockLoadout(this.db, p.loadout.ship);
       p.priced = p.loadout ? this.price(p.loadout) : null;
       p.ready = false;
     }
@@ -331,6 +388,8 @@ export class Lobby {
     const p = this.players.find((q) => q.id === c.id);
     if (!p) return "not in this lobby";
     if (!this.db.ships[l.ship]) return "unknown ship";
+    // Survival flies the stock ship: only the hull is a choice.
+    if (this.config.survival && !p.bot) l = stockLoadout(this.db, l.ship);
     p.loadout = l;
     p.priced = this.price(l);
     p.ready = false;
@@ -359,7 +418,7 @@ export class Lobby {
   }
 
   command(c: Client, cmd: Command): void {
-    if (!this.match || this.phase !== "battle") return;
+    if (!this.match || (this.phase !== "battle" && this.phase !== "aftermath")) return;
     const idx = this.players.findIndex((p) => p.id === c.id);
     if (idx === 0 || idx === 1) this.match.push(idx, cmd);
   }
@@ -373,6 +432,13 @@ export class Lobby {
   private rematchReset(): void {
     this.phase = "lobby";
     this.match = null;
+    // Survival: a new run (from the hangar).
+    this.run = null;
+    this.enemy = null;
+    this.offer = null;
+    this.upgraded = {};
+    if (this.jumpTimer) clearTimeout(this.jumpTimer);
+    this.jumpTimer = null;
     this.config = { ...this.config, seed: (Math.random() * 2 ** 31) | 0 };
     for (const p of this.players) p.ready = p.bot ?? false;
     this.speed = 1;
@@ -382,6 +448,8 @@ export class Lobby {
 
   /** Called once per second while counting down. */
   secondTick(): void {
+    // The aftermath countdown goes out once a second.
+    if (this.phase === "aftermath") this.broadcast();
     if (this.phase !== "countdown") return;
     this.countdown--;
     if (this.countdown <= 0) this.start();
@@ -390,6 +458,7 @@ export class Lobby {
 
   private start(): void {
     const [a, b] = this.players;
+    if (this.config.survival) return this.startSurvival();
     if (this.phase !== "battle" || !this.loadouts) this.loadouts = [a.loadout!, b.loadout!];
     this.match = new Match(this.db, this.config, this.loadouts, [a.name, b.name]);
     const pc = this.practiceCfg;
@@ -403,19 +472,74 @@ export class Lobby {
     this.sendSnaps();
   }
 
+  /** Survival: the next battle of the run (the first one starts it), against a fresh random opponent. */
+  private startSurvival(): void {
+    const h = this.humanIdx();
+    const me = this.players[h];
+    const foe = this.players[1 - h];
+    this.run ??= newRun(this.db, me.loadout!.ship);
+    const run = this.run;
+    Object.assign(this.upgraded, registerWeapons(this.db, run.loadout.weapons));
+    this.enemy = nextEnemy(this.db, run.battle, Math.abs(this.config.seed));
+    foe.loadout = this.enemy.loadout;
+    foe.name = this.enemy.boss ? "Rebel Flagship" : `Enemy (${this.enemy.difficulty})`;
+    const cfg: MatchConfig = { ...this.config, hazard: this.enemy.hazard, winCondition: "hull" };
+    const ls: [Loadout, Loadout] = h === 0 ? [run.loadout, this.enemy.loadout] : [this.enemy.loadout, run.loadout];
+    this.loadouts = ls;
+    this.match = new Match(this.db, cfg, ls, [this.players[0].name, this.players[1].name]);
+    this.bot = new Bot(difficultyToBot(this.enemy.difficulty).level, this.config.seed);
+    if (this.autopilot) this.autopilot = new Bot(this.autopilot.level, 99);
+    this.speedAcc = 0;
+    this.aftermathLeft = 0;
+    this.offer = null;
+    this.phase = "battle";
+    this.pending = [[], []];
+    this.players.forEach((p, i) => this.clients.get(p.id)?.send({ t: "start", you: i as 0 | 1 }));
+    this.log(`survival battle ${run.battle}: ${me.name} (${run.loadout.ship}) vs ${foe.name} (${this.enemy.loadout.ship})${this.enemy.hazard !== "none" ? ` in ${this.enemy.hazard}` : ""}`);
+    this.sendSnaps();
+  }
+
+  /** Survival's aftermath: one tick of the winner's own ship; then the cards. */
+  private aftermathOnce(): void {
+    const m = this.match;
+    if (!m || !this.run) return;
+    const h = this.humanIdx();
+    if (this.autopilot) for (const c of this.autopilot.think(m, h)) m.push(h, c);
+    const paused = m.aftermathStep(h);
+    if (m.state.events.length) {
+      this.pending[0].push(...m.state.events);
+      this.pending[1].push(...m.state.events);
+    }
+    if (!paused) this.aftermathLeft -= 1 / TICK_HZ;
+    if (this.aftermathLeft <= 0) this.toReward();
+  }
+
+  private toReward(): void {
+    const m = this.match;
+    if (!m || !this.run || this.phase !== "aftermath") return;
+    carryOver(this.run, m.state.ships[this.humanIdx()]);
+    this.offer = drawCards(this.db, this.run, Math.abs(this.config.seed) + this.run.battle * 7919);
+    this.aftermathLeft = 0;
+    this.phase = "reward";
+    this.sendSnaps();
+    this.broadcast();
+  }
+
   /** Called at 30 Hz; runs 0..n sim steps depending on the debug speed. */
   tick(): void {
     const m = this.match;
-    if (!m || this.phase !== "battle") return;
+    if (!m || (this.phase !== "battle" && this.phase !== "aftermath")) return;
+    const ph = this.phase;
     this.speedAcc += this.speed;
     let ran = 0;
-    while (this.speedAcc >= 1 && this.phase === "battle") {
+    while (this.speedAcc >= 1 && this.phase === ph) {
       this.speedAcc -= 1;
-      this.stepOnce();
+      if (ph === "battle") this.stepOnce();
+      else this.aftermathOnce();
       ran++;
     }
     // Snapshots follow wall time (15 Hz), whatever the sim speed.
-    if (ran > 0 && this.phase === "battle" && ++this.wallTicks % SNAP_EVERY === 0) this.sendSnaps();
+    if (ran > 0 && this.phase === ph && ++this.wallTicks % SNAP_EVERY === 0) this.sendSnaps();
   }
 
   private stepOnce(): void {
@@ -432,6 +556,24 @@ export class Lobby {
     if (m.state.events.length) {
       this.pending[0].push(...m.state.events);
       this.pending[1].push(...m.state.events);
+    }
+    if (m.over && this.config.survival && this.run) {
+      const w = m.state.winner;
+      if (w === this.humanIdx()) {
+        // Won: the ship carries on a while (repairs, fires, boarders), then the cards.
+        this.run.won++;
+        if (this.enemy?.boss) this.run.bosses++;
+        this.phase = "aftermath";
+        this.aftermathLeft = SURVIVAL.aftermath;
+        this.log(`survival: won battle ${this.run.battle}`);
+      } else {
+        this.run.over = true;
+        this.phase = "over";
+        this.log(`survival: run over after ${this.run.won} wins (score ${score(this.run)})`);
+      }
+      this.sendSnaps();
+      this.broadcast();
+      return;
     }
     if (m.over) {
       this.phase = "over";
@@ -488,8 +630,10 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
     shipPool: (Array.isArray(c.shipPool) ? c.shipPool : []).filter((s) => db.hangar.includes(s)),
     timeLimit: clamp(Math.round(Number(c.timeLimit) || 0), 0, 3600),
     seed: Number(c.seed) | 0,
-    unlimited: !!c.unlimited,
-    ftlOnly: !!c.ftlOnly,
+    // Survival is single player: practice lobbies only, and it has no use for the build rules.
+    unlimited: !!c.unlimited && !(practice && c.survival),
+    ftlOnly: !!c.ftlOnly && !(practice && c.survival),
+    survival: practice && !!c.survival,
   };
 }
 

@@ -125,6 +125,34 @@ export class Match {
     st.rng = this.rng.s;
   }
 
+  /**
+   * Survival's aftermath: the enemy is gone, but the winner's own ship carries on for a while (crew repair,
+   * fight fires and boarders, seal breaches, heal, air flows). Nothing fires and nothing reaches the wreck.
+   * Orders and the pause still work. Returns true while paused.
+   */
+  aftermathStep(idx: 0 | 1): boolean {
+    const st = this.state;
+    st.events = [];
+    const outward = new Set(["target", "teleport", "retrieve", "hackLaunch", "hackPulse", "mind", "artilleryTarget", "cloak", "autofire"]);
+    for (const { player, cmd } of this.queue.splice(0)) if (player === idx && !outward.has(cmd.c)) this.apply(st.ships[idx], cmd);
+    if (this.pauseStep()) {
+      st.rng = this.rng.s;
+      return true;
+    }
+    const s = st.ships[idx];
+    for (const x of Object.values(s.systems)) if (x) x.locked = x.hacked = false;
+    s.lockedRoom = undefined;
+    s.doorPass = (s.doorPass ?? s.doors.map(() => 0)).map((t) => Math.max(0, t - DT));
+    this.systemsTick(s);
+    this.crewTick(s);
+    this.environmentTick(s);
+    this.restorePower(s);
+    this.updateDerived(s);
+    st.tick++;
+    st.rng = this.rng.s;
+    return false;
+  }
+
   // ---------------------------------------------------------------- commands
 
   apply(ship: ShipState, cmd: Command): boolean {

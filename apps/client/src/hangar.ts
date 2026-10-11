@@ -12,7 +12,7 @@ import { HangarBay } from "./bay.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buildShip, buyableDrones, reactorUsed, usable, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
-  type MatchConfig,
+  type MatchConfig, stockLoadout, SURVIVAL,
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -176,8 +176,10 @@ export class Hangar {
     this.wasFtlOnly = ftlOnly;
     if (!this.loadout && mine?.loadout) this.loadout = mine.loadout;
     if (this.loadout && lobby.config.shipPool.length && !lobby.config.shipPool.includes(this.loadout.ship) && mine?.loadout) this.loadout = mine.loadout;
-    // A step this rule closes (e.g. Launch before a save's ship is loaded): back to Presets.
-    if (this.loadout && !this.stepOpen(this.step)) this.step = "Presets";
+    // Survival: the server flies the stock ship, so take its copy (it replaces any build when the mode starts).
+    if (lobby.config.survival && mine?.loadout && (!this.loadout || !isSame(mine.loadout, this.loadout))) this.loadout = mine.loadout;
+    // A step this rule closes (e.g. Launch before a save's ship is loaded): back to Presets (Survival: Ship).
+    if (this.loadout && !this.stepOpen(this.step)) this.step = lobby.config.survival ? "Ship" : "Presets";
     this.render();
   }
 
@@ -240,14 +242,16 @@ export class Hangar {
     const active = document.activeElement;
     // Don't rebuild under the user's cursor: a focused field (text, scrap number, slider, select) would
     // lose focus on every lobby update. Re-render once it loses focus.
-    if (active && this.el.contains(active) && ["INPUT", "SELECT", "TEXTAREA"].includes((active as HTMLElement).tagName)) {
+    // (Checkboxes hold nothing half-typed, so they never hold a render back.)
+    const box = active instanceof HTMLInputElement && (active.type === "checkbox" || active.type === "radio");
+    if (active && !box && this.el.contains(active) && ["INPUT", "SELECT", "TEXTAREA"].includes((active as HTMLElement).tagName)) {
       this.pendingRender = true;
       return;
     }
     this.pendingRender = false;
     const db = this.db;
     const cfg = lobby.config;
-    const priced = priceLoadout(db, l, this.budget(), cfg.shipPool, cfg.unlimited);
+    const priced = priceLoadout(db, l, this.budget(), cfg.shipPool, cfg.unlimited, cfg.winCondition === "auto");
     const me = lobby.players.find((p) => p.id === this.me());
     const scrollTop = this.el.querySelector(".hg-main")?.scrollTop ?? 0;
     if (this.step === "Presets" && !this.ftlAsked) {
@@ -263,8 +267,8 @@ export class Hangar {
     const body = { Rules: () => this.stepRules(lobby), Presets: () => this.stepPresets(), Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
     this.el.innerHTML = `
       <div class="hg">
-        <div class="hg-steps">${this.steps().map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""} ${this.stepOpen(s) ? "" : "locked"}" data-step="${s}" ${this.stepOpen(s) ? "" : `disabled title="${s === "Launch" ? "Load your ship from an FTL save first (Presets)" : "Off in Bring your own ship: ships come from FTL saves"}"`}><b>${i + 1}</b> ${s}</button>`).join("")}
-          <div class="hg-scrap">${cfg.ftlOnly ? `<span class="note">Bring your own ship: FTL saves only, no scrap limit</span>` : `${this.scrapIcon()}<span class="scrap">${cfg.scrap - priced.total}</span> <span class="note">scrap left of ${cfg.scrap}</span>`}</div></div>
+        <div class="hg-steps">${this.steps().map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""} ${this.stepOpen(s) ? "" : "locked"}" data-step="${s}" ${this.stepOpen(s) ? "" : `disabled title="${cfg.survival ? "Off in Survival: you fly the stock ship and earn upgrades between battles" : s === "Launch" ? "Load your ship from an FTL save first (Presets)" : "Off in Bring your own ship: ships come from FTL saves"}"`}><b>${i + 1}</b> ${s}</button>`).join("")}
+          <div class="hg-scrap">${cfg.survival ? `<span class="note">Survival: the stock ship, upgraded by rewards after each win</span>` : cfg.ftlOnly ? `<span class="note">Bring your own ship: FTL saves only, no scrap limit</span>` : `${this.scrapIcon()}<span class="scrap">${cfg.scrap - priced.total}</span> <span class="note">scrap left of ${cfg.scrap}</span>`}</div></div>
         <div class="hg-body ${BUILD_STEPS.includes(this.step) ? "" : "wide"} step-${this.step.toLowerCase()}">
           <div class="panel hg-side">${this.sidebar(lobby)}</div>
           <div class="panel hg-main">${body}</div>
@@ -303,8 +307,13 @@ export class Hangar {
     const cfg = lobby.config;
     const hazard: Record<string, string> = { none: "none", random: "random", sun: "red giant", pulsar: "pulsar", asteroids: "asteroids", nebula: "nebula", storm: "ion storm", asb: "anti-ship batteries" };
     const pause: Record<string, string> = { off: "off", tactical: `tactical timeouts every ${cfg.tacticalEvery ?? 0}s`, clock: "pause clock" };
+    if (cfg.survival) {
+      const lines = ["Survival: battle after battle", "Stock ship · rewards after each win", `Boss every ${SURVIVAL.bossEvery} battles`, `Pausing: ${pause[cfg.pause ?? "off"] ?? cfg.pause}`];
+      const host = lobby.host === this.me();
+      return `<div class="rules-summary">${lines.map((x) => `<div>${h(x)}</div>`).join("")}${link && host && this.step !== "Rules" ? `<button class="small link" data-step="Rules">Change rules</button>` : ""}</div>`;
+    }
     const lines = [
-      cfg.winCondition === "auto" ? "Autonomous ships (destroy the hull)" : "Destroy the ship (or its crew)",
+      cfg.winCondition === "auto" ? "Destroy the ship · autonomous ships" : "Destroy the ship (or its crew)",
       cfg.ftlOnly ? "Bring your own ship (FTL saves only)" : `${cfg.scrap} scrap${cfg.unlimited ? " · unrestricted systems" : ""}`,
       cfg.timeLimit ? `${cfg.timeLimit}s time limit` : "No time limit",
       `Hazard: ${hazard[cfg.hazard ?? "none"] ?? cfg.hazard}`,
@@ -323,22 +332,43 @@ export class Hangar {
   private stepRules(lobby: LobbyState): string {
     const cfg = lobby.config;
     const pc = lobby.practice;
-    const bot = pc ? difficultyToBot(pc.difficulty) : null;
-    const botShip = lobby.players.find((p) => p.bot)?.loadout?.ship;
-    const pool = cfg.shipPool.length ? cfg.shipPool : this.db.hangar;
     return `<h2>${this.num("Rules")} · Rules</h2>
       <div class="note">You're the host: set the match up, then everyone builds a ship. Changing a rule unreadies both captains.</div>
       <div class="rules-form">
       <div class="kv"><span>Game mode</span><select data-cfg="winCondition">
-        <option value="hull" ${cfg.winCondition === "hull" ? "selected" : ""}>Destroy the ship</option>
-        <option value="auto" ${cfg.winCondition === "auto" ? "selected" : ""}>Autonomous ships</option></select></div>
+        <option value="hull" ${cfg.survival ? "" : "selected"}>Destroy the ship</option>
+        ${pc ? `<option value="survival" ${cfg.survival ? "selected" : ""}>Survival (single player)</option>` : ""}</select></div>
+      ${cfg.survival ? this.survivalRules(lobby) : `
       <div class="kv"><span>Scrap${cfg.ftlOnly ? ` <span class="note">(not used: FTL saves)</span>` : ""}</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" ${cfg.ftlOnly ? "disabled" : ""} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" style="width:90px"></div>
-      <div class="note">${cfg.winCondition === "auto" ? "Only destroying the ship wins: with its crew dead a ship runs itself, like FTL's drone ships and the flagship (systems repair on their own, the helm flies itself)." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
+      <label class="kv"><span>Autonomous ships</span><input type="checkbox" data-auto ${cfg.winCondition === "auto" ? "checked" : ""}></label>
+      <div class="note">${cfg.winCondition === "auto" ? "Only destroying the ship wins: with no crew a ship runs itself, like FTL's drone ships and the flagship (systems repair on their own, the helm flies itself). Ships may launch with no crew at all." : "Hull to 0 wins; a dead crew also loses, as in FTL."}</div>
       <div class="kv"><span>Hazard</span><select data-cfg="hazard">
         ${([["none", "None"], ["random", "Random"], ["sun", "Red giant (solar flares)"], ["pulsar", "Pulsar (ion pulses)"], ["asteroids", "Asteroid field"], ["nebula", "Nebula (no sensors)"], ["storm", "Ion storm (half reactor)"], ["asb", "Anti-ship batteries"]] as const).map(([v, l]) => `<option value="${v}" ${(cfg.hazard ?? "none") === v ? "selected" : ""}>${l}</option>`).join("")}
       </select></div>
       ${this.pauseRules(cfg, true, !!pc)}
+      ${this.buildRules(lobby)}`}
+      </div>
+      ${this.nav(null, cfg.survival ? "Ship" : "Presets")}`;
+  }
+
+  /** Survival's own rules: no build or bot settings (the run picks its enemies), just how it works. */
+  private survivalRules(lobby: LobbyState): string {
+    const pc = lobby.practice;
+    return `<label class="kv"><span>Autonomous ships <span class="note">(not in Survival)</span></span><input type="checkbox" disabled></label>
+      <div class="note">Pick a ship and fly its stock loadout. Battles come one after another against random enemies that get tougher each jump, with the Rebel flagship every ${SURVIVAL.bossEvery} battles and the odd hazard. Your hull, crew, damage and supplies carry over. After each win you have ${SURVIVAL.aftermath} s to patch the ship up, then choose one reward: gear (rare finds are gold), an upgrade, or repairs and supplies. Lose the ship and the run ends with a score.</div>
+      ${this.pauseRules(lobby.config, true, true)}
+      ${pc ? `<label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}`;
+  }
+
+  /** The rules for building and fighting (everything but Survival). */
+  private buildRules(lobby: LobbyState): string {
+    const cfg = lobby.config;
+    const pc = lobby.practice;
+    const bot = pc ? difficultyToBot(pc.difficulty) : null;
+    const botShip = lobby.players.find((p) => p.bot)?.loadout?.ship;
+    const pool = cfg.shipPool.length ? cfg.shipPool : this.db.hangar;
+    return `
       <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""}></label>
       <div class="kv"><span>Ships</span><select data-cfg="ftlOnly">
         <option value="" ${cfg.ftlOnly ? "" : "selected"}>Build in the hangar</option>
@@ -362,9 +392,7 @@ export class Hangar {
           })()}
         </select></div>
         ${botShip ? `<div class="note">Bot flies: ${h(this.db.ships[botShip]?.className || this.db.ships[botShip]?.title || botShip)}${this.db.ships[botShip]?.enemy ? ` · hull ${lobby.players.find((p) => p.bot)?.loadout?.hull ?? ""}` : ""}</div>` : ""}
-        <label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}
-      </div>
-      ${this.nav(null, "Presets")}`;
+        <label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}`;
   }
 
   /** The current build at a glance while shopping (no bill: the scrap counter at the top has the total). */
@@ -475,11 +503,13 @@ export class Hangar {
 
   /** "Bring your own ship" has no scrap allowance. */
   private budget(): number {
-    return this.lobby?.config.ftlOnly ? Number.MAX_SAFE_INTEGER : (this.lobby?.config.scrap ?? 0);
+    return this.lobby?.config.ftlOnly || this.lobby?.config.survival ? Number.MAX_SAFE_INTEGER : (this.lobby?.config.scrap ?? 0);
   }
 
   /** In "Bring your own ship" only Rules, Presets and (once a save's ship is loaded) Launch are open. */
   private stepOpen(s: Step): boolean {
+    // Survival flies the stock ship: pick a hull and go.
+    if (this.lobby?.config.survival) return s === "Rules" || s === "Ship" || s === "Launch";
     if (!this.lobby?.config.ftlOnly) return true;
     if (s === "Rules" || s === "Presets") return true;
     return s === "Launch" && this.loadout?.origin === "ftl";
@@ -524,7 +554,7 @@ export class Hangar {
         // "Bring your own ship": only presets saved unchanged from an FTL import fly.
         const notSave = !!cfg.ftlOnly && p.loadout.origin !== "ftl";
         const allowed = !!ship && pool.includes(p.loadout.ship) && !notSave;
-        const priced = ship ? priceLoadout(db, p.loadout, this.budget(), cfg.shipPool, cfg.unlimited) : null;
+        const priced = ship ? priceLoadout(db, p.loadout, this.budget(), cfg.shipPool, cfg.unlimited, cfg.winCondition === "auto") : null;
         const over = !cfg.ftlOnly && !!priced && priced.total > cfg.scrap;
         const other = priced?.errors.find((e) => !/budget/.test(e));
         const warn = notSave ? "Not from an FTL save: this lobby flies saves only" : !allowed ? (ship ? "Not allowed in this lobby" : "Ship not found in your game data") : over ? `Costs ${priced!.total} (allowance ${cfg.scrap})` : other ?? "";
@@ -810,7 +840,7 @@ export class Hangar {
           <input type="text" maxlength="16" value="${h(c.name)}" data-crewname="${i}">
           <span class="note">${h(db.crew[c.race]?.title ?? c.race)} · ${t?.hp ?? 100} HP ${this.skills(c)}</span>
           <button class="small" data-reroll="${i}" title="Random name">↻</button>
-          <button class="small" data-fire="${i}" ${l.crew.length <= 1 ? "disabled" : ""} title="Dismiss">✕</button></div>`;
+          <button class="small" data-fire="${i}" ${l.crew.length <= 1 && this.lobby?.config.winCondition !== "auto" ? "disabled" : ""} title="${l.crew.length <= 1 && this.lobby?.config.winCondition !== "auto" ? "A ship needs crew (unless Autonomous ships is on in the rules)" : "Dismiss"}">✕</button></div>`;
       })
       .join("");
     const full = l.crew.length >= RULES.maxCrew;
@@ -918,7 +948,8 @@ export class Hangar {
     const cd = lobby.phase === "countdown" ? `<div class="code launch-count">Launch in ${lobby.countdown}…</div>` : "";
     const st = this.shipStats(l);
     const ship = db.ships[l.ship];
-    const over = lobby.config.ftlOnly ? 0 : priced.total - lobby.config.scrap;
+    const surv = !!lobby.config.survival;
+    const over = lobby.config.ftlOnly || surv ? 0 : priced.total - lobby.config.scrap;
     const opp = lobby.players.find((p) => p.id !== this.me());
     const row = (k: string, v: string, warn = false) => `<div class="kv pf"><span>${k}</span><span class="${warn ? "warnc" : ""}">${v}</span></div>`;
     const crew = l.crew.map((c) => `<div class="pf-crew">${this.portrait(c.race, 1.2)}<span>${h(c.name)} <span class="note">${h(db.crew[c.race]?.title ?? c.race)}</span></span>${this.skills(c)}</div>`).join("");
@@ -937,7 +968,7 @@ export class Hangar {
         <div class="launch-right">
           ${priced.errors.length ? `<div class="warnbox"><b>Fix before launch</b>${priced.errors.map((e) => `<div class="err">${h(e)}</div>`).join("")}${over > 0 ? `<div class="note">Over the allowance by ${over} scrap.</div>` : ""}</div>` : ""}
           <div class="launch-ready">${this.readyButton(l, priced, ready)}${cd}</div>
-          <div class="note">${opp ? `${h(opp.name)} is ${opp.ready ? "<b class='ready'>ready</b>" : "still building"}.` : "No opponent yet: share the lobby code."} The battle starts when both captains are ready.</div>
+          <div class="note">${surv ? `Survival, battle 1: a random enemy waits. Win to choose a reward, then jump to the next fight.` : `${opp ? `${h(opp.name)} is ${opp.ready ? "<b class='ready'>ready</b>" : "still building"}.` : "No opponent yet: share the lobby code."} The battle starts when both captains are ready.`}</div>
           <h3>Pre-flight</h3>
           ${row("Hull", String(ship.health))}
           ${row("Reactor", `${st.used} / ${st.reactor} in use`)}
@@ -945,15 +976,15 @@ export class Hangar {
           ${row("Evasion", `${st.evasion}%`)}
           ${row("Weapon power", `${st.weaponNeed} needed / ${st.weaponCap} system`, st.weaponNeed > st.weaponCap)}
           ${row("Missiles · drone parts", `${l.missiles} · ${l.droneParts ?? 0}`)}
-          ${lobby.config.ftlOnly ? row("Ship", "from your FTL save") : row("Scrap left", String(lobby.config.scrap - priced.total), over > 0)}
+          ${surv ? row("Ship", "stock loadout") : lobby.config.ftlOnly ? row("Ship", "from your FTL save") : row("Scrap left", String(lobby.config.scrap - priced.total), over > 0)}
           ${st.unpowered.length ? `<div class="note warnc">Starts unpowered: ${h(st.unpowered.join(", "))}</div>` : ""}
           <h3>Rules</h3>${this.rulesSummary(lobby, true)}
           ${this.musicPicker()}
-          ${this.saveBox(l)}
+          ${surv ? "" : this.saveBox(l)}
         </div>
       </div>
       <div class="note small-print">Controls: click a weapon (or 1-4) then an enemy room · right-click a weapon to power it down · select crew and right-click a room to move them · click system bars for power · click doors to open/close.</div>
-      ${this.nav(lobby.config.ftlOnly ? "Presets" : "Augments", null)}`;
+      ${this.nav(surv ? "Ship" : lobby.config.ftlOnly ? "Presets" : "Augments", null)}`;
   }
 
   // ---------------------------------------------------------------- events
@@ -1038,6 +1069,12 @@ export class Hangar {
       return;
     }
     if ("ship" in d && d.ship) {
+      if (this.lobby?.config.survival) {
+        // Survival: the stock ship, straight to Launch.
+        this.sfx(SFX.pick);
+        this.step = "Launch";
+        return this.change(stockLoadout(this.db, d.ship));
+      }
       if (d.ship !== l.ship) {
         this.sfx(SFX.pick);
         this.change(baseLoadout(this.db, d.ship));
@@ -1165,7 +1202,10 @@ export class Hangar {
 
   private onChange(e: Event): void {
     const t = e.target as HTMLInputElement | HTMLSelectElement;
-    if ("music" in t.dataset) {
+    if ("auto" in t.dataset) {
+      // Autonomous ships: only the hull counts, and builds may go without crew.
+      this.hooks.setConfig({ winCondition: (t as HTMLInputElement).checked ? "auto" : "hull" });
+    } else if ("music" in t.dataset) {
       setBattleTrack(t.value);
       this.sfx("hoverBeep");
     } else if (t.dataset.cfg) {
@@ -1178,7 +1218,9 @@ export class Hangar {
         t.blur();
         return this.render();
       }
-      const v = k === "winCondition" || k === "pause" || k === "hazard" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : k === "ftlOnly" ? t.value === "1" : Number(t.value);
+      // Survival rides on the Game mode box but is a rule of its own (each battle plays as "Destroy the ship").
+      if (k === "winCondition") return this.hooks.setConfig(t.value === "survival" ? { survival: true, winCondition: "hull" } : { survival: false });
+      const v = k === "pause" || k === "hazard" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : k === "ftlOnly" ? t.value === "1" : Number(t.value);
       this.hooks.setConfig({ [k]: v } as Partial<MatchConfig>);
     } else if (t.dataset.prac) {
       const k = t.dataset.prac as keyof PracticeConfig;

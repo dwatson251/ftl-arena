@@ -429,6 +429,36 @@
 - Tests: lobby shutdown forfeits (118 passing in total); `tools/align/forfeit.ts` (clean and crash) and
   `tools/align/flagship-gibs.ts`.
 
+## Round 23: Survival mode, Autonomous ships as a checkbox
+- **Survival (practice lobbies only):** a run of battles with one stock ship. See README and RULES.md.
+  - **Sim:**
+    - `survival.ts`: tiers, cards, weapon-upgrade ids, enemy plan, carry-over, score.
+    - `Loadout.hullNow` and `damage`, `CrewPick.hp`, which `buildShip` starts from.
+    - `Match.aftermathStep()`: the winner's ship only.
+  - **Server:**
+    - phases `aftermath`, `reward` and `jump`, and the `pick` message;
+    - upgraded guns are registered in the db and sent to the client (`survival.weapons`);
+    - the run survives a reload.
+  - **Client:**
+    - Game mode option; only Rules, Ship and Launch are open; Ship goes straight to Launch; no preset saving.
+    - Battle HUD line; FTL's jump button charging over the aftermath; reward cards; the game-over tally
+      with this computer's best score.
+    - **The jump:** `jumpLeave`, engines flare, the ship creeps then streaks off right, then a white flash
+      and black. The next beacon has a new backdrop and planet, and fades in with `jumpArrive` while the
+      ship slides in from the left.
+  - **Card balance from a first look at hands:**
+    - Campaign-only augments are out (Distraction Buoys and the like).
+    - Supplies follow the gear's value, not a system install's.
+    - At full hull, leftover value becomes plating (+max hull) instead of a pile of missiles.
+    - Difficulty climbs +5 a battle.
+- **Autonomous ships:** now a checkbox on the Rules step, not a Game mode, and off for good in Survival.
+  With it on, builds may launch with no crew (`priceLoadout(..., crewless)`; the crew ✕ allows the last
+  one).
+- **Fix:** checkboxes in the hangar no longer hold a re-render back. The focus guard is for fields being
+  typed in, and a ticked box looked like "nothing happened".
+- Tests: `survival.test.ts` (12) and `autonomous.test.ts` (3); 133 in total. Playwright:
+  `tools/align/survival.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

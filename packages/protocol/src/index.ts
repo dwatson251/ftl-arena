@@ -1,12 +1,35 @@
 /** Wire protocol between browser and server: JSON text frames over one WebSocket. */
-import type { GameDB } from "@ftl/data";
-import type { Command, Loadout, MatchConfig, MatchView, Priced } from "@ftl/sim";
+import type { GameDB, WeaponBP } from "@ftl/data";
+import type { Card, Command, Loadout, MatchConfig, MatchView, Priced } from "@ftl/sim";
 
 export const PROTOCOL_VERSION = 1;
 /** Server tick rate and snapshot rate (every SNAP_EVERY ticks). */
 export const SNAP_EVERY = 2;
 
-export type Phase = "lobby" | "countdown" | "battle" | "over";
+/** Survival adds three between battles: "aftermath" (the winner's ship carries on for a while), "reward"
+ *  (sim paused, cards on offer) and "jump" (the FTL jump to the next battle). */
+export type Phase = "lobby" | "countdown" | "battle" | "over" | "aftermath" | "reward" | "jump";
+
+/** A Survival run as the player sees it. */
+export interface SurvivalState {
+  /** The battle being fought (or just won), from 1. */
+  battle: number;
+  won: number;
+  bosses: number;
+  score: number;
+  boss: boolean;
+  hazard: string;
+  /** Seconds of aftermath left (while in "aftermath"). */
+  aftermathLeft: number;
+  /** The cards on offer (while in "reward"). */
+  offer: Card[] | null;
+  picks: string[];
+  rare: number;
+  /** The run ended: the ship was lost. */
+  over: boolean;
+  /** Upgraded guns in play: blueprints for the client's db. */
+  weapons: Record<string, WeaponBP>;
+}
 
 export interface LobbyPlayer {
   id: string;
@@ -45,7 +68,8 @@ export type DebugOp =
   | { op: "missiles"; ship: 0 | 1 }
   | { op: "parts"; ship: 0 | 1 }
   | { op: "fixall"; ship: 0 | 1 }
-  | { op: "restart" };
+  | { op: "restart" }
+  | { op: "skipAftermath" };
 
 export interface DebugInfo {
   speed: number;
@@ -68,6 +92,7 @@ export interface LobbyState {
   players: LobbyPlayer[];
   countdown: number;
   practice: PracticeConfig | null;
+  survival?: SurvivalState | null;
 }
 
 export type ClientMsg =
@@ -81,7 +106,8 @@ export type ClientMsg =
   | { t: "cmd"; cmd: Command }
   | { t: "practice"; practice: Partial<PracticeConfig> }
   | { t: "debug"; d: DebugOp }
-  | { t: "rematch" };
+  | { t: "rematch" }
+  | { t: "pick"; card: number };
 
 export type ServerMsg =
   | { t: "welcome"; v: number; token: string; db: GameDB }

@@ -72,6 +72,10 @@ export function tex(path: string): Promise<Texture | null> {
 }
 
 /** Synchronous lookup for a texture already requested; kicks off the load if not. */
+/** FTL's beacon backdrops and planets (Survival picks one of each per battle). */
+export const BACKDROPS = ["bg_darknebula", "bg_blueStarcluster", "bg_dullstars", "bg_dullstars2", "bg_lonelyRedStar", "bg_lonelystar"];
+export const PLANETS = ["planet_bigblue", "planet_brown", "planet_gas_blue", "planet_gas_yellow", "planet_peach", "planet_red", "planet_populated_brown", "planet_populated_dark", "planet_populated_orange"];
+
 export function texNow(path: string): Texture | null {
   if (!cache.has(path)) void tex(path);
   return ready.get(path) ?? null;
@@ -186,6 +190,9 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   for (let i = 1; i <= 3; i++) files.add(`asteroids/asteroid_back${i}.png`);
   for (const f of UI_FILES) files.add(f);
   files.add("stars/bg_darknebula.png");
+  // Survival jumps to a new beacon each battle: FTL's other backdrops and planets.
+  for (const b of BACKDROPS) files.add(`stars/${b}.png`);
+  for (const pl of PLANETS) files.add(`stars/${pl}.png`);
   const probe = `ship/${db.ships[db.hangar[0]]?.img}_base.png`;
   // The extras (fonts, sounds) go first so slow ones run alongside the textures, not after them.
   const jobs: (() => Promise<unknown>)[] = [...extra, ...[...files].map((f) => () => tex(f))];

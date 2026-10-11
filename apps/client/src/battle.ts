@@ -9,7 +9,8 @@
 import { Application, Container, FederatedPointerEvent, Graphics, Sprite } from "pixi.js";
 import type { GameDB, SystemId } from "@ftl/data";
 import { baseSystemId, SUBSYSTEMS } from "@ftl/data";
-import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
+import { RULES, SNAP_HZ, SURVIVAL, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
+import type { SurvivalState } from "@ftl/protocol";
 import { animFrame, frame, texNow } from "./assets.ts";
 import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, stopLoops, timeStop } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
@@ -153,12 +154,21 @@ export class Battle {
     this.enemy = new ShipRenderer(this.db, en.bp, true, enemyNative ? 0 : Math.PI / 2);
     this.ownBox.addChild(this.own.root);
     this.enemyBox.addChild(this.enemy.root);
-    const bg = texNow("stars/bg_darknebula.png");
+    const bg = texNow(`stars/${this.backdrop?.bg ?? "bg_darknebula"}.png`) ?? texNow("stars/bg_darknebula.png");
     if (bg) {
       const s = new Sprite(bg);
       s.width = W;
       s.height = H;
       this.bgLayer.addChild(s);
+    }
+    // A new beacon (Survival): a planet off in the distance, behind the ships.
+    const pt = this.backdrop?.planet ? texNow(`stars/${this.backdrop.planet}.png`) : null;
+    if (pt) {
+      const p = new Sprite(pt);
+      p.anchor.set(0.5);
+      p.position.set(this.backdrop!.px * W, this.backdrop!.py * H);
+      p.alpha = 0.85;
+      this.bgLayer.addChild(p);
     }
     this.hazardScenery(v);
     const frameTex = texNow("combatUI/box_hostiles2.png");
@@ -596,7 +606,7 @@ export class Battle {
     };
     this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.animTime, {
       hover: this.hoverOwn, weaponFrame: (s) => this.weaponFrameFor(ownV, v.you, s), shieldFlash: this.time - this.shieldHitAt[v.you],
-      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0, clock: this.time,
+      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: this.jumpAt !== null || this.arriveAt !== null ? 8 : eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0, clock: this.time,
     });
     this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.animTime, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
@@ -1014,6 +1024,8 @@ export class Battle {
     }
     this.pauseHud(v);
     this.hazardHud(v);
+    this.survivalHud();
+    this.jumpFrame();
     this.tooltip(v);
     // The selection box, in screen space above everything (both ships and the hostiles window).
     if (this.drag) {
@@ -1043,6 +1055,93 @@ export class Battle {
   }
 
   private pauseBox: Box | null = null;
+
+  /** Survival: the run and the lobby phase (main.ts sets them on every lobby update). */
+  survival: { s: SurvivalState; phase: string; at: number } | null = null;
+
+  /**
+   * Survival's HUD: the run on one line at the top; after a win, FTL's jump button charging over the
+   * aftermath (the crew's time to patch the ship up), reading JUMP once it's full.
+   */
+  private survivalHud(): void {
+    const sv = this.survival;
+    if (!sv) return;
+    const h = this.hud;
+    const s = sv.s;
+    const line = `SURVIVAL  ·  BATTLE ${s.battle}  ·  SCORE ${s.score}${s.boss ? "  ·  BOSS" : ""}`;
+    h.text("svL", line, 640, 8, fstyle("JustinFont10", s.boss ? 0xff9a80 : 0xd8e8d0, { stroke: 0x101010 }), [0.5, 0]);
+    if (sv.phase !== "aftermath" && sv.phase !== "reward" && sv.phase !== "jump") return;
+    // The aftermath clock ticks once a second from the server; smooth it between updates.
+    const left = sv.phase === "aftermath" ? Math.max(0, s.aftermathLeft - (performance.now() - sv.at) / 1000) : 0;
+    const k = 1 - left / SURVIVAL.aftermath;
+    const x = 640 - 49;
+    const y = 54;
+    const base = texNow("buttons/FTL/FTL_base.png");
+    const full = k >= 1;
+    if (base) h.sprite("svB", base, x, y, { tint: full && Math.floor(this.time * 3) % 2 ? 0xc8ffc8 : 0xffffff });
+    else h.gfx("svB").roundRect(x, y, 98, 55, 8).fill({ color: 0x4a6470 }).stroke({ color: 0xcfe8e8, width: 2 });
+    const bars = texNow("buttons/FTL/FTL_loadingbars.png");
+    const off = texNow("buttons/FTL/FTL_loadingbars_off.png");
+    if (off) h.sprite("svO", off, x + 12, y + 20);
+    if (bars && k > 0) h.sprite("svF", frame(bars, 0, 0, Math.max(1, Math.round(74 * k)), 29), x + 12, y + 20);
+    h.text("svT", full ? "JUMP" : "FTL", 640, y + 4, fstyle("JustinFont12Bold", full ? 0x9cff9c : 0xe8ece8, { stroke: 0x101010 }), [0.5, 0]);
+    const msg = sv.phase === "aftermath" ? `Enemy destroyed  ·  repairs before the jump: ${Math.ceil(left)} s` : sv.phase === "reward" ? "Choose a reward" : "Jumping…";
+    h.text("svM", msg, 640, y + 60, fstyle("JustinFont10", 0xdfe8ff, { stroke: 0x101010 }), [0.5, 0]);
+  }
+
+  /** This battle's beacon (Survival): backdrop, maybe a planet and where it sits (0..1 of the screen). */
+  backdrop: { bg: string; planet?: string; px: number; py: number } | null = null;
+
+  /** When the player's ship came out of the jump (it slides in from the left, braking). */
+  private arriveAt: number | null = null;
+  arriveIn(): void {
+    this.arriveAt = this.time;
+  }
+
+  /** When the player's ship started its FTL jump (Survival, after the reward pick). */
+  private jumpAt: number | null = null;
+  private jumpBase: { x: number; sx: number } | null = null;
+
+  /**
+   * The FTL jump, as FTL does it: the drive spools up (engines flare), the ship creeps forward, then shoots
+   * off to the right, stretching into a streak. main.ts follows with the white flash and the fade to black.
+   */
+  jumpOut(): void {
+    if (this.jumpAt !== null) return;
+    this.jumpAt = this.time;
+    play(this.db, ["jumpLeave"], 1);
+  }
+
+  private jumpFrame(): void {
+    if (!this.own) return;
+    if (this.arriveAt !== null && this.jumpAt === null) {
+      // Out of the jump: in from the left, fast, braking hard into place (stretched while it's quick).
+      const r = this.own.root;
+      this.jumpBase ??= { x: r.position.x, sx: r.scale.x };
+      const k = Math.min(1, (this.time - this.arriveAt) / 1.1);
+      const e = (1 - k) ** 3;
+      r.position.x = this.jumpBase.x - 1400 * e;
+      r.scale.x = this.jumpBase.sx * (1 + 2.5 * e);
+      if (k >= 1) {
+        r.position.x = this.jumpBase.x;
+        r.scale.x = this.jumpBase.sx;
+        this.arriveAt = null;
+        this.jumpBase = null;
+      }
+      return;
+    }
+    if (this.jumpAt === null) return;
+    const r = this.own.root;
+    this.jumpBase ??= { x: r.position.x, sx: r.scale.x };
+    const t = this.time - this.jumpAt;
+    // 0-0.9 s: a slow creep while the drive spools; then away, faster and faster.
+    const creep = Math.min(t, 0.9) * 18;
+    const go = Math.max(0, t - 0.9);
+    const dx = creep + 2400 * go * go;
+    r.position.x = this.jumpBase.x + dx;
+    r.scale.x = this.jumpBase.sx * (1 + Math.min(3, go * 4));
+    r.alpha = Math.max(0, 1 - go * 1.4);
+  }
 
   /**
    * Pausing (experimental): FTL's blinking PAUSED banner while time is stopped, with who stopped it and the

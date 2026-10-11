@@ -26,6 +26,11 @@ export interface MatchConfig {
    */
   ftlOnly?: boolean;
   /**
+   * Survival (practice only): one stock ship, battle after random battle; the ship carries over and each win
+   * offers reward cards (survival.ts). Each battle itself plays as "hull".
+   */
+  survival?: boolean;
+  /**
    * Pausing (experimental; FTL's single player pauses at will). "off": never. "tactical": every `tacticalEvery`
    * seconds of play both players get a forced `tacticalLength` s timeout (it ends early once both are ready).
    * "clock": either player may pause everyone, spending their own `pauseBank` seconds (0 = unlimited, practice
