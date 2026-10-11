@@ -825,6 +825,9 @@
 - "Practice vs bot" is gone from LAN and Online.
 - Single player is the default tab for new players; a remembered choice still wins.
 - Check: `tools/align/menu-tabs.ts`.
+- **Wider layout:** the main menu window is 620 px wide (was 460), so the four tabs fit on one line. The
+  lobby's left column is 280 px (250 on narrow screens; was 240/220).
+- **Long player names** are cut off with an ellipsis; the ready state keeps its place.
 
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).

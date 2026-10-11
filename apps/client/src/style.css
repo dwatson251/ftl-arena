@@ -31,7 +31,10 @@ input, select { font: inherit; color: var(--text); background: #11141a; border: 
 .shop { max-height: 46vh; overflow: auto; }
 .scrap { font-size: 22px; font-weight: 700; color: var(--warn); }
 .preview { width: 100%; aspect-ratio: 16 / 10; background: #070910; border: 1px solid #333a47; }
-.players .p { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #2c3340; }
+.players .p { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #2c3340; }
+/* Long names are cut off with an ellipsis (the ready state keeps its room). */
+.players .p > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.players .p > span:last-child { flex-shrink: 0; }
 .ready { color: var(--ok); } .notready { color: var(--dim); }
 .code { font-size: 28px; font-weight: 800; letter-spacing: 0.2em; color: var(--accent); }
 .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); }
@@ -55,9 +58,9 @@ input, select { font: inherit; color: var(--text); background: #11141a; border: 
 .hg-step.on, .hg-step.on:hover:not(:disabled) { background: var(--ok); }
 .hg-step.on::before { background: #2f5e3a; }
 .hg-scrap { margin-left: auto; white-space: nowrap; }
-.hg-body { display: grid; grid-template-columns: 240px minmax(0, 1fr) 280px; gap: 12px; height: calc(100vh - 90px); }
+.hg-body { display: grid; grid-template-columns: 280px minmax(0, 1fr) 280px; gap: 12px; height: calc(100vh - 90px); }
 /* Rules, Presets and Launch have no ship summary column: the step takes the room. */
-.hg-body.wide { grid-template-columns: 240px minmax(0, 1fr); }
+.hg-body.wide { grid-template-columns: 280px minmax(0, 1fr); }
 .hg-side, .hg-main, .hg-summary { overflow: auto; }
 .hg-main h3 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--warn); }
 .hg-nav { display: flex; justify-content: space-between; margin-top: 18px; }
@@ -209,7 +212,7 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .small-print { font-size: 11px; margin-top: 10px; }
 .launch-right .launch-ready { margin: 0 0 6px; }
 @media (max-width: 1150px) {
-  .hg-body { grid-template-columns: 220px minmax(0, 1fr); }
+  .hg-body { grid-template-columns: 250px minmax(0, 1fr); }
   .hg-summary { display: none; }
   .launch-grid { grid-template-columns: minmax(0, 1fr); }
 }
@@ -274,3 +277,7 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 /* Scrap costs: a hull's price on its card; items a normal run can't give you, greyed out. */
 .ship-card .ship-price { margin-top: 4px; font-weight: 700; color: var(--warn); }
 .wcard.banned, .race-card button:disabled[title] { opacity: 0.4; filter: grayscale(0.8); }
+/* The main menu's window: wide enough for four tabs on one line. */
+.screen > .menu { max-width: 620px; }
+
+.tabs .tab { white-space: nowrap; }
