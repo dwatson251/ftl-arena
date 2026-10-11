@@ -876,12 +876,8 @@ export class Match {
           w.charge = w.volleys < bp.chargeLevels ? 0 : cd;
         }
       }
-      if (w.volleys > 0 && w.target && ship.missiles >= bp.missiles) {
-        // Charge weapons wait until fully charged unless the player retargets; FTL fires them on click,
-        // which in a no-pause match is "fire when full" for autofire and "fire now" otherwise.
-        if (w.autofire && w.volleys < bp.chargeLevels) continue;
-        this.fire(ship, w.slot);
-      }
+      // A target and a shot ready: fire (charge weapons included, as soon as one charge is stored).
+      if (w.volleys > 0 && w.target && ship.missiles >= bp.missiles) this.fire(ship, w.slot);
     }
   }
 

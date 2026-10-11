@@ -134,3 +134,24 @@ describe("projectile speeds follow each weapon's FTL speed", () => {
     expect(t("MISSILES_1")).toBe(1.5);
   });
 });
+
+describe("charge weapons on autofire", () => {
+  it("fire as soon as one charge is stored, not when full", () => {
+    const tdb = placeholderDb();
+    const charge = Object.values(tdb.weapons).find((w) => w.chargeLevels > 1 && w.missiles === 0) ?? { ...Object.values(tdb.weapons).find((w) => w.type === "LASER")!, id: "TEST_CHARGE", chargeLevels: 3 };
+    tdb.weapons[charge.id] = { ...charge, missiles: 0, cooldown: 2 };
+    const lo = { ...baseLoadout(tdb, "PH_SKIFF"), weapons: [charge.id] };
+    const m = new Match(tdb, DEFAULT_CONFIG, [lo, baseLoadout(tdb, "PH_SKIFF")], ["a", "b"]);
+    const me = m.state.ships[0];
+    m.push(0, { c: "weaponPower", slot: 0, on: true });
+    m.push(0, { c: "autofire", slot: 0, on: true });
+    m.push(0, { c: "target", slot: 0, target: { kind: "room", room: 0 } });
+    let fired = false;
+    // One charge takes the cooldown (2 s) at worst; a full charge-up would take three times that.
+    for (let i = 0; i < 30 * 3 && !fired; i++) {
+      m.step();
+      fired = me.stats.shotsFired > 0;
+    }
+    expect(fired).toBe(true);
+  });
+});

@@ -807,6 +807,18 @@
   comment at `RULES.flight`, so they match the game files.
 - Test in `round20.test.ts`; 169 passing in total.
 
+## Round 45: control chimes, charge weapons, hull-damage tests
+- **Chime:** focusing a text box or dropdown, or ticking a checkbox, plays the menu beep that buttons make
+  (one page-wide listener in main.ts: menu, hangar and overlays alike).
+- **Charge weapons on autofire** (Flak II, Ion charge guns…) fire as soon as one charge is stored. They used
+  to wait for a full charge-up. Test fails on the old code.
+- **Tests for what the sim already did** (`hull-damage.test.ts`):
+  - boarders or fire taking a system out cost the hull exactly 1;
+  - a weapon knocking one out costs only its damage;
+  - Hull Lasers and Hull Beams (`hullBust`) do double damage to a room without a system and normal damage
+    elsewhere, through both the laser path and the beam sweep.
+- 176 tests passing.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

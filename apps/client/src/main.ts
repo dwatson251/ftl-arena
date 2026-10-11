@@ -781,6 +781,15 @@ net.onStatus = (s) => {
 };
 net.connect();
 render();
+// The menu beep buttons make, for the other controls too: focusing a text box or a dropdown, ticking a box.
+document.addEventListener("focusin", (e) => {
+  const t = e.target as HTMLElement;
+  if (db && ((t instanceof HTMLInputElement && t.type !== "checkbox" && t.type !== "radio" && t.type !== "range") || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement)) play(db, ["hoverBeep"], 0.7);
+});
+document.addEventListener("change", (e) => {
+  const t = e.target as HTMLElement;
+  if (db && t instanceof HTMLInputElement && (t.type === "checkbox" || t.type === "radio")) play(db, ["hoverBeep"], 0.7);
+});
 // Controller: menus with the D-pad (the battle has its own controls, except over its end screens).
 startPad();
 let padSeen = false;
