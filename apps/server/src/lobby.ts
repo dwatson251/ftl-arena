@@ -515,6 +515,12 @@ export class Lobby {
       this.pending[1].push(...m.state.events);
     }
     if (!paused) this.aftermathLeft -= 1 / TICK_HZ;
+    // The boarders are dealt with: no need to wait out the long clock (down to the usual one, if it's longer).
+    if (this.aftermathBoarders && !m.state.ships[h].crew.some((c) => c.owner !== h && !c.dead && c.dying === undefined)) {
+      this.aftermathBoarders = false;
+      this.aftermathLeft = Math.min(this.aftermathLeft, SURVIVAL.aftermath);
+      this.broadcast();
+    }
     if (this.aftermathLeft <= 0) this.toReward();
   }
 

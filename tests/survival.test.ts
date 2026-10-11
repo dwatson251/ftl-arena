@@ -161,6 +161,28 @@ describe("survival: battles", () => {
     expect(l.state().survival!.boarders).toBe(true);
     expect(l.state().survival!.aftermathLeft).toBe(SURVIVAL.aftermathBoarders);
     expect(SURVIVAL.aftermathBoarders).toBe(60);
+    // Kill the last of them: the clock drops to the usual 15 s.
+    me.crew.find((x) => x.id === 900)!.dead = true;
+    l.tick();
+    expect(l.state().survival!.boarders).toBe(false);
+    expect(l.state().survival!.aftermathLeft).toBeLessThanOrEqual(SURVIVAL.aftermath);
+  });
+
+  it("boarders who outlast the aftermath come along into the next battle, fighting for the new enemy", () => {
+    const run = newRun(db, ship);
+    const m = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
+    const [me, them] = m.state.ships;
+    const raider = structuredClone(them.crew[0]);
+    Object.assign(raider, { id: 900, owner: 1, tile: me.crew[0].tile, path: [], hp: 33 });
+    me.crew.push(raider);
+    carryOver(run, me);
+    expect(run.loadout.boarders?.length).toBe(1);
+    expect(run.loadout.crew.length).toBe(me.crew.length - 1);
+    const next = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 2, 2).loadout], ["me", "bot"]);
+    const b = next.state.ships[0].crew.filter((c) => c.owner === 1);
+    expect(b.length).toBe(1);
+    expect(b[0].hp).toBe(33);
+    expect(b[0].tile).toBe(me.crew[0].tile);
   });
 
   it("only practice lobbies get Survival", () => {

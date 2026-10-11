@@ -157,7 +157,7 @@ function onMsg(m: ServerMsg): void {
   render();
 }
 
-/** Survival's jump: the ship streaks away (battle.ts), then a white flash fades to black until the next battle. */
+/** Survival's jump: the drive spools (battle.ts: engines flare, jump sound), then a white flash fades to black until the next battle. */
 let jumpVeil: HTMLDivElement | null = null;
 function jumpOut(): void {
   battle?.jumpOut();

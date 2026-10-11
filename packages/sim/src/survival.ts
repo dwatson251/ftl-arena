@@ -403,6 +403,10 @@ export function carryOver(run: SurvivalRun, ship: ShipState): void {
     .map((c) => ({ name: c.name, race: c.race, xp: { ...c.xp }, hp: Math.max(1, Math.round(c.hp)) }));
   l.damage = {};
   for (const s of Object.values(ship.systems)) if (s && s.damage > 0) l.damage[s.id] = s.damage;
+  // Enemy boarders still alive aboard come along (boarding drones don't: their ship is gone).
+  l.boarders = ship.crew
+    .filter((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined && c.drone === undefined)
+    .map((c) => ({ name: c.name, race: c.race, hp: Math.max(1, Math.round(c.hp)), tile: c.tile, xp: { ...c.xp } }));
 }
 
 export function score(run: SurvivalRun): number {

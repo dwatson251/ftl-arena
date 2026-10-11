@@ -1092,7 +1092,7 @@ export class Battle {
   /** This battle's beacon (Survival): backdrop, maybe a planet and where it sits (0..1 of the screen). */
   backdrop: { bg: string; planet?: string; px: number; py: number } | null = null;
 
-  /** When the player's ship came out of the jump (it slides in from the left, braking). */
+  /** When the player's ship came out of the jump (engines still flaring a moment). */
   private arriveAt: number | null = null;
   arriveIn(): void {
     this.arriveAt = this.time;
@@ -1100,11 +1100,11 @@ export class Battle {
 
   /** When the player's ship started its FTL jump (Survival, after the reward pick). */
   private jumpAt: number | null = null;
-  private jumpBase: { x: number; sx: number } | null = null;
 
   /**
-   * The FTL jump, as FTL does it: the drive spools up (engines flare), the ship creeps forward, then shoots
-   * off to the right, stretching into a streak. main.ts follows with the white flash and the fade to black.
+   * The FTL jump. The ship doesn't move or stretch (FTL's doesn't): the drive spools up with the engines
+   * flaring and FTL's jump sound, then main.ts whites the screen out and fades to black. Out the other side the
+   * new beacon fades in with the ship already in place.
    */
   jumpOut(): void {
     if (this.jumpAt !== null) return;
@@ -1113,35 +1113,10 @@ export class Battle {
   }
 
   private jumpFrame(): void {
-    if (!this.own) return;
-    if (this.arriveAt !== null && this.jumpAt === null) {
-      // Out of the jump: in from the left, fast, braking hard into place (stretched while it's quick).
-      const r = this.own.root;
-      this.jumpBase ??= { x: r.position.x, sx: r.scale.x };
-      const k = Math.min(1, (this.time - this.arriveAt) / 1.1);
-      const e = (1 - k) ** 3;
-      r.position.x = this.jumpBase.x - 1400 * e;
-      r.scale.x = this.jumpBase.sx * (1 + 2.5 * e);
-      if (k >= 1) {
-        r.position.x = this.jumpBase.x;
-        r.scale.x = this.jumpBase.sx;
-        this.arriveAt = null;
-        this.jumpBase = null;
-      }
-      return;
-    }
-    if (this.jumpAt === null) return;
-    const r = this.own.root;
-    this.jumpBase ??= { x: r.position.x, sx: r.scale.x };
-    const t = this.time - this.jumpAt;
-    // 0-0.9 s: a slow creep while the drive spools; then away, faster and faster.
-    const creep = Math.min(t, 0.9) * 18;
-    const go = Math.max(0, t - 0.9);
-    const dx = creep + 2400 * go * go;
-    r.position.x = this.jumpBase.x + dx;
-    r.scale.x = this.jumpBase.sx * (1 + Math.min(3, go * 4));
-    r.alpha = Math.max(0, 1 - go * 1.4);
+    // The engines flare through the spool-up and for a moment after arriving; nothing moves.
+    if (this.arriveAt !== null && this.time - this.arriveAt > 1.5) this.arriveAt = null;
   }
+
 
   /**
    * Pausing (experimental): FTL's blinking PAUSED banner while time is stopped, with who stopped it and the

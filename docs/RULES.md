@@ -254,8 +254,9 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Bosses | Battles 10, 20 and 30 are the flagship's stages 1-3. From battle 40 they cycle through the Hard layouts | user |
 | Hazards | From battle 4: a 12% chance of a random hazard (never with a boss) | user (rare) |
 | Carried over | Hull and max hull; live crew aboard with their HP and XP (anyone left on the wreck is lost); system damage; missiles; drone parts | user |
-| Reset at the jump | Fires, breaches, ion, O2, weapon charge, deployed drones, boarders | est |
-| Aftermath | 15 s (60 s if enemy boarders or boarding drones are still aboard when the enemy ship goes) of the winner's own ship (crew, systems, air, power); nothing fires; orders and pause work. Then the sim pauses for the cards | user |
+| Reset at the jump | Fires, breaches, ion, O2, weapon charge, deployed drones (boarding drones are lost with their ship) | est |
+| Boarders | Enemy crew still alive aboard at the jump come along, in the same tiles with their HP, and fight for the next enemy | user |
+| Aftermath | 15 s (60 s if enemy boarders or boarding drones are still aboard when the enemy ship goes; once they're all dead the clock drops to 15 s if more is left) of the winner's own ship (crew, systems, air, power); nothing fires; orders and pause work. Then the sim pauses for the cards | user |
 | Cards | Gear (weapon 5 : drone 2 : augment 2 weight; drones only with a drone system), a ship card (weapon upgrade, system level or install, reactor +2, crew), and supplies. A boss win adds a 4th card and makes the gear rare | user + est |
 | Tiers | From FTL's price and rarity: T1 ≤ 35, T2 ≤ 55, T3 ≤ 75, T4 (gold) ≥ 80 or rarity 5. Tier weights at difficulty d: [max(0.4, 3 − d/25), 2, 0.5 + d/40, 0.12 + d/60] | est |
 | Supplies value | Matches the gear card (at least 30 + 3n): hull 3, missile 6 (8 a card at most), drone part 8, and +1 max hull (plating) 12 once the hull is full | est |

@@ -7,7 +7,7 @@ import type { Command } from "./commands.ts";
 import { findPath, geometry, key, roomAt, roomCentre, unkey, type Geometry } from "./geometry.ts";
 import { augCount, autoPower, blockedTiles, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
 import { Rng } from "./rng.ts";
-import { DT, raceOf, RULES, TICK_HZ, TILE, type SkillId } from "./rules.ts";
+import { DT, raceOf, RACES, RULES, SKILLS, TICK_HZ, TILE, type SkillId } from "./rules.ts";
 import type {
   CrewState, DroneState, MatchConfig, MatchEvent, MatchState, Projectile, ShipState, SystemState, WeaponTarget,
 } from "./state.ts";
@@ -52,6 +52,21 @@ export class Match {
       buildShip(db, loadouts[1], 1, players[1], pick, config.unlimited),
     ];
     this.state = { tick: 0, rng: this.rng.s, nextId: 1, config, ships, projectiles: [], events: [], winner: null, endReason: "" };
+    // Survival: boarders who outlasted the last fight are still aboard, now fighting for this enemy.
+    ships.forEach((s, i) => {
+      const g = this.geo(s);
+      (loadouts[i].boarders ?? []).forEach((b, k) => {
+        const tile = g.tiles.has(b.tile) ? b.tile : [...g.tiles.keys()][0];
+        const [x, y] = tile.split(",").map(Number);
+        const t = raceOf(b.race);
+        s.crew.push({
+          id: 500 + i * 50 + k, name: b.name, race: RACES[b.race] ? b.race : "human", hp: Math.max(1, Math.min(t.hp, b.hp)), maxHp: t.hp,
+          x, y, tile, path: [], home: tile, task: "idle",
+          xp: Object.fromEntries(SKILLS.map((sk) => [sk, Math.max(0, Math.round(Number(b.xp?.[sk]) || 0))])) as CrewState["xp"],
+          stun: 0, dead: false, owner: (1 - i) as 0 | 1,
+        });
+      });
+    });
     if (config.pause === "clock") {
       const bank = (config.pauseBank ?? RULES.pauseBank) > 0 ? (config.pauseBank ?? RULES.pauseBank) : -1;
       this.state.pauseBank = [bank, bank];

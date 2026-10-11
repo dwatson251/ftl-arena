@@ -18,6 +18,8 @@ export interface Loadout {
   hullNow?: number;
   /** Survival: system damage carried from the last fight. */
   damage?: Partial<Record<SystemId, number>>;
+  /** Survival: enemy boarders still aboard after the last fight; they fight on for the next enemy. */
+  boarders?: { name: string; race: string; hp: number; tile: string; xp?: Partial<Record<SkillId, number>> }[];
   /** Augment ids, up to 3 (FTL's limit); stackable augments may repeat. */
   augments?: string[];
   /** Drone ids (up to the hull's drone slots) and drone parts. */

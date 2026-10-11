@@ -476,6 +476,18 @@
 - The full 60 s runs even if the boarders die early, as asked. It's easy to cut short later.
 - Test: `survival.test.ts` (134 passing in total).
 
+## Round 26: Survival boarders and the jump
+- **Bug: boarders now carry over.** Enemy crew still alive on your ship at the jump come along into the
+  next battle: same tiles, same HP and skills, now fighting for the new enemy (`Loadout.boarders`,
+  placed by the `Match` constructor). Boarding drones don't come: their controlling ship is gone.
+- **Long aftermath ends early:** once every boarder is dead, the 60 s clock drops to 15 s, or to what's
+  left if that's less. The banner stops saying BOARDERS ABOARD.
+- **Jump look:** the stretch, the creep and the slide-in are gone, since FTL's ship doesn't move. Now the
+  ship stays put with its engines flaring and FTL's jump sound plays, then a white flash and black. The
+  next beacon fades in with the ship already in place, engines flaring a moment longer.
+- Tests: `survival.test.ts` gained 2 tests (boarders carried over, the clock dropping); 135 passing in
+  total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
