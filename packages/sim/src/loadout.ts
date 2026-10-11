@@ -277,6 +277,8 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   }
   const parts = l.droneParts ?? 0;
   if (!Number.isInteger(parts) || parts < 0 || parts > 99) errors.push("drone parts must be 0-99");
+  // The hacking drone is built from a drone part (one per launch, as in FTL).
+  if ((l.systems.hacking ?? 0) > 0 && parts < 1) errors.push("hacking needs at least 1 drone part (each hacking drone uses one)");
   if (parts > (base.droneParts ?? 0)) lines.push({ item: `${parts - (base.droneParts ?? 0)} drone parts`, scrap: (parts - (base.droneParts ?? 0)) * RULES.dronePartPrice });
   const augs = l.augments ?? [];
   if (augs.length > MAX_AUGMENTS) errors.push(`at most ${MAX_AUGMENTS} augments`);

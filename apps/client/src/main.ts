@@ -644,11 +644,13 @@ function settingsBody(): string {
   return `<label class="kv"><span>Controller support <span class="note">(experimental)</span></span><input type="checkbox" id="controller" ${on ? "checked" : ""}></label>
     <div class="note">${on ? st : "Off. With it on, the AI runs your crew and reactor; you aim weapons, board, hack and mind-control with selector wheels."}</div>
     ${on ? `<div class="padmap">
-      <div><b>A / B / X / Y</b> weapons 1-4: hold for the target wheel (left stick), tap to clear</div>
+      <div><b>A / B / X / Y</b> weapons 1-4: tap to power, hold for the target wheel (left stick; the middle powers it without a target)</div>
       <div><b>RB</b> teleport: hold to send a crew member to the pad, tap to beam over</div>
       <div><b>LT</b> hold to bring a boarder back · <b>RT</b> hacking: hold to aim the drone, tap to pulse</div>
-      <div><b>D-pad ↑</b> mind control (hold) · <b>←</b> cloak · <b>→</b> battery</div>
-      <div><b>LB</b> + a button: power that system or gun down · <b>Start</b> pause · <b>Back/View</b> match menu</div>
+      <div><b>D-pad ↑</b> mind control (hold) · <b>←</b> cloak · <b>→</b> battery · <b>↓</b> doors: open (again: airlocks too)</div>
+      <div><b>LB</b> hold for the systems wheel: point at one, <b>D-pad ↑/↓</b> powers it up/down</div>
+      <div><b>LB</b> + a button: power that system or gun down · <b>LB + ↓</b> close the doors round your crew (again: all)</div>
+      <div><b>Start</b> pause · <b>Back/View</b> match menu</div>
       <div>Menus: <b>D-pad</b> moves, <b>A</b> selects (and edits numbers/lists: D-pad to change, A to submit), <b>B</b> backs out</div>
     </div>` : ""}`;
 }

@@ -107,15 +107,27 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
   you've powered up or down yourself, and crew you've sent to the teleporter. You aim, board, hack and
   mind-control with **selector wheels**: hold the button, point the left stick at a segment, and let go.
 - **Pausing:** the wheel pauses the game when the lobby's pause rules allow (practice and Survival always).
-- **Buttons:**
-  - **A/B/X/Y**: weapons 1-4. Hold for the room wheel (crew are grouped by room, plus an empty-room slot);
-    a pick always autofires; tap to clear.
+- **Buttons** (in battle, each button's icon sits beside what it works):
+  - **A/B/X/Y**: weapons 1-4.
+    - Tap to power the gun up.
+    - Hold for the room wheel: crew are grouped by room, and there's an empty-room slot. A pick always
+      autofires. The middle ("None") clears the target and still powers the gun.
   - **RB**: teleport. Hold to send a crew member to the pad, tap to beam over.
   - **LT**: hold to bring a boarder back.
   - **RT**: hacking. Hold to aim the drone, tap to pulse.
-  - **D-pad ↑**: mind control (hold). **←** cloak · **→** battery.
-  - **LB + a button**: powers that gun or system down. The teleporter going off hands its crew back to the AI.
+  - **D-pad:**
+    - **↑**: mind control (hold);
+    - **←**: cloak;
+    - **→**: battery;
+    - **↓**: doors. Once opens the interior doors; again opens the airlocks too.
+  - **LB:**
+    - **Hold** for the systems wheel. Point the stick at a system, then **D-pad ↑/↓** powers it up or down
+      (weapons and drones one at a time).
+    - **LB + a button**: powers that gun or system down. The teleporter going off hands its crew back to the
+      AI.
+    - **LB + ↓**: closes the doors round your crew; again, every door.
   - **Start**: pause.
+  - **AUTOFIRE:** with a controller there's no AUTOFIRE button: wheel picks always autofire.
 - **Menus:** the D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to
   submit, B to cancel).
 - **Lobby:** a gamepad icon shows beside players on a controller.

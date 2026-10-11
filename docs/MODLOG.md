@@ -893,6 +893,32 @@
   - This journal moved to `docs/`, and there's a new `CHANGELOG.md`.
   - The screenshots come from `tools/align/readme-shots.ts`.
 
+## Round 49: hacking needs a drone part; controller round 2
+- **Hacking:**
+  - A build with hacking needs at least 1 drone part, since each hacking drone uses one (`priceLoadout`).
+  - The drone-parts counter now shows whenever hacking is installed, not only with a drone bay.
+  - All three stock hulls with hacking start with parts (9-25).
+- **Controller:**
+  - **LB held** opens the systems wheel: every powerable system, with its live power. The pick stays when the
+    stick is let go (the D-pad is under the same thumb). D-pad ↑/↓ then powers it up or down; weapons and
+    drones go one at a time, through the same paths as a mouse click. The LB + button shortcuts still work
+    while it's open.
+  - **A/B/X/Y tap** powers that gun with no room needed. The wheel's middle ("None") clears the target and
+    powers it too.
+  - **Doors on D-pad ↓:** ↓ is FTL's open (interior, then the airlocks too). LB + ↓ closes the doors round
+    your crew; a second press within 3 s, or nothing open round them, closes every door. Crew can move
+    between presses, so it's timed rather than going by state.
+  - **Button icons** sit beside what each button works:
+    - A/B/X/Y on the guns;
+    - LB by the reactor;
+    - RB and LT on the teleporter, RT on hacking, ↑ on mind control, ← on cloaking, → on the battery;
+    - ↓ by the door buttons.
+
+    The top hint line, the Start hint and the "Pause: Space" text are gone in controller mode. The pause
+    clocks still show when there are any. There's no AUTOFIRE button with a controller.
+- **Tests:** `hacking-parts.test.ts`. `tools/align/controller2.ts` (scripted pad) covers the icons, the tap,
+  the LB wheel and the doors.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

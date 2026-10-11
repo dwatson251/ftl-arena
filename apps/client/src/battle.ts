@@ -1188,7 +1188,7 @@ export class Battle {
     this.survivalHud();
     this.jumpFrame();
     this.wheel.draw(this.time);
-    this.padHint();
+    this.padGlyphs();
     const gone = this.enemyGoneBy();
     if (gone !== null && this.time >= gone) this.clearWindow();
     this.tooltip(v);
@@ -1467,7 +1467,10 @@ export class Battle {
       const mine = v.pauseBank[v.you];
       const theirs = v.pauseBank[1 - v.you];
       // Practice's unlimited clock is FTL's own pause: no clocks to show.
-      const label = mine < 0 ? "Pause: Space" : `Pause (Space): you ${fmt(mine)}  ·  them ${fmt(theirs)}`;
+      // With a controller, no key hint (Start pauses); the clocks still show when there are any.
+      const pad = this.padUi();
+      if (pad && mine < 0) return;
+      const label = mine < 0 ? "Pause: Space" : `${pad ? "Pause" : "Pause (Space)"}: you ${fmt(mine)}  ·  them ${fmt(theirs)}`;
       const tt = h.text("pzC", label, 640, 28, fstyle("JustinFont10", mine === 0 ? 0xff8070 : 0xdfe8ff, { stroke: 0x101010 }), [0.5, 0]);
       this.pauseBox = { x: 640 - tt.width / 2, y: 26, w: tt.width, h: 18 };
     }
@@ -1679,8 +1682,9 @@ export class Battle {
     const mt = texNow(s.missiles > 0 ? "statusUI/top_missiles_on.png" : "statusUI/top_missiles_on_red.png");
     if (mt) h.sprite("msl", mt, 122, 43);
     h.text("mslT", String(s.missiles), 174, 45, fstyle("num_font", s.missiles > 0 ? 0xffffff : 0xff6050), [0.5, 0]);
-    // Drone parts, right beside the missiles (no fuel in the arena, so everything shifts one box left).
-    if (s.systems.drones || (s.drones ?? []).length) {
+    // Drone parts, right beside the missiles (no fuel in the arena, so everything shifts one box left). The
+    // hacking drone uses them too.
+    if (s.systems.drones || s.systems.hacking || (s.drones ?? []).length) {
       const dt = texNow("statusUI/top_drones_on.png");
       if (dt) h.sprite("drn", dt, 190, 43);
       h.text("drnT", String(s.droneParts ?? 0), 242, 45, fstyle("num_font", (s.droneParts ?? 0) > 0 ? 0xffffff : 0xff6050), [0.5, 0]);
@@ -2379,7 +2383,10 @@ export class Battle {
       if (w.autofire) h.text(`wa${i}`, "AUTO", bx + SLOT.w - 15, by + SLOT.h - 12, fstyle("JustinFont8", 0xffd040), [1, 0]);
       this.weapHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
     }
-    // AUTOFIRE: a tab under the right end of the tray, lit when any weapon autofires.
+    // AUTOFIRE: a tab under the right end of the tray, lit when any weapon autofires. Not with a controller:
+    // a wheel pick always autofires.
+    this.autoBox = null;
+    if (this.padUi()) return;
     const anyAuto = this.autoMode;
     // Under the right end of the tray, whatever its size.
     const ax = TRAY.x + this.trayDx + 31 + 97 * slots - 126;
@@ -2660,6 +2667,8 @@ export class Battle {
   private wheelBtn: number | null = null;
   private pausedByWheel = false;
   private padSeen = false;
+  /** When LB + ↓ last closed the doors round the crew (a second press closes them all). */
+  private lastDoorClose = 0;
   /** Open or close the match menu (main.ts: Escape, or the controller's Back/View button). */
   onMenu: () => void = () => {};
   /** Tell the server which crew the player takes from the AI (teleport picks) or hands back (main.ts sends it). */
@@ -2667,7 +2676,7 @@ export class Battle {
 
   /** The buttons that open a wheel when held: weapons, teleport out/back, hacking, mind control. */
   private static WHEEL_BTNS = new Set<number>([BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.UP]);
-  private static ACTION_BTNS = [BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.UP, BTN.LEFT, BTN.RIGHT];
+  private static ACTION_BTNS = [BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.UP, BTN.DOWN, BTN.LEFT, BTN.RIGHT];
   private static SLOT: Record<number, number> = { [BTN.A]: 0, [BTN.B]: 1, [BTN.X]: 2, [BTN.Y]: 3 };
 
   private padFrame(p: Pad): void {
@@ -2678,11 +2687,24 @@ export class Battle {
     if (document.querySelector("#ui .overlay")) return;
     if (p.down(BTN.START)) this.togglePause();
     const live = this.live(v);
+    // Hold LB: the wheel of your own systems. Point at one, then D-pad ↑/↓ powers it up or down; the LB +
+    // button shortcuts keep working while it's open. Letting go of LB closes it.
+    if (live && p.held(BTN.LB) && p.heldFor(BTN.LB) >= HOLD_MS && this.wheelBtn === null) {
+      this.wheelBtn = BTN.LB;
+      this.wheel.open("Systems", this.systemItems(v), this.ownCx, OWN.cy, { note: "D-pad ↑ / ↓: power up / down", sticky: true });
+      this.pauseForWheel(v);
+    }
+    if (this.wheelBtn === BTN.LB) {
+      if (!p.held(BTN.LB)) this.closeWheel();
+      else this.wheel.setItems(this.systemItems(v));
+    }
     for (const b of Battle.ACTION_BTNS) {
       if (p.down(b)) {
         const lb = p.held(BTN.LB);
         this.padPress.set(b, { lb, opened: false });
-        if (lb && live) this.padPowerDown(b, v);
+        const pick = this.wheelBtn === BTN.LB ? (this.wheel.selected()?.value as { sys?: SystemId } | undefined)?.sys : undefined;
+        if (lb && live && pick && (b === BTN.UP || b === BTN.DOWN)) this.padSystemPower(pick, b === BTN.UP ? 1 : -1, v);
+        else if (lb && live) this.padPowerDown(b, v);
       }
       const pr = this.padPress.get(b);
       if (!pr) continue;
@@ -2692,12 +2714,7 @@ export class Battle {
           pr.opened = true;
           this.wheelBtn = b;
           this.wheel.open(w.title, w.items, w.cx, w.cy);
-          // The wheel stops time while it's open, when the rules let you pause (practice and Survival always).
-          const canPause = v.config.pause === "clock" && (v.pauseBank?.[v.you] ?? 0) !== 0;
-          if (!v.pause && canPause) {
-            this.send({ c: "pause", on: true });
-            this.pausedByWheel = true;
-          }
+          this.pauseForWheel(v);
         }
       }
       if (p.up(b)) {
@@ -2710,6 +2727,62 @@ export class Battle {
       }
     }
     if (this.wheelBtn !== null) this.wheel.steer(p.stick());
+  }
+
+  /** A wheel stops time while it's open, when the rules let you pause (practice and Survival always). */
+  private pauseForWheel(v: MatchView): void {
+    const canPause = v.config.pause === "clock" && (v.pauseBank?.[v.you] ?? 0) !== 0;
+    if (!v.pause && canPause) {
+      this.send({ c: "pause", on: true });
+      this.pausedByWheel = true;
+    }
+  }
+
+  /** The LB wheel's choices: every system you can power, with its power now. */
+  private systemItems(v: MatchView): WheelItem[] {
+    const own = v.ships[v.you];
+    return Object.values(own.systems)
+      .filter((s): s is NonNullable<typeof s> => !!s && !SUBSYSTEMS.includes(s.id))
+      .map((s) => {
+        const power = s.id === "drones" ? (own.drones ?? []).filter((d) => d.powered).reduce((a, d) => a + (this.db.droneBPs[d.bp]?.power ?? 1), 0) : s.power;
+        return { label: `${this.sysTitle(s.id)} ${power}/${usable(s)}`, icon: texNow(`icons/s_${baseSystemId(s.id)}_overlay.png`), value: { sys: s.id } };
+      });
+  }
+
+  /** D-pad ↑/↓ on the LB wheel's system: weapons and drones go one gun or drone at a time, as their trays do. */
+  private padSystemPower(id: SystemId, delta: 1 | -1, v: MatchView): void {
+    const own = v.ships[v.you];
+    if (id === "drones" && delta > 0) {
+      const i = (own.drones ?? []).findIndex((d) => !d.powered);
+      if (i < 0) return this.fail("All drones are powered");
+      return this.clickDrone(i, false);
+    }
+    this.powerClick(own, id, delta);
+  }
+
+  /**
+   * The controller's door button (D-pad ↓). Open: FTL's button (interior doors, then again with them open, the
+   * airlocks too). LB + ↓ closes: first the doors round your crew, then (pressed again, or with those shut) every door.
+   */
+  private padDoors(open: boolean, v: MatchView): void {
+    const own = v.ships[v.you];
+    if (open) return this.send({ c: "doorsAll", open: true });
+    const g = this.own.geo;
+    const rooms = new Set<number>();
+    for (const c of own.crew) {
+      if (c.owner !== v.you || c.dead || c.dying !== undefined) continue;
+      const r = g.tiles.get(c.tile)?.room;
+      if (r !== undefined) rooms.add(r);
+    }
+    const near = g.doors.filter((d) => own.doors[d.index] && (rooms.has(d.roomA) || rooms.has(d.roomB)));
+    // A second press soon after (crew may have moved meanwhile), or nothing open round them: every door.
+    const again = performance.now() - this.lastDoorClose < 3000;
+    this.lastDoorClose = performance.now();
+    if (again || !near.length) {
+      this.lastDoorClose = 0;
+      return this.send({ c: "doorsAll", open: false });
+    }
+    for (const d of near) this.send({ c: "door", door: d.index, open: false });
   }
 
   private closeWheel(): void {
@@ -2817,7 +2890,12 @@ export class Battle {
     if (slot !== undefined) {
       const w = own.weapons[slot];
       if (!w) return;
-      if (!it) return this.padTap(b, v);
+      if (!it) {
+        // "None": the gun stops aiming, but still powers up.
+        this.send({ c: "target", slot, target: null });
+        this.send({ c: "autofire", slot, on: false });
+        return this.padTap(b, v);
+      }
       const room = (it.value as { room: number }).room;
       const bp = this.db.weapons[w.bp];
       if (!w.powered && (bp?.missiles ?? 0) > own.missiles) return this.fail("NO MISSILES");
@@ -2854,12 +2932,11 @@ export class Battle {
     const own = v.ships[v.you];
     const slot = Battle.SLOT[b];
     if (slot !== undefined) {
-      // No pick: the weapon stops aiming.
-      if (!own.weapons[slot]) return;
-      this.send({ c: "target", slot, target: null });
-      this.send({ c: "autofire", slot, on: false });
+      // A tap powers the gun (no room needed); hold for the wheel to aim it.
+      if (own.weapons[slot] && !own.weapons[slot].powered) this.clickWeapon(slot, false);
       return;
     }
+    if (b === BTN.DOWN) return this.padDoors(true, v);
     if (b === BTN.RB && own.systems.teleporter) {
       // Beam whoever is on the pad over to a random enemy room.
       const rooms = [...this.enemy.geo.roomTiles.keys()];
@@ -2882,6 +2959,7 @@ export class Battle {
       play(this.db, ["powerDownSystem"], 0.6);
       return;
     }
+    if (b === BTN.DOWN) return this.padDoors(false, v);
     const id: SystemId | null = b === BTN.RB ? "teleporter" : b === BTN.RT ? "hacking" : b === BTN.UP ? "mind" : b === BTN.LEFT ? "cloaking" : null;
     const s = id ? own.systems[id] : undefined;
     if (!id || !s) return;
@@ -2889,10 +2967,52 @@ export class Battle {
     play(this.db, ["powerDownSystem"], 0.6);
   }
 
-  /** A short reminder of the controller layout, bottom right (only once a pad has been seen). */
-  private padHint(): void {
-    if (!this.padSeen || !controllerEnabled()) return;
-    this.hud.text("padHint", "A/B/X/Y weapons · RB/LT teleport · RT hack · ↑ mind · ←/→ cloak/battery · LB+ power off · Start pause", 1276, 4, fstyle("JustinFont10", 0x9aa3b2, { stroke: 0x101010 }), [1, 0]);
+  /** Controller mode: switched on in Settings, and a pad in use. */
+  private padUi(): boolean {
+    return this.padSeen && controllerEnabled();
+  }
+
+  /** One button's icon: Xbox-coloured face buttons, labelled shoulders and triggers, D-pad arrows. */
+  private glyph(key: string, btn: string, x: number, y: number): void {
+    const h = this.hud;
+    const g = h.gfx(`${key}g`);
+    const face: Record<string, number> = { A: 0x3fae49, B: 0xd0453a, X: 0x2f6fd6, Y: 0xe0b520 };
+    if (face[btn] !== undefined) {
+      g.circle(x, y, 8).fill({ color: face[btn] }).stroke({ color: 0x101010, width: 1.5 });
+      h.text(key, btn, x, y, fstyle("JustinFont10", 0xffffff, { stroke: 0x101010 }), [0.5, 0.5]);
+      return;
+    }
+    const w = btn.length > 1 ? 24 : 16;
+    g.roundRect(x - w / 2, y - 7, w, 14, btn.length > 1 ? 5 : 3).fill({ color: 0x262b33 }).stroke({ color: 0xc8d0dc, width: 1.5 });
+    h.text(key, btn, x, y, fstyle("JustinFont8", 0xe8ece8), [0.5, 0.5]);
+  }
+
+  /** Controller mode: each button's icon beside what it works (the guns, the power bars, the system buttons). */
+  private padGlyphs(): void {
+    const v = this.view;
+    if (!v || !this.padUi()) return;
+    const own = v.ships[v.you];
+    ["A", "B", "X", "Y"].forEach((b, i) => {
+      if (!own.weapons[i]) return;
+      this.glyph(`pg${b}`, b, SLOT.x + this.trayDx + i * SLOT.dx + SLOT.w - 6, SLOT.y + 2);
+    });
+    // LB: the systems wheel and power-down, by the reactor and power bars.
+    this.glyph("pgLB", "LB", 27, 600);
+    const near = (id: SystemId, btns: string[]) => {
+      const hit = this.sysHit.find((x) => x.id === id);
+      if (!hit) return;
+      btns.forEach((b, i) => this.glyph(`pg${b}`, b, hit.box.x + hit.box.w / 2 + (i - (btns.length - 1) / 2) * 26, hit.box.y - 10));
+    };
+    near("teleporter", ["RB", "LT"]);
+    near("hacking", ["RT"]);
+    near("mind", ["↑"]);
+    near("cloaking", ["←"]);
+    if (own.systems.battery) {
+      const bx = SUB_X0 + (SUB_OFF.battery ?? 0) + 18;
+      this.glyph("pg→", "→", bx, SUB_ICON_Y - 12);
+    }
+    const door = this.doorBtns[0];
+    if (door) this.glyph("pg↓", "↓", door.box.x + door.box.w + 8, door.box.y + 6);
   }
 
   // ---------------------------------------------------------------- input
@@ -2931,36 +3051,7 @@ export class Battle {
     }
     for (const dh of this.droneHit) {
       if (!inBox(p, dh.box)) continue;
-      const d = own.drones?.[dh.slot];
-      const bp = d && this.db.droneBPs[d.bp];
-      if (!d || !bp) return;
-      if (right) {
-        if (d.powered) {
-          this.send({ c: "dronePower", slot: dh.slot, on: false });
-          play(this.db, ["powerDownSystem"]);
-        }
-        return;
-      }
-      if (d.powered) return;
-      if ((d.rebuild ?? 0) > 0) return this.fail("That drone is still being rebuilt");
-      const offline = d.deployed;
-      if (!ACTIVE_DRONES.includes(bp.type)) return this.fail("This drone isn't in the arena yet");
-      const ds = own.systems.drones;
-      if (!ds || ds.ion > 0) return this.fail(ds ? "Drones are locked by ion damage" : "No drone system");
-      const load = (own.drones ?? []).filter((q) => q.powered).reduce((a, q) => a + (this.db.droneBPs[q.bp]?.power ?? 1), 0);
-      if (load + bp.power > usable(ds)) return this.fail("Not enough drone system power");
-      // The drone system draws more reactor if it needs to; refuse (quietly, with FTL's buzz) if there's none.
-      const usedR = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
-      const extra = Math.max(0, load + bp.power - ds.power - (ds.bonus ?? 0));
-      if (usedR + extra > own.reactor + (own.reactorBonus ?? 0)) return this.fail("Not enough available power");
-      // An offline drone is still out there: it comes back on without a new part.
-      if (!offline && (own.droneParts ?? 0) <= 0) return this.fail("No drone parts left");
-      // A boarding drone can be powered behind a super shield, but it waits until the shield is down.
-      const held = bp.type === "BOARDER" && !offline && (v.ships[1 - v.you].superShield ?? 0) > 0;
-      play(this.db, held || offline ? ["powerUpSystem"] : ["powerUpSystem", "droneLaunch"]);
-      if (held) this.say("Super shields: the boarding drone waits until they're down", 0xffd040);
-      this.send({ c: "dronePower", slot: dh.slot, on: true });
-      return;
+      return this.clickDrone(dh.slot, right);
     }
     for (const b of this.stationBtns) {
       if (!inBox(p, b.box)) continue;
@@ -3233,6 +3324,43 @@ export class Battle {
         if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) this.selected.add(c.id);
       }
     }
+  }
+
+  /** A drone box clicked: power that drone up (launching it) or, with the right button, down. */
+  private clickDrone(slot: number, right: boolean): void {
+    const v = this.view;
+    if (!v) return;
+    const own = v.ships[v.you];
+    const d = own.drones?.[slot];
+    const bp = d && this.db.droneBPs[d.bp];
+    if (!d || !bp) return;
+    if (right) {
+      if (d.powered) {
+        this.send({ c: "dronePower", slot, on: false });
+        play(this.db, ["powerDownSystem"]);
+      }
+      return;
+    }
+    if (d.powered) return;
+    if ((d.rebuild ?? 0) > 0) return this.fail("That drone is still being rebuilt");
+    const offline = d.deployed;
+    if (!ACTIVE_DRONES.includes(bp.type)) return this.fail("This drone isn't in the arena yet");
+    const ds = own.systems.drones;
+    if (!ds || ds.ion > 0) return this.fail(ds ? "Drones are locked by ion damage" : "No drone system");
+    const load = (own.drones ?? []).filter((q) => q.powered).reduce((a, q) => a + (this.db.droneBPs[q.bp]?.power ?? 1), 0);
+    if (load + bp.power > usable(ds)) return this.fail("Not enough drone system power");
+    // The drone system draws more reactor if it needs to; refuse (quietly, with FTL's buzz) if there's none.
+    const usedR = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
+    const extra = Math.max(0, load + bp.power - ds.power - (ds.bonus ?? 0));
+    if (usedR + extra > own.reactor + (own.reactorBonus ?? 0)) return this.fail("Not enough available power");
+    // An offline drone is still out there: it comes back on without a new part.
+    if (!offline && (own.droneParts ?? 0) <= 0) return this.fail("No drone parts left");
+    // A boarding drone can be powered behind a super shield, but it waits until the shield is down.
+    const held = bp.type === "BOARDER" && !offline && (v.ships[1 - v.you].superShield ?? 0) > 0;
+    play(this.db, held || offline ? ["powerUpSystem"] : ["powerUpSystem", "droneLaunch"]);
+    if (held) this.say("Super shields: the boarding drone waits until they're down", 0xffd040);
+    this.send({ c: "dronePower", slot, on: true });
+    return;
   }
 
   private clickWeapon(slot: number, right: boolean): void {

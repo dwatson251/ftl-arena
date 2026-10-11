@@ -18,19 +18,31 @@ export class Wheel {
   private imm = new Imm(this.root);
   private items: WheelItem[] = [];
   private title = "";
+  /** A line under the wheel (what the D-pad does, say). */
+  private note = "";
+  /** Keeps the last choice when the stick is let go (the D-pad, under the same thumb, then acts on it). */
+  private sticky = false;
   private cx = 640;
   private cy = 360;
   /** The highlighted choice (-1: the middle, "none"). */
   sel = -1;
   isOpen = false;
 
-  open(title: string, items: WheelItem[], cx: number, cy: number): void {
+  open(title: string, items: WheelItem[], cx: number, cy: number, opts: { note?: string; sticky?: boolean } = {}): void {
     this.title = title;
+    this.note = opts.note ?? "";
+    this.sticky = !!opts.sticky;
     this.items = items;
     this.cx = cx;
     this.cy = cy;
     this.sel = -1;
     this.isOpen = true;
+  }
+
+  /** New labels for the same choices (live values), keeping the highlighted one. */
+  setItems(items: WheelItem[]): void {
+    this.items = items;
+    if (this.sel >= items.length) this.sel = -1;
   }
 
   close(): void {
@@ -51,7 +63,7 @@ export class Wheel {
   /** Point the stick: the nearest choice that way; let go (centred) and it's the middle. */
   steer(s: { pushed: boolean; angle: number }): void {
     if (!s.pushed) {
-      this.sel = -1;
+      if (!this.sticky) this.sel = -1;
       return;
     }
     let best = -1;
@@ -96,6 +108,7 @@ export class Wheel {
     const mid = this.sel < 0;
     g.circle(cx, cy, r0).fill({ color: mid ? 0x4a3a12 : 0x1b1f27, alpha: 0.95 }).stroke({ color: mid ? 0xffd76a : 0x6d7686, width: mid ? 3 : 2 });
     h.text("title", this.title, cx, cy - R - 26, fstyle("JustinFont12Bold", 0xe8ece8, { stroke: 0x101010, strokeWidth: 3 }), [0.5, 0.5]);
+    if (this.note) h.text("note", this.note, cx, cy + R + 22, fstyle("JustinFont10", 0xc8d0dc, { stroke: 0x101010, strokeWidth: 3 }), [0.5, 0.5]);
     const pick = this.selected();
     h.text("mid", pick ? "Pick" : "None", cx, cy, fstyle("JustinFont10", pick ? 0xffd76a : 0xc8d0dc, { stroke: 0x101010 }), [0.5, 0.5]);
     this.items.forEach((it, i) => {
