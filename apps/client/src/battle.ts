@@ -780,6 +780,13 @@ export class Battle {
    * FTL's numbered reticles (misc/crosshairs_placedN.png), all centred on the targeted room; the armed
    * weapon's reticle is the yellow variant. Beams draw FTL's beam line.
    */
+  /** A flak weapon's spread: a translucent red circle of its radius (as the sim scatters its shots). */
+  private spreadCircle(g: Graphics, bpId: string, cx: number, cy: number): void {
+    const bp = this.db.weapons[bpId];
+    if (bp?.type !== "BURST") return;
+    g.circle(cx, cy, bp.radius || 40).fill({ color: 0xff3030, alpha: 0.2 });
+  }
+
   private drawTargets(own: ShipView): void {
     const g = this.enemy.overlay.clear();
     const mk = this.enemy.marks;
@@ -800,6 +807,9 @@ export class Battle {
         if (!r) return;
         const cx = (r.x + r.w / 2) * 35;
         const cy = (r.y + r.h / 2) * 35;
+        // Flak is inaccurate: its shots land anywhere in this circle (the sim's spread), next rooms and bare
+        // hull included.
+        this.spreadCircle(g, w.bp, cx, cy);
         const t = texNow(`misc/crosshairs_placed${i + 1}${yellow ? "_yellow" : ""}.png`);
         if (t) mk.sprite(`x${i}`, t, cx, cy, { anchor: 0.5, rotation: this.enemy.upright });
         else {
@@ -814,6 +824,12 @@ export class Battle {
         mk.text(`xn${i}`, String(i + 1), t.x1 + 8, t.y1 - 8, fstyle("JustinFont10", 0xff6050, { stroke: 0x101010 }), [0.5, 0.5], this.enemy.upright);
       }
     });
+    // Aiming flak: its spread round the room under the pointer.
+    if (this.armed !== null && this.hoverEnemy.room >= 0) {
+      const r = this.enemy.layout.rooms.find((q) => q.id === this.hoverEnemy.room);
+      const bp = own.weapons[this.armed]?.bp;
+      if (r && bp) this.spreadCircle(g, bp, (r.x + r.w / 2) * 35, (r.y + r.h / 2) * 35);
+    }
     // Aiming a beam: after the first click its line follows the mouse, as long as the beam (no point markers).
     if (this.beamStart && this.armed !== null) {
       const L = this.db.weapons[own.weapons[this.armed]?.bp]?.length || 60;

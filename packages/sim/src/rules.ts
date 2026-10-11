@@ -75,7 +75,8 @@ export const RULES = {
   /** Projectile flight seconds by weapon type (est; FTL's <speed> is screen-space). */
   /** Seconds from firing to impact. A bomb: the launcher's teleport (bombAppear), then it sits in the room
    *  beeping (FTL's bomb sound, about 2.1 s) and goes off; the damage lands then. */
-  flight: { LASER: 1.0, BURST: 1.1, MISSILES: 1.5, BOMB: 2.4, BEAM: 0.0 } as Record<string, number>,
+  /** Flak (BURST) is slow: a quarter of its old speed (the user's playtest; FTL's blueprints give it no speed). */
+  flight: { LASER: 1.0, BURST: 4.4, MISSILES: 1.5, BOMB: 2.4, BEAM: 0.0 } as Record<string, number>,
   /** When a teleported bomb appears in the target room (the launcher's firing animation). */
   bombAppear: 0.3,
   /** Delay between shots of one volley (est). */

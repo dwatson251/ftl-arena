@@ -275,3 +275,4 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Re-rolls (Survival) | 2 to start, +1 per boss or mini-boss beaten | user |
 | Teleported bombs | Appear 0.3 s after firing, beep about 2.1 s, go off at 2.4 s (damage then) | user + FTL sound length |
 | Unpowered guns | Lose their target, however they lost the power | user (FTL) |
+| Flak (BURST) flight | 4.4 s (a quarter of the old 1.1 s) | user (guess) |

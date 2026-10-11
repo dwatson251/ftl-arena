@@ -728,6 +728,14 @@
 - **Checks:** `tools/align/flagship-escape.ts` (hazard stack, both window states) and
   `tools/align/o2-stripes.ts`.
 
+## Round 40: flak
+- **Spread circle:** flak (BURST) weapons show a translucent red circle (no border) round their target,
+  and round the room under the pointer while aiming one. It's the weapon's `radius` (40 px if unset), the
+  area the sim scatters its shots over, so neighbouring rooms and bare hull can be hit.
+  - Check: `tools/align/flak-spread.ts`.
+- **Slower:** flak flies at a quarter of its old speed (`RULES.flight.BURST` 4.4 s, was 1.1 s). That's the
+  user's guess; FTL's flak blueprints set no speed of their own.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
