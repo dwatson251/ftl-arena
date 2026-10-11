@@ -115,17 +115,17 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
   - **RB**: teleport. Hold to send a crew member to the pad, tap to beam over.
   - **LT**: hold to bring a boarder back.
   - **RT**: hacking. Hold to aim the drone, tap to pulse.
+  - **Right stick click (RS)**: mind control. Hold for the wheel.
   - **D-pad:**
-    - **↑**: mind control (hold);
+    - **↑**: opens doors. Once opens the interior doors; again opens the airlocks too.
+    - **↓**: closes doors. Once closes the doors round your crew; again, every door.
     - **←**: cloak;
-    - **→**: battery;
-    - **↓**: doors. Once opens the interior doors; again opens the airlocks too.
+    - **→**: battery.
   - **LB:**
     - **Hold** for the systems wheel. Point the stick at a system, then **D-pad ↑/↓** powers it up or down
       (weapons and drones one at a time).
     - **LB + a button**: powers that gun or system down. The teleporter going off hands its crew back to the
       AI.
-    - **LB + ↓**: closes the doors round your crew; again, every door.
   - **Start**: pause.
   - **AUTOFIRE:** with a controller there's no AUTOFIRE button: wheel picks always autofire.
 - **Menus:** the D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to

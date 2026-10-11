@@ -919,6 +919,24 @@
 - **Tests:** `hacking-parts.test.ts`. `tools/align/controller2.ts` (scripted pad) covers the icons, the tap,
   the LB wheel and the doors.
 
+## Round 50: doors on the D-pad, mind control on the right stick, icons on Survival cards
+- **Controller:** the LB systems wheel now handles power, which frees D-pad ↑/↓ for the doors.
+  - **↑** opens: the interior doors, then the airlocks.
+  - **↓** closes: the doors round your crew, then (again within 3 s) every door.
+  - **Mind control** moved to the right stick click: hold RS for its wheel; LB + RS powers it down. Its icon
+    sits on the mind-control button.
+  - On the LB wheel, ↑/↓ still power the chosen system.
+  - The scripted-pad check (`controller2.ts`) passes: doors went 20 → 26 → 18 → 0 open.
+- **Survival cards** show what they give, in FTL's art:
+  - weapon art (upgrades with a "+");
+  - drone art;
+  - the system icon with ▲ (reinforcement ⛨);
+  - the crew portrait;
+  - the HUD's missile and drone-part boxes with the count, and "+N hull" for supplies;
+  - small badges for the reactor, augments and "+1 choice".
+
+  The hangar's art helpers moved to `art.ts`, so both use the same code.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

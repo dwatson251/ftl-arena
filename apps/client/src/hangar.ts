@@ -5,7 +5,7 @@
  */
 import { SUBSYSTEMS, type GameDB, type SystemId } from "@ftl/data";
 import { battleTrackSetting, play, setBattleTrack } from "./audio.ts";
-import { hasImg } from "./assets.ts";
+import { droneArtHtml, portraitHtml, sysIconHtml, weaponArtHtml } from "./art.ts";
 import { copyName, isSame, presets } from "./presets.ts";
 import { drawSnapshot } from "./snapshot.ts";
 import { HangarBay } from "./bay.ts";
@@ -199,31 +199,14 @@ export class Hangar {
 
   // ---------------------------------------------------------------- art helpers (CSS sprites from /assets)
 
-  private sheetCss(file: string, fx: number, fy: number, fw: number, fh: number, sheetW: number, sheetH: number, scale: number): string {
-    if (!this.hasArt()) return "";
-    return `background:url('/assets/img/${file}') -${fx * scale}px -${fy * scale}px / ${sheetW * scale}px ${sheetH * scale}px no-repeat;width:${fw * scale}px;height:${fh * scale}px`;
-  }
-
-  /** A crew portrait (FTL counts sheet rows from the bottom). */
+  /** A crew portrait (art.ts). */
   private portrait(race: string, scale = 1.4): string {
-    const a = this.db.anims[`${race}_portrait`] ?? this.db.anims[`${race}_walk_down`];
-    const sh = a && (a.sheetDef ?? this.db.animSheets[a.sheet]);
-    if (!a || !sh || !this.hasArt()) return `<div class="ph-portrait">${h(race[0].toUpperCase())}</div>`;
-    const rows = Math.round(sh.h / sh.fh);
-    const fx = a.x * sh.fw;
-    const fy = (rows - 1 - a.y) * sh.fh;
-    const base = this.sheetCss(sh.file, fx, fy, sh.fw, sh.fh, sh.w, sh.h, scale);
-    return `<div class="portrait" style="${base}"></div>`;
+    return portraitHtml(this.db, race, this.hasArt(), scale);
   }
 
   /** A weapon's art with its charge lights on, turned to point right. */
   private weaponArt(id: string, scale = 1): string {
-    const bp = this.db.weapons[id];
-    const wa = bp && this.db.weaponAnims[bp.weaponArt];
-    const sh = wa && (wa.sheetDef ?? this.db.animSheets[wa.sheet]);
-    if (!wa || !sh || !this.hasArt()) return `<div class="ph-weapon">${h(bp?.type?.[0] ?? "?")}</div>`;
-    const css = this.sheetCss(sh.file, wa.chargedFrame * sh.fw, 0, sh.fw, sh.fh, sh.w, sh.h, scale);
-    return `<div class="weapon-art" style="width:${sh.fh * scale}px;height:${sh.fw * scale}px"><div style="${css};transform:rotate(90deg) translate(0,-100%);transform-origin:0 0;position:absolute;left:0;top:0"></div></div>`;
+    return weaponArtHtml(this.db, id, this.hasArt(), scale);
   }
 
   private miniship(img: string): string {
@@ -236,8 +219,9 @@ export class Hangar {
   }
 
   private sysIcon(id: string): string {
-    return this.hasArt() ? `<img class="sysicon" src="/assets/img/icons/s_${id}.png">` : `<span class="sysicon ph">${id.slice(0, 2).toUpperCase()}</span>`;
+    return sysIconHtml(id, this.hasArt());
   }
+
 
   // ---------------------------------------------------------------- render
 
@@ -890,20 +874,9 @@ export class Hangar {
   }
 
   private droneArt(id: string): string {
-    const bp = this.db.droneBPs[id];
-    if (!bp || !this.hasArt()) return `<div class="ph-weapon">D</div>`;
-    // Interior drones fly no sprite: show their crew-style portrait (anti-personnel, repair, ion intruder)
-    // or FTL's drone icon.
-    if (!bp.image) {
-      const sheet = { BATTLE: "battle", REPAIR: "repair" }[bp.type as string] ?? (bp.id === "BOARDER_ION" ? "boarder_ion" : "");
-      if (sheet && this.db.anims[`${sheet}_portrait`]) return this.portrait(sheet, 1.2);
-      const icon = `systemUI/weapbox_icon_D_${bp.icon}.png`;
-      return bp.icon && hasImg(icon) ? `<img class="drone-art" src="/assets/img/${h(icon)}">` : `<div class="ph-weapon">D</div>`;
-    }
-    const f = [`ship/drones/${bp.image}_base.png`, `ship/drones/${bp.image}_off.png`].find(hasImg);
-    if (!f) return `<div class="ph-weapon">D</div>`;
-    return `<img class="drone-art" src="/assets/img/${h(f)}" onerror="this.style.visibility='hidden'">`;
+    return droneArtHtml(this.db, id, this.hasArt());
   }
+
 
   private stepDrones(l: Loadout): string {
     const db = this.db;

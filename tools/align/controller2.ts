@@ -1,7 +1,7 @@
 /**
  * Controller round 2 with a scripted pad: the button icons beside the HUD (no AUTOFIRE, no top hint line), a
- * tap on A powering weapon 1, the LB systems wheel with D-pad ↑/↓ power, and the door button (↓ opens, then
- * airlocks; LB + ↓ closes round the crew, then everything).  Usage: ARENA_URL=... npx tsx tools/align/controller2.ts
+ * tap on A powering weapon 1, the LB systems wheel with D-pad ↑/↓ power, and the door buttons (↑ opens, then
+ * airlocks; ↓ closes round the crew, then everything).  Usage: ARENA_URL=... npx tsx tools/align/controller2.ts
  */
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright";
@@ -74,13 +74,13 @@ await p.waitForTimeout(300);
 // Doors.
 const doors = async () => { const o = await own(); const g = await p.evaluate("(() => { const v = window.__arena.view(); return null; })()"); return o.doors.filter(Boolean).length + "/" + o.doors.length; };
 console.log("doors open at start:", await doors());
+await tap(12); await p.waitForTimeout(400);
+console.log("after ↑:", await doors());
+await tap(12); await p.waitForTimeout(400);
+console.log("after ↑ again (airlocks):", await doors());
 await tap(13); await p.waitForTimeout(400);
-console.log("after ↓:", await doors());
+console.log("after ↓ (round the crew):", await doors());
 await tap(13); await p.waitForTimeout(400);
-console.log("after ↓ again (airlocks):", await doors());
-await set(4, true); await tap(13); await set(4, false); await p.waitForTimeout(400);
-console.log("after LB+↓ (round the crew):", await doors());
-await set(4, true); await tap(13); await set(4, false); await p.waitForTimeout(400);
-console.log("after LB+↓ again (all):", await doors());
+console.log("after ↓ again (all):", await doors());
 await p.screenshot({ path: `${out}/3-after.png` });
 await b.close();

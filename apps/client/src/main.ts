@@ -1,7 +1,7 @@
 import { Application } from "pixi.js";
-import type { GameDB } from "@ftl/data";
+import { baseSystemId, type GameDB } from "@ftl/data";
 import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
-import type { MatchView } from "@ftl/sim";
+import { parseUpgraded, type Card, type MatchView } from "@ftl/sim";
 import { artReady, BACKDROPS, PLANETS, preload, registerOfflineCache } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
 import { music, play, preloadSounds } from "./audio.ts";
@@ -14,6 +14,7 @@ import { Hangar, hangarAfterBattle } from "./hangar.ts";
 import { Net } from "./net.ts";
 import { BTN, controllerEnabled, onPad, pad, setControllerEnabled, startPad } from "./controller.ts";
 import { menuNav } from "./menunav.ts";
+import { droneArtHtml, portraitHtml, sysIconHtml, weaponArtHtml } from "./art.ts";
 import { APP_VERSION, DEV_TOOLS } from "./version.ts";
 
 const ui = document.getElementById("ui")!;
@@ -257,12 +258,44 @@ function menuOverlay(): HTMLDivElement {
   return o;
 }
 
+/** What a reward card gives, as FTL's art: the gun, drone, system, crew member or supplies (badges for the rest). */
+function cardIcon(c: Card): string {
+  if (!db) return "";
+  const badge = (t: string, cls = "") => `<span class="rbadge ${cls}">${esc(t)}</span>`;
+  const box = (img: string, n: number) => (hasArt ? `<span class="rbox" style="background-image:url('/assets/img/statusUI/${img}')"><b>+${n}</b></span>` : badge(`+${n}`));
+  switch (c.kind) {
+    case "weapon":
+      return c.id ? weaponArtHtml(db, c.id, hasArt, 1) : "";
+    case "upgrade":
+      return c.id ? `${weaponArtHtml(db, parseUpgraded(c.id).base, hasArt, 1)}${badge("+", "up")}` : "";
+    case "drone":
+      return c.id ? droneArtHtml(db, c.id, hasArt) : "";
+    case "system":
+      return c.system ? `${sysIconHtml(baseSystemId(c.system), hasArt)}${badge("▲", "up")}` : "";
+    case "reinforce":
+      return c.system ? `${sysIconHtml(baseSystemId(c.system), hasArt)}${badge("⛨", "up")}` : "";
+    case "crew":
+      return c.race ? portraitHtml(db, c.race, hasArt, 1.4) : "";
+    case "reactor":
+      return `<span class="rreactor"><i></i><i></i></span>${badge("+2")}`;
+    case "supplies":
+      return [c.hull || c.maxHull ? badge(`+${c.hull || c.maxHull} hull`, "hull") : "", c.missiles ? box("top_missiles_on.png", c.missiles) : "", c.parts ? box("top_drones_on.png", c.parts) : ""].join("");
+    case "augment":
+      return badge("AUG", "aug");
+    case "options":
+      return badge("+1", "aug");
+    default:
+      return "";
+  }
+}
+
 /** The reward cards after a Survival win (the sim is paused until one is picked). */
 function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement {
   const o = document.createElement("div");
   o.className = "overlay reward";
   const kind: Record<string, string> = { weapon: "Weapon", upgrade: "Weapon upgrade", drone: "Drone", augment: "Augment", system: "System", reactor: "Reactor", crew: "Crew", supplies: "Supplies", reinforce: "Reinforcement", options: "More choices" };
   const cards = (sv.offer ?? []).map((c, i) => `<button class="rcard tier${c.tier}" data-pick="${i}">
+      <span class="ricon">${cardIcon(c)}</span>
       <span class="rkind">${esc(kind[c.kind] ?? c.kind)}${c.tier === 4 ? " · RARE" : ""}</span>
       <span class="rtitle">${esc(c.title)}</span>
       <span class="rblurb">${esc(c.blurb)}</span></button>`).join("");
@@ -647,9 +680,10 @@ function settingsBody(): string {
       <div><b>A / B / X / Y</b> weapons 1-4: tap to power, hold for the target wheel (left stick; the middle powers it without a target)</div>
       <div><b>RB</b> teleport: hold to send a crew member to the pad, tap to beam over</div>
       <div><b>LT</b> hold to bring a boarder back · <b>RT</b> hacking: hold to aim the drone, tap to pulse</div>
-      <div><b>D-pad ↑</b> mind control (hold) · <b>←</b> cloak · <b>→</b> battery · <b>↓</b> doors: open (again: airlocks too)</div>
+      <div><b>Right stick click</b> mind control (hold) · <b>D-pad ←</b> cloak · <b>→</b> battery</div>
+      <div><b>D-pad ↑</b> open doors (again: airlocks too) · <b>↓</b> close the doors round your crew (again: all)</div>
       <div><b>LB</b> hold for the systems wheel: point at one, <b>D-pad ↑/↓</b> powers it up/down</div>
-      <div><b>LB</b> + a button: power that system or gun down · <b>LB + ↓</b> close the doors round your crew (again: all)</div>
+      <div><b>LB</b> + a button: power that system or gun down</div>
       <div><b>Start</b> pause · <b>Back/View</b> match menu</div>
       <div>Menus: <b>D-pad</b> moves, <b>A</b> selects (and edits numbers/lists: D-pad to change, A to submit), <b>B</b> backs out</div>
     </div>` : ""}`;

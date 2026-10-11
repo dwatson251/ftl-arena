@@ -2667,16 +2667,16 @@ export class Battle {
   private wheelBtn: number | null = null;
   private pausedByWheel = false;
   private padSeen = false;
-  /** When LB + ↓ last closed the doors round the crew (a second press closes them all). */
+  /** When ↓ last closed the doors round the crew (a second press closes them all). */
   private lastDoorClose = 0;
   /** Open or close the match menu (main.ts: Escape, or the controller's Back/View button). */
   onMenu: () => void = () => {};
   /** Tell the server which crew the player takes from the AI (teleport picks) or hands back (main.ts sends it). */
   onControlCrew: (crew: number[], on: boolean) => void = () => {};
 
-  /** The buttons that open a wheel when held: weapons, teleport out/back, hacking, mind control. */
-  private static WHEEL_BTNS = new Set<number>([BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.UP]);
-  private static ACTION_BTNS = [BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.UP, BTN.DOWN, BTN.LEFT, BTN.RIGHT];
+  /** The buttons that open a wheel when held: weapons, teleport out/back, hacking, mind control (right stick click). */
+  private static WHEEL_BTNS = new Set<number>([BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.RS]);
+  private static ACTION_BTNS = [BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.RS, BTN.UP, BTN.DOWN, BTN.LEFT, BTN.RIGHT];
   private static SLOT: Record<number, number> = { [BTN.A]: 0, [BTN.B]: 1, [BTN.X]: 2, [BTN.Y]: 3 };
 
   private padFrame(p: Pad): void {
@@ -2761,8 +2761,9 @@ export class Battle {
   }
 
   /**
-   * The controller's door button (D-pad ↓). Open: FTL's button (interior doors, then again with them open, the
-   * airlocks too). LB + ↓ closes: first the doors round your crew, then (pressed again, or with those shut) every door.
+   * The controller's doors (D-pad). ↑ opens, as FTL's button does: the interior doors, then (again, with them
+   * open) the airlocks too. ↓ closes: first the doors round your crew, then (pressed again, or with those shut)
+   * every door.
    */
   private padDoors(open: boolean, v: MatchView): void {
     const own = v.ships[v.you];
@@ -2859,7 +2860,7 @@ export class Battle {
       const g = this.enemy.geo;
       return own.systems.teleporter && away.length ? { title: "Bring back", items: away.map((c) => ({ label: c.name, faces: [this.face(c.race)], value: { crew: c.id, room: g.tiles.get(c.tile)?.room } })), ...win } : null;
     }
-    if (b === BTN.UP) {
+    if (b === BTN.RS) {
       if (!own.systems.mind) return null;
       // One crew member each (mind control takes one at a time): theirs aboard their ship, and intruders here.
       const theirs = en.crew.filter((c) => c.owner !== v.you && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
@@ -2922,7 +2923,7 @@ export class Battle {
       this.ensurePower("teleporter");
       this.send({ c: "retrieve", room: val.room });
       if (val.crew !== undefined) this.onControlCrew([val.crew], false);
-    } else if (b === BTN.UP && val.room !== undefined) {
+    } else if (b === BTN.RS && val.room !== undefined) {
       this.ensurePower("mind");
       this.send({ c: "mind", room: val.room, enemy: !!val.enemy });
     }
@@ -2936,7 +2937,7 @@ export class Battle {
       if (own.weapons[slot] && !own.weapons[slot].powered) this.clickWeapon(slot, false);
       return;
     }
-    if (b === BTN.DOWN) return this.padDoors(true, v);
+    if (b === BTN.UP || b === BTN.DOWN) return this.padDoors(b === BTN.UP, v);
     if (b === BTN.RB && own.systems.teleporter) {
       // Beam whoever is on the pad over to a random enemy room.
       const rooms = [...this.enemy.geo.roomTiles.keys()];
@@ -2959,8 +2960,7 @@ export class Battle {
       play(this.db, ["powerDownSystem"], 0.6);
       return;
     }
-    if (b === BTN.DOWN) return this.padDoors(false, v);
-    const id: SystemId | null = b === BTN.RB ? "teleporter" : b === BTN.RT ? "hacking" : b === BTN.UP ? "mind" : b === BTN.LEFT ? "cloaking" : null;
+    const id: SystemId | null = b === BTN.RB ? "teleporter" : b === BTN.RT ? "hacking" : b === BTN.RS ? "mind" : b === BTN.LEFT ? "cloaking" : null;
     const s = id ? own.systems[id] : undefined;
     if (!id || !s) return;
     for (let i = 0; i < s.power; i++) this.send({ c: "power", system: id, delta: -1 });
@@ -3005,14 +3005,16 @@ export class Battle {
     };
     near("teleporter", ["RB", "LT"]);
     near("hacking", ["RT"]);
-    near("mind", ["↑"]);
+    near("mind", ["RS"]);
     near("cloaking", ["←"]);
     if (own.systems.battery) {
       const bx = SUB_X0 + (SUB_OFF.battery ?? 0) + 18;
       this.glyph("pg→", "→", bx, SUB_ICON_Y - 12);
     }
-    const door = this.doorBtns[0];
-    if (door) this.glyph("pg↓", "↓", door.box.x + door.box.w + 8, door.box.y + 6);
+    // FTL's door buttons: close on top, open below.
+    const [shut, open] = this.doorBtns;
+    if (shut) this.glyph("pg↓", "↓", shut.box.x + shut.box.w + 8, shut.box.y + 10);
+    if (open) this.glyph("pg↑", "↑", open.box.x + open.box.w + 8, open.box.y + 12);
   }
 
   // ---------------------------------------------------------------- input

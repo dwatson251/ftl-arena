@@ -284,3 +284,16 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .build-tag { position: fixed; top: 4px; right: 8px; z-index: 100; color: var(--bad); font: bold 12px system-ui, sans-serif; letter-spacing: 0.04em; text-shadow: 0 0 3px #000, 0 0 2px #000; pointer-events: none; user-select: none; }
 /* In battle the top line holds the controller hints: the tag sits under them. */
 .in-battle .build-tag { top: 24px; }
+/* Reward cards: what the card gives, in FTL's art, above its text. */
+.rcard .ricon { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 6px; min-height: 48px; }
+.rcard .ricon .weapon-art { position: relative; flex: none; }
+.rcard .ricon .sysicon { width: 40px; height: 40px; }
+.rcard .ricon .drone-art { max-height: 48px; max-width: 72px; image-rendering: pixelated; }
+.rcard .rbadge { display: inline-block; padding: 2px 6px; border: 1px solid var(--edge); background: #141820; color: var(--text); font-size: 12px; font-weight: 700; }
+.rcard .rbadge.up { color: #7bd47b; border-color: #5fa86a; }
+.rcard .rbadge.hull { color: #7bd47b; }
+.rcard .rbadge.aug { color: #ffd76a; border-color: #b0902c; }
+.rcard .rbox { position: relative; display: inline-block; width: 80px; height: 40px; background-repeat: no-repeat; image-rendering: pixelated; }
+.rcard .rbox b { position: absolute; left: 44px; top: 11px; color: #fff; font-size: 14px; }
+.rcard .rreactor { display: inline-flex; flex-direction: column; gap: 3px; }
+.rcard .rreactor i { display: block; width: 26px; height: 8px; background: #7bd47b; box-shadow: 0 0 4px #7bd47b; }
