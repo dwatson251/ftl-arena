@@ -53,6 +53,17 @@ export function botSkills(level: number): BotSkills {
   };
 }
 
+/**
+ * A controller player's assistant: the bot runs the crew and the reactor, but the player aims the weapons,
+ * boards, hacks and mind-controls. Weapon slots and systems whose power the player has touched are theirs
+ * (the bot leaves them be), and so are crew they've claimed (sent to the teleporter).
+ */
+export interface Assist {
+  ownedWeapons: Set<number>;
+  ownedSystems: Set<SystemId>;
+  claimedCrew: Set<number>;
+}
+
 export class Bot {
   level = 0;
   skills = botSkills(0);
@@ -75,7 +86,7 @@ export class Bot {
     if (this.log.length > 60) this.log.shift();
   }
 
-  think(m: Match, me: 0 | 1): Command[] {
+  think(m: Match, me: 0 | 1, assist?: Assist): Command[] {
     const t = m.state.tick * DT;
     if (t < this.next) return [];
     const sk = this.skills;
@@ -87,18 +98,30 @@ export class Bot {
     const out: Command[] = [];
     const ship = m.state.ships[me];
     const enemy = m.state.ships[1 - me];
+    this.assist = assist ?? null;
     this.weapons(m, ship, enemy, out);
     if (sk.powerMgmt) this.power(m, ship, out);
     this.specialPower(ship, out);
     // As FTL's AI does at every level: a bot with a teleporter always boards, a cloak dodges volleys, a
     // hacking drone goes on the shields.
-    this.reserved = new Set();
-    this.boarding(m, ship, out);
+    this.reserved = new Set(assist?.claimedCrew ?? []);
+    if (!assist) this.boarding(m, ship, out);
     this.boarders(m, ship, out);
     this.cloakAndHack(m, ship, enemy, out);
     this.crew(m, ship, out);
+    // An assistant never touches the power of what the player has taken over.
+    if (assist) {
+      return out.filter((c) => {
+        if (c.c === "weaponPower") return !assist.ownedWeapons.has(c.slot);
+        if (c.c === "power") return !assist.ownedSystems.has(c.system);
+        return true;
+      });
+    }
     return out;
   }
+
+  /** Assisting a controller player (see Assist), else null. */
+  private assist: Assist | null = null;
 
   /** Crew the boarding plan has claimed this think (the crew planner leaves them alone). */
   private reserved = new Set<number>();
@@ -139,7 +162,7 @@ export class Bot {
     }
     // Mind control: intruders at home first, else the enemy room with the most crew.
     const ms = ship.systems.mind;
-    if (ms && m.eff(ms) > 0 && (ship.mindCd ?? 0) <= 0) {
+    if (ms && !this.assist && m.eff(ms) > 0 && (ship.mindCd ?? 0) <= 0) {
       const g = geometry(m.db.layouts[ship.layout]);
       const intruder = ship.crew.find((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
       if (intruder) out.push({ c: "mind", room: g.tiles.get(intruder.tile)!.room, enemy: false });
@@ -166,7 +189,7 @@ export class Bot {
       }
     }
     const hs = ship.systems.hacking;
-    if (!hs || m.eff(hs) <= 0) return;
+    if (!hs || this.assist || m.eff(hs) <= 0) return;
     if (!ship.hack && (ship.droneParts ?? 0) > 0) {
       const target = enemy.systems.shields ?? enemy.systems.weapons;
       if (target && (enemy.superShield ?? 0) <= 0) {
@@ -204,6 +227,7 @@ export class Bot {
     ship.weapons.forEach((w, slot) => {
       if (!w.powered) out.push({ c: "weaponPower", slot, on: true });
     });
+    const assisting = !!this.assist;
     (ship.drones ?? []).forEach((d, slot) => {
       if (d.powered || (!d.deployed && (ship.droneParts ?? 0) <= 0) || (d.rebuild ?? 0) > 0) return;
       // Free a reactor bar for the drone if needed: the medbay first (nobody hurt), then the engines.
@@ -216,6 +240,8 @@ export class Bot {
       }
       out.push({ c: "dronePower", slot, on: true });
     });
+    // Assisting: the player aims; the bot only keeps the guns powered.
+    if (assisting) return;
     const lasers = ship.weapons.filter((w) => {
       const bp = m.wbp(w.bp);
       return w.powered && (bp.type === "LASER" || bp.type === "BURST");

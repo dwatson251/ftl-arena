@@ -538,6 +538,38 @@
 - **Tests:** super-shield order, stranded boarders, crew AI (4), crew positions, weapon order and hands; 142
   passing in total. Playwright: `tools/align/survival2.ts`, `flagship-escape.ts`, `flagship-guns.ts`.
 
+## Round 28: controller support (experimental)
+- **Settings tab** (main menu): a "Controller support" switch, stored per browser. The tab shows the pad
+  and the button map.
+- **Driver:** the browser Gamepad API with the standard mapping (`controller.ts`), polled each frame with
+  tap and hold (250 ms) and the stick angle. Xbox, DualSense/DS4 and Steam (via Steam Input) work with no
+  drivers.
+- **Menus** (`menunav.ts):**
+  - The D-pad moves a gold focus ring to the nearest control that way. Controls straight ahead win over
+    ones off to the side.
+  - A presses, or edits numbers, sliders and dropdowns (D-pad steps, A submits, B cancels).
+  - The ring survives hangar re-renders. Fields aren't focused until edited, so re-renders aren't held up.
+- **Rules page** is now a table: labels left, every control the same width in one right-hand column, rows
+  ruled off. The D-pad goes straight down it, as the user asked after their playtest.
+- **Server:**
+  - `{ t: "controller" }` sets `LobbyPlayer.controller`, which draws a gamepad icon in the lobby.
+  - In battle that seat gets an assistant `Bot` (`Bot.think(m, me, assist)`). It runs crew, reactor,
+    drones, cloak and battery, but never aims, boards, hacks or mind-controls.
+  - It leaves the power of guns and systems the player has touched alone (`ownedWeapons`,
+    `ownedSystems`), and crew they've claimed (`{ t: "controlCrew" }`). The teleporter powering down
+    hands those crew back.
+- **Battle** (`wheel.ts` plus the battle's controller section):
+  - Hold-to-open **segmented wheels**: weapon targets (system rooms, crew grouped by room, an empty-room
+    slot for hull weapons), hacking, teleport out (crew to the pad), teleport back, and mind control (one
+    crew member each).
+  - Release in the middle for "none". Picks autofire, and beams get a line through the room.
+  - Taps clear a target, beam over, pulse, cloak or battery. LB + a button powers it down. Start pauses.
+  - The wheel pauses the game when the pause rules allow it.
+- **Tests:** `controller.test.ts` (the assistant never aims, respects owned power and claimed crew; lobby
+  flag and claims); 146 passing in total. Playwright `tools/align/controller.ts` uses a scripted gamepad:
+  Settings, the D-pad ring, editing scrap, the lobby icon, the wheel (pause, pick, autofire), tap to clear,
+  LB + B power-down.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

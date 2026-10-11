@@ -225,6 +225,11 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
           return c.lobby?.rematch(c);
         case "pick":
           return err(c.lobby ? c.lobby.pick(c, m.card) : "not in a lobby");
+        case "controller":
+          c.controller = !!m.on;
+          return c.lobby?.setController(c, !!m.on);
+        case "controlCrew":
+          return c.lobby?.controlCrew(c, m.crew, !!m.on);
       }
     });
     ws.on("close", () => {

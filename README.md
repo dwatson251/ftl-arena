@@ -123,6 +123,28 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
   this computer.
 - **Tuning:** the numbers live in `packages/sim/src/survival.ts` (`SURVIVAL`) and are first guesses.
 
+## Controller (experimental)
+- **Turning it on:** in the main menu, **Settings** → *Controller support*. It's off by default. The tab
+  shows the connected pad and its button map.
+- **Pads:** any pad the browser reports with the standard mapping works: Xbox, DualSense/DS4, Steam
+  Controller / Deck (through Steam Input).
+- **What you control:** with it on, the AI runs your crew and reactor, but leaves alone any gun or system
+  you've powered up or down yourself, and crew you've sent to the teleporter. You aim, board, hack and
+  mind-control with **selector wheels**: hold the button, point the left stick at a segment, and let go.
+- **Pausing:** the wheel pauses the game when the lobby's pause rules allow (practice and Survival always).
+- **Buttons:**
+  - **A/B/X/Y**: weapons 1-4. Hold for the room wheel (crew are grouped by room, plus an empty-room slot);
+    a pick always autofires; tap to clear.
+  - **RB**: teleport. Hold to send a crew member to the pad, tap to beam over.
+  - **LT**: hold to bring a boarder back.
+  - **RT**: hacking. Hold to aim the drone, tap to pulse.
+  - **D-pad ↑**: mind control (hold). **←** cloak · **→** battery.
+  - **LB + a button**: powers that gun or system down. The teleporter going off hands its crew back to the AI.
+  - **Start**: pause.
+- **Menus:** the D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to
+  submit, B to cancel).
+- **Lobby:** a gamepad icon shows beside players on a controller.
+
 ## Controls (FTL's)
 | Action | Input |
 |---|---|

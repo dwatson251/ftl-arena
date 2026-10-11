@@ -11,6 +11,8 @@ import type { GameDB, SystemId } from "@ftl/data";
 import { baseSystemId, SUBSYSTEMS } from "@ftl/data";
 import { RULES, SNAP_HZ, SURVIVAL, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
 import type { SurvivalState } from "@ftl/protocol";
+import { BTN, controllerEnabled, HOLD_MS, onPad, type Pad } from "./controller.ts";
+import { Wheel, type WheelItem } from "./wheel.ts";
 import { animFrame, frame, texNow } from "./assets.ts";
 import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, stopLoops, timeStop } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
@@ -130,7 +132,9 @@ export class Battle {
     ownProj.mask = ownClip;
     this.winLayer.addChild(this.enemyBox, this.projWin, this.fxWin);
     this.world.addChild(this.ownBox, ownClip, ownProj, this.winLayer);
-    this.stage.addChild(this.bgLayer, this.world, this.underRoot, this.pauseTint, this.flash, this.hudRoot);
+    this.stage.addChild(this.bgLayer, this.world, this.underRoot, this.pauseTint, this.flash, this.hudRoot, this.wheel.root);
+    // Controller play (experimental): the pad drives weapons, boarding, hacking and mind control.
+    if (controllerEnabled()) this.padOff = onPad((p) => this.padFrame(p));
     this.flash.alpha = 0;
     this.stage.eventMode = "static";
     this.stage.hitArea = { contains: () => true };
@@ -141,6 +145,7 @@ export class Battle {
   }
 
   destroy(): void {
+    this.padOff?.();
     stopLoops();
     timeStop(false);
     window.removeEventListener("keydown", this.keyHandler);
@@ -1108,6 +1113,8 @@ export class Battle {
     this.intruderWarning(v);
     this.survivalHud();
     this.jumpFrame();
+    this.wheel.draw(this.time);
+    this.padHint();
     const gone = this.enemyGoneBy();
     if (gone !== null && this.time >= gone) this.clearWindow();
     this.tooltip(v);
@@ -2515,6 +2522,247 @@ export class Battle {
         } else layer.addChild(new Graphics().circle(p.x, p.y, 7).fill({ color: owner === v.you ? 0x6ab4ff : 0xff6a5a }).stroke({ color: 0xffffff, width: 1.5 }));
       }
     }
+  }
+
+  // ---------------------------------------------------------------- controller (experimental)
+
+  private padOff: (() => void) | null = null;
+  private wheel = new Wheel();
+  /** Buttons held right now: whether they started with LB (power-down combos) and whether a wheel opened. */
+  private padPress = new Map<number, { lb: boolean; opened: boolean }>();
+  private wheelBtn: number | null = null;
+  private pausedByWheel = false;
+  private padSeen = false;
+  /** Tell the server which crew the player takes from the AI (teleport picks) or hands back (main.ts sends it). */
+  onControlCrew: (crew: number[], on: boolean) => void = () => {};
+
+  /** The buttons that open a wheel when held: weapons, teleport out/back, hacking, mind control. */
+  private static WHEEL_BTNS = new Set<number>([BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.UP]);
+  private static ACTION_BTNS = [BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.UP, BTN.LEFT, BTN.RIGHT];
+  private static SLOT: Record<number, number> = { [BTN.A]: 0, [BTN.B]: 1, [BTN.X]: 2, [BTN.Y]: 3 };
+
+  private padFrame(p: Pad): void {
+    const v = this.view;
+    if (!v || !this.own || !p.connected) return;
+    this.padSeen = true;
+    // End screens and reward cards take the pad for menus (main.ts).
+    if (document.querySelector("#ui .overlay")) return;
+    if (p.down(BTN.START)) this.togglePause();
+    const live = this.live(v);
+    for (const b of Battle.ACTION_BTNS) {
+      if (p.down(b)) {
+        const lb = p.held(BTN.LB);
+        this.padPress.set(b, { lb, opened: false });
+        if (lb && live) this.padPowerDown(b, v);
+      }
+      const pr = this.padPress.get(b);
+      if (!pr) continue;
+      if (live && !pr.lb && !pr.opened && p.held(b) && p.heldFor(b) >= HOLD_MS && this.wheelBtn === null && Battle.WHEEL_BTNS.has(b)) {
+        const w = this.wheelFor(b, v);
+        if (w) {
+          pr.opened = true;
+          this.wheelBtn = b;
+          this.wheel.open(w.title, w.items, w.cx, w.cy);
+          // The wheel stops time while it's open, when the rules let you pause (practice and Survival always).
+          const canPause = v.config.pause === "clock" && (v.pauseBank?.[v.you] ?? 0) !== 0;
+          if (!v.pause && canPause) {
+            this.send({ c: "pause", on: true });
+            this.pausedByWheel = true;
+          }
+        }
+      }
+      if (p.up(b)) {
+        this.padPress.delete(b);
+        if (pr.lb) continue;
+        if (pr.opened) {
+          if (live) this.padCommit(b, this.wheel.selected(), v);
+          this.closeWheel();
+        } else if (live) this.padTap(b, v);
+      }
+    }
+    if (this.wheelBtn !== null) this.wheel.steer(p.stick());
+  }
+
+  private closeWheel(): void {
+    this.wheel.close();
+    this.wheelBtn = null;
+    if (this.pausedByWheel) {
+      this.pausedByWheel = false;
+      if (this.view?.pause?.by === this.you) this.send({ c: "pause", on: false });
+    }
+  }
+
+  /** Power a system up to all its usable bars before using it (a system the player powered down, say). */
+  private ensurePower(id: SystemId): void {
+    const s = this.view?.ships[this.you].systems[id];
+    if (!s || s.power < 0) return;
+    for (let i = s.power; i < usable(s); i++) this.send({ c: "power", system: id, delta: 1 });
+  }
+
+  private sysTitle(id: string): string {
+    return this.db.systems[baseSystemId(id as SystemId)]?.title ?? id;
+  }
+
+  private face(race: string) {
+    return animFrame(this.db, `${race}_portrait`, 0) ?? animFrame(this.db, `${race}_walk_down`, 0);
+  }
+
+  /**
+   * Enemy rooms as wheel choices: one per room with a system (its icon), crew grouped into their room (faces
+   * stacked), and one "empty room" for the hull (hull weapons hit systemless rooms twice as hard).
+   */
+  private roomItems(v: MatchView, withCrew: boolean): WheelItem[] {
+    const en = v.ships[1 - v.you];
+    const g = this.enemy.geo;
+    const items = new Map<number, WheelItem>();
+    for (const s of Object.values(en.systems)) {
+      if (!s || items.has(s.room)) continue;
+      items.set(s.room, { label: this.sysTitle(s.id), icon: texNow(`icons/s_${baseSystemId(s.id)}_overlay.png`), value: { room: s.room } });
+    }
+    if (withCrew) {
+      for (const c of en.crew) {
+        if (c.dead || c.dying !== undefined || c.owner === v.you) continue;
+        const room = g.tiles.get(c.tile)?.room;
+        if (room === undefined) continue;
+        const it = items.get(room) ?? { label: "Crew", value: { room } };
+        (it.faces ??= []).push(this.face(c.race));
+        items.set(room, it);
+      }
+    }
+    const empty = [...g.roomTiles.keys()].find((r) => !items.has(r));
+    const out = [...items.values()];
+    if (empty !== undefined) out.push({ label: "Empty room (hull)", value: { room: empty } });
+    return out;
+  }
+
+  private wheelFor(b: number, v: MatchView): { title: string; items: WheelItem[]; cx: number; cy: number } | null {
+    const own = v.ships[v.you];
+    const en = v.ships[1 - v.you];
+    const win = { cx: WIN.x + WIN.w / 2, cy: WIN.y + WIN.h / 2 + 20 };
+    const home = { cx: this.ownCx, cy: OWN.cy };
+    const slot = Battle.SLOT[b];
+    if (slot !== undefined) {
+      const w = own.weapons[slot];
+      if (!w) return null;
+      return { title: `Weapon ${slot + 1}: ${this.db.weapons[w.bp]?.short ?? this.db.weapons[w.bp]?.title ?? w.bp}`, items: this.roomItems(v, true), ...win };
+    }
+    if (b === BTN.RT) return own.systems.hacking ? { title: "Hacking drone: pick a system", items: this.roomItems(v, false).filter((i) => i.icon), ...win } : null;
+    if (b === BTN.RB) {
+      if (!own.systems.teleporter) return null;
+      const crew = own.crew.filter((c) => c.owner === v.you && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
+      return crew.length ? { title: "Send to the teleporter", items: crew.map((c) => ({ label: c.name, faces: [this.face(c.race)], value: { crew: c.id } })), ...home } : null;
+    }
+    if (b === BTN.LT) {
+      const away = en.crew.filter((c) => c.owner === v.you && !c.dead && c.dying === undefined && c.drone === undefined);
+      const g = this.enemy.geo;
+      return own.systems.teleporter && away.length ? { title: "Bring back", items: away.map((c) => ({ label: c.name, faces: [this.face(c.race)], value: { crew: c.id, room: g.tiles.get(c.tile)?.room } })), ...win } : null;
+    }
+    if (b === BTN.UP) {
+      if (!own.systems.mind) return null;
+      // One crew member each (mind control takes one at a time): theirs aboard their ship, and intruders here.
+      const theirs = en.crew.filter((c) => c.owner !== v.you && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
+      const intruders = own.crew.filter((c) => c.owner !== v.you && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
+      const items: WheelItem[] = [
+        ...theirs.map((c) => ({ label: c.name, faces: [this.face(c.race)], value: { room: this.enemy.geo.tiles.get(c.tile)?.room, enemy: true } })),
+        ...intruders.map((c) => ({ label: `${c.name} (aboard)`, faces: [this.face(c.race)], value: { room: this.own.geo.tiles.get(c.tile)?.room, enemy: false } })),
+      ];
+      return items.length ? { title: "Mind control", items, ...win } : null;
+    }
+    return null;
+  }
+
+  /** A beam's line through a room: across its longest side, from the room's middle. */
+  private beamThrough(room: number, length: number) {
+    const tiles = this.enemy.geo.roomTiles.get(room) ?? [];
+    const xs = tiles.map((t) => Number(t.split(",")[0]));
+    const ys = tiles.map((t) => Number(t.split(",")[1]));
+    const x0 = Math.min(...xs), x1 = Math.max(...xs) + 1, y0 = Math.min(...ys), y1 = Math.max(...ys) + 1;
+    const cx = ((x0 + x1) / 2) * 35, cy = ((y0 + y1) / 2) * 35;
+    const L = length || 60;
+    return x1 - x0 >= y1 - y0 ? { x1: cx - L / 2, y1: cy, x2: cx + L / 2, y2: cy } : { x1: cx, y1: cy - L / 2, x2: cx, y2: cy + L / 2 };
+  }
+
+  private padCommit(b: number, it: WheelItem | null, v: MatchView): void {
+    const own = v.ships[v.you];
+    const slot = Battle.SLOT[b];
+    if (slot !== undefined) {
+      const w = own.weapons[slot];
+      if (!w) return;
+      if (!it) return this.padTap(b, v);
+      const room = (it.value as { room: number }).room;
+      const bp = this.db.weapons[w.bp];
+      if (!w.powered) this.send({ c: "weaponPower", slot, on: true });
+      const target: WeaponTarget = bp?.type === "BEAM" ? { kind: "beam", ...this.beamThrough(room, bp.length) } : { kind: "room", room };
+      // A wheel pick always autofires.
+      this.send({ c: "target", slot, target });
+      this.send({ c: "autofire", slot, on: true });
+      play(this.db, ["powerUpSystem"], 0.6);
+      return;
+    }
+    if (!it) return;
+    const val = it.value as { room?: number; crew?: number; enemy?: boolean };
+    if (b === BTN.RT && val.room !== undefined) {
+      this.ensurePower("hacking");
+      this.send({ c: "hackLaunch", room: val.room });
+    } else if (b === BTN.RB && val.crew !== undefined) {
+      // That crew member leaves the AI and heads for the pad.
+      const tp = own.systems.teleporter;
+      if (!tp) return;
+      this.onControlCrew([val.crew], true);
+      this.send({ c: "moveCrew", crew: [val.crew], room: tp.room });
+    } else if (b === BTN.LT && val.room !== undefined) {
+      this.ensurePower("teleporter");
+      this.send({ c: "retrieve", room: val.room });
+      if (val.crew !== undefined) this.onControlCrew([val.crew], false);
+    } else if (b === BTN.UP && val.room !== undefined) {
+      this.ensurePower("mind");
+      this.send({ c: "mind", room: val.room, enemy: !!val.enemy });
+    }
+  }
+
+  private padTap(b: number, v: MatchView): void {
+    const own = v.ships[v.you];
+    const slot = Battle.SLOT[b];
+    if (slot !== undefined) {
+      // No pick: the weapon stops aiming.
+      if (!own.weapons[slot]) return;
+      this.send({ c: "target", slot, target: null });
+      this.send({ c: "autofire", slot, on: false });
+      return;
+    }
+    if (b === BTN.RB && own.systems.teleporter) {
+      // Beam whoever is on the pad over to a random enemy room.
+      const rooms = [...this.enemy.geo.roomTiles.keys()];
+      if (!rooms.length) return;
+      this.ensurePower("teleporter");
+      this.send({ c: "teleport", room: rooms[Math.floor(Math.random() * rooms.length)] });
+    } else if (b === BTN.RT && own.hack?.attached) this.send({ c: "hackPulse" });
+    else if (b === BTN.LEFT && own.systems.cloaking) {
+      this.ensurePower("cloaking");
+      this.send({ c: "cloak" });
+    } else if (b === BTN.RIGHT && own.systems.battery) this.send({ c: "battery" });
+  }
+
+  /** LB + a button: that gun or system powered down (the teleporter's going hands its crew back to the AI). */
+  private padPowerDown(b: number, v: MatchView): void {
+    const own = v.ships[v.you];
+    const slot = Battle.SLOT[b];
+    if (slot !== undefined) {
+      if (own.weapons[slot]?.powered) this.send({ c: "weaponPower", slot, on: false });
+      play(this.db, ["powerDownSystem"], 0.6);
+      return;
+    }
+    const id: SystemId | null = b === BTN.RB ? "teleporter" : b === BTN.RT ? "hacking" : b === BTN.UP ? "mind" : b === BTN.LEFT ? "cloaking" : null;
+    const s = id ? own.systems[id] : undefined;
+    if (!id || !s) return;
+    for (let i = 0; i < s.power; i++) this.send({ c: "power", system: id, delta: -1 });
+    play(this.db, ["powerDownSystem"], 0.6);
+  }
+
+  /** A short reminder of the controller layout, bottom right (only once a pad has been seen). */
+  private padHint(): void {
+    if (!this.padSeen || !controllerEnabled()) return;
+    this.hud.text("padHint", "A/B/X/Y weapons · RB/LT teleport · RT hack · ↑ mind · ←/→ cloak/battery · LB+ power off · Start pause", 1276, 4, fstyle("JustinFont10", 0x9aa3b2, { stroke: 0x101010 }), [1, 0]);
   }
 
   // ---------------------------------------------------------------- input

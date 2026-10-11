@@ -186,7 +186,13 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .rules-summary { font-size: 12px; color: var(--dim); line-height: 1.5; }
 .rules-summary button.link { margin-top: 4px; }
 .rules-form { max-width: 560px; }
-.rules-form .kv { min-height: 34px; }
+/* The rules as a table: labels on the left, every control the same width in one right-hand column (so the
+   D-pad goes straight down it), rows ruled off. */
+.rules-form .kv { display: grid; grid-template-columns: 1fr 220px; align-items: center; column-gap: 12px; min-height: 34px; margin: 0; padding: 3px 6px; border-bottom: 1px solid #2a303b; }
+.rules-form .kv > :last-child { width: 100% !important; box-sizing: border-box; justify-self: stretch; }
+.rules-form .kv > input[type=checkbox] { width: 20px !important; height: 20px; justify-self: start; }
+.rules-form .kv > b { text-align: left; }
+.rules-form > .note { margin: 2px 6px 8px; }
 .sum-list { font-size: 12px; color: var(--dim); margin: 4px 0; }
 .sum-list b { color: var(--text); font-weight: normal; margin-right: 4px; }
 .err.small { font-size: 12px; }
@@ -257,3 +263,10 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .jump-veil.black { opacity: 1; }
 .jump-veil.black.out { opacity: 0; transition: opacity 1.2s ease-out; }
 @media (max-width: 700px) { .rcard { width: 100%; min-height: 0; } }
+
+/* Controller (experimental): the focus ring the D-pad moves, edit mode, the lobby icon, the Settings map. */
+.pad-focus { outline: 3px solid #ffd76a !important; outline-offset: 2px; box-shadow: 0 0 12px rgba(255, 215, 106, 0.55) !important; }
+.pad-editing { outline: 3px dashed #7bd47b !important; outline-offset: 2px; box-shadow: 0 0 12px rgba(123, 212, 123, 0.6) !important; }
+.pad-icon { vertical-align: -2px; color: var(--accent); }
+.padmap { margin-top: 8px; font-size: 12px; color: var(--dim); line-height: 1.6; }
+.padmap b { color: var(--text); }

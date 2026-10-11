@@ -27,6 +27,9 @@ const SUBSYSTEM_IDS: SystemId[] = SUBSYSTEMS;
  * upgrade-screen sounds (bp_upgrade_1 / select_down2); FTL's store uses `buy` / `sell` (bp_purchase_1) for
  * purchases, the other thing worth trying.
  */
+/** A small gamepad beside players on a controller (so opponents know). */
+const PAD_ICON = `<svg class="pad-icon" viewBox="0 0 24 16" width="20" height="13" aria-label="Playing with a controller"><title>Playing with a controller</title><path fill="currentColor" d="M6 1h12a5 5 0 0 1 5 5v1.5a6.5 6.5 0 0 1-11.3 4.4h-1.4A6.5 6.5 0 0 1 1 7.5V6a5 5 0 0 1 5-5Zm0 3.5v2H4v1.5h2v2h1.5v-2h2V6.5h-2v-2H6Zm11 1a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm-2.5 2.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/></svg>`;
+
 const SFX = { spend: "upgradeSystem", refund: "undoUpgrades", pick: "acceptUpgrades", nav: "hoverBeep" };
 
 /** Set when a battle starts: the hangar after it (a rematch) opens on Launch, the ship already built. */
@@ -294,7 +297,7 @@ export class Hangar {
   /** The lobby: code, how to invite, who's here, a one-glance rules summary, and the way out. */
   private sidebar(lobby: LobbyState): string {
     const players = lobby.players
-      .map((p) => `<div class="p"><span>${h(p.name)}${p.id === lobby.host ? " ★" : ""}${p.connected ? "" : " (offline)"}</span><span class="${p.ready ? "ready" : "notready"}">${p.ready ? "READY" : "building"}</span></div>`)
+      .map((p) => `<div class="p"><span>${h(p.name)}${p.id === lobby.host ? " ★" : ""}${p.controller ? ` ${PAD_ICON}` : ""}${p.connected ? "" : " (offline)"}</span><span class="${p.ready ? "ready" : "notready"}">${p.ready ? "READY" : "building"}</span></div>`)
       .join("") + (lobby.players.length < 2 ? `<div class="note">Waiting for an opponent: share the code.</div>` : "");
     return `
       <h2>Lobby</h2><div class="code">${lobby.code}</div>${this.sharePanel(lobby)}<div class="players">${players}</div>

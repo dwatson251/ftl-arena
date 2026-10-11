@@ -43,6 +43,8 @@ export interface LobbyPlayer {
   priced: Priced | null;
   connected: boolean;
   bot?: boolean;
+  /** Playing with a controller (experimental): the crew and reactor are AI-run for them. */
+  controller?: boolean;
 }
 
 /** Practice-lobby settings for the bot and the debug tools. */
@@ -112,7 +114,10 @@ export type ClientMsg =
   | { t: "practice"; practice: Partial<PracticeConfig> }
   | { t: "debug"; d: DebugOp }
   | { t: "rematch" }
-  | { t: "pick"; card: number };
+  | { t: "pick"; card: number }
+  | { t: "controller"; on: boolean }
+  /** Controller play: crew the player takes from the AI (sent to the teleporter), or hands back. */
+  | { t: "controlCrew"; crew: number[]; on: boolean };
 
 export type ServerMsg =
   | { t: "welcome"; v: number; token: string; db: GameDB }

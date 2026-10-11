@@ -5,7 +5,7 @@ import {
   type SurvivalState,
 } from "@ftl/protocol";
 import {
-  applyCard, baseLoadout, Bot, botLoadout, carryOver, DEFAULT_CONFIG, difficultyToBot, drawCards, enemyLoadout, Match, newRun, nextEnemy,
+  applyCard, baseLoadout, Bot, type Assist, botLoadout, carryOver, DEFAULT_CONFIG, difficultyToBot, drawCards, enemyLoadout, Match, newRun, nextEnemy,
   priceLoadout, registerWeapons, RULES, score, stockLoadout, SURVIVAL, TICK_HZ, viewFor, type Card, type Command, type Loadout, type MatchConfig,
   type MatchEvent, type SurvivalEnemy, type SurvivalRun,
 } from "@ftl/sim";
@@ -17,6 +17,8 @@ export interface Client {
   lobby: Lobby | null;
   /** Connected from this machine (the hosting player's own window, when the server runs inside their app). */
   local?: boolean;
+  /** Plays with a controller (experimental). */
+  controller?: boolean;
 }
 
 const COUNTDOWN = 5;
@@ -49,6 +51,8 @@ export class Lobby {
   private aftermathBoarders = false;
   private jumpTimer: ReturnType<typeof setTimeout> | null = null;
   private upgraded: Record<string, WeaponBP> = {};
+  /** Controller players' assistants (by seat): the bot that runs their crew and reactor, and what's theirs. */
+  private assists = new Map<number, { bot: Bot; a: Assist }>();
 
   constructor(public code: string, public host: string, public db: GameDB, cfg: Partial<MatchConfig>, public practice: boolean, private log: (s: string) => void = () => {}) {
     // Practice pauses freely, as FTL's single player does (an unlimited pause clock).
@@ -72,6 +76,35 @@ export class Lobby {
       boarders: this.aftermathBoarders, offer: this.offer,
       picks: r?.picks ?? [], rare: r?.rare ?? 0, over: !!r?.over, weapons: this.upgraded,
     };
+  }
+
+  /** A player switched controller play on or off (shown in the lobby; their crew and reactor go to the AI). */
+  setController(c: Client, on: boolean): void {
+    const p = this.players.find((q) => q.id === c.id);
+    if (!p || !!p.controller === on) return;
+    p.controller = on;
+    if (!on) this.assists.delete(this.players.indexOf(p));
+    this.broadcast();
+  }
+
+  /** Controller play: take crew from the AI (headed for the teleporter) or hand them back. */
+  controlCrew(c: Client, crew: number[], on: boolean): void {
+    const idx = this.players.findIndex((q) => q.id === c.id);
+    const as = this.assistFor(idx);
+    if (!as) return;
+    for (const id of crew.slice(0, 16)) on ? as.a.claimedCrew.add(Number(id)) : as.a.claimedCrew.delete(Number(id));
+  }
+
+  /** The assistant for a controller player's seat (made on first use; none for anyone else). */
+  private assistFor(idx: number): { bot: Bot; a: Assist } | null {
+    const p = this.players[idx];
+    if (!p?.controller || p.bot) return null;
+    let as = this.assists.get(idx);
+    if (!as) {
+      as = { bot: new Bot(1, 4242 + idx), a: { ownedWeapons: new Set(), ownedSystems: new Set(), claimedCrew: new Set() } };
+      this.assists.set(idx, as);
+    }
+    return as;
   }
 
   /** Between a Survival run's battles (the run lives on through a reload). */
@@ -129,7 +162,7 @@ export class Lobby {
     if (this.phase !== "lobby") return "that match has already started";
     const ship = this.config.shipPool[0] ?? this.db.hangar[0];
     const loadout = baseLoadout(this.db, ship);
-    this.players.push({ id: c.id, name: c.name, ready: false, loadout, priced: this.price(loadout), connected: true });
+    this.players.push({ id: c.id, name: c.name, ready: false, loadout, priced: this.price(loadout), connected: true, controller: !!c.controller });
     this.clients.set(c.id, c);
     c.lobby = this;
     if (this.practice && this.players.length === 1) this.addBot();
@@ -440,7 +473,18 @@ export class Lobby {
   command(c: Client, cmd: Command): void {
     if (!this.match || (this.phase !== "battle" && this.phase !== "aftermath")) return;
     const idx = this.players.findIndex((p) => p.id === c.id);
-    if (idx === 0 || idx === 1) this.match.push(idx, cmd);
+    if (idx !== 0 && idx !== 1) return;
+    // Controller play: whatever the player touches is theirs from then on (the assistant leaves it alone).
+    const as = this.assistFor(idx);
+    if (as) {
+      if ((cmd.c === "weaponPower" || cmd.c === "target") && Number.isInteger(cmd.slot)) as.a.ownedWeapons.add(cmd.slot);
+      if (cmd.c === "power") {
+        as.a.ownedSystems.add(cmd.system);
+        // The teleporter powered down: whoever the player had claimed goes back to the AI.
+        if (cmd.system === "teleporter" && cmd.delta < 0) as.a.claimedCrew.clear();
+      }
+    }
+    this.match.push(idx, cmd);
   }
 
   rematch(c: Client): void {
@@ -485,6 +529,8 @@ export class Lobby {
     this.bot = pc ? new Bot(difficultyToBot(pc.difficulty).level, this.config.seed) : null;
     if (this.autopilot) this.autopilot = new Bot(this.autopilot.level, 99);
     this.speedAcc = 0;
+    // A new battle: nothing is the controller player's until they touch it again.
+    this.assists.clear();
     this.phase = "battle";
     this.pending = [[], []];
     this.players.forEach((p, i) => this.clients.get(p.id)?.send({ t: "start", you: i as 0 | 1 }));
@@ -510,6 +556,8 @@ export class Lobby {
     this.bot = new Bot(difficultyToBot(this.enemy.difficulty).level, this.config.seed);
     if (this.autopilot) this.autopilot = new Bot(this.autopilot.level, 99);
     this.speedAcc = 0;
+    // A new battle: nothing is the controller player's until they touch it again.
+    this.assists.clear();
     this.aftermathLeft = this.aftermathTotal = 0;
     this.aftermathBoarders = false;
     this.offer = null;
@@ -526,6 +574,10 @@ export class Lobby {
     if (!m || !this.run) return;
     const h = this.humanIdx();
     if (this.autopilot) for (const c of this.autopilot.think(m, h)) m.push(h, c);
+    else {
+      const as = this.assistFor(h);
+      if (as) for (const c of as.bot.think(m, h, as.a)) m.push(h, c);
+    }
     const paused = m.aftermathStep(h);
     if (m.state.events.length) {
       this.pending[0].push(...m.state.events);
@@ -578,6 +630,11 @@ export class Lobby {
       // The bot plans nothing in a tactical timeout, so it's always ready to go on.
       if (p.bot && m.state.pause?.kind === "tactical" && !m.state.pause.ready?.[idx]) m.push(idx, { c: "pause", on: false });
       else if (!p.bot && this.autopilot) for (const c of this.autopilot.think(m, idx)) m.push(idx, c);
+      else if (!p.bot) {
+        // Controller play: the assistant runs this player's crew and reactor.
+        const as = this.assistFor(idx);
+        if (as) for (const c of as.bot.think(m, idx, as.a)) m.push(idx, c);
+      }
     });
     m.step();
     if (m.state.events.length) {

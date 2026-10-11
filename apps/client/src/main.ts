@@ -12,6 +12,8 @@ void presets.init();
 import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar, hangarAfterBattle } from "./hangar.ts";
 import { Net } from "./net.ts";
+import { controllerEnabled, onPad, pad, setControllerEnabled, startPad } from "./controller.ts";
+import { menuNav } from "./menunav.ts";
 
 const ui = document.getElementById("ui")!;
 registerOfflineCache();
@@ -89,6 +91,8 @@ function onMsg(m: ServerMsg): void {
     case "welcome":
       db = m.db;
       token = m.token;
+      // Controller play is per player: the server shows the icon and runs our crew and reactor.
+      if (controllerEnabled()) net.send({ t: "controller", on: true });
       if (document.getElementById("loading")) {
         // Everything (art, fonts, sound effects) loads behind FTL's loading bar before the first menu.
         let fonts = false;
@@ -246,6 +250,7 @@ function startBattle(you: 0 | 1): void {
   hangarAfterBattle();
   battle = new Battle(app, db, (cmd) => net.send({ t: "cmd", cmd }), you);
   battle.onEndReady = () => render();
+  battle.onControlCrew = (crew, on) => net.send({ t: "controlCrew", crew, on });
   app.stage.addChild(battle.stage);
   layoutBattle();
 }
@@ -475,14 +480,14 @@ function render(): void {
   hangar = null;
   share = null;
   const lan = mode === "lan";
-  const tab = (m: "lan" | "online", label: string) => `<button class="tab ${mode === m ? "on" : ""}" data-mode="${m}">${label}</button>`;
+  const tab = (m: "lan" | "online" | "settings", label: string) => `<button class="tab ${mode === m ? "on" : ""}" data-mode="${m}">${label}</button>`;
   ui.innerHTML = `<div class="screen"><div class="menu">
     <h1>FTL ARENA</h1>
     <div class="note">1v1 real-time FTL combat${db?.source === "ftl" && !hasArt ? " (no local art found: drawing placeholders)" : ""}.</div>
     <div class="row"><input id="name" placeholder="Captain name" maxlength="24" value="${esc(name)}"></div>
-    <div class="tabs">${tab("lan", "LAN")}${tab("online", "Online")}</div>
+    <div class="tabs">${tab("lan", "LAN")}${tab("online", "Online")}${tab("settings", "Settings")}</div>
     <div class="tab-body">
-    ${lan
+    ${mode === "settings" ? settingsBody() : `${lan
       ? `<div class="note">Same network (home Wi-Fi, LAN party). Create a match and tell your friend the code; they only need the code.</div>`
       : `<label class="note" for="server">Server address</label>
     <div class="row"><input id="server" placeholder="IP:port (blank = host on this computer)" value="${esc(serverAddr)}"></div>
@@ -491,7 +496,7 @@ function render(): void {
       <button id="practice" ${busy ? "disabled" : ""}>Practice vs bot</button></div>
     <h2 style="margin-top:14px">Join a match</h2>
     <div class="row"><input id="code" placeholder="CODE" maxlength="4" value="${esc(joinCode)}" style="text-transform:uppercase;max-width:110px"><button class="primary" id="join" ${busy ? "disabled" : ""}>Join</button></div>
-    <div class="note">${lan ? "Enter the host's code: the game finds their match on your network." : "Enter the server address above and the match code."}</div>
+    <div class="note">${lan ? "Enter the host's code: the game finds their match on your network." : "Enter the server address above and the match code."}</div>`}
     </div>
     <div class="note">${esc(busyNote)}</div>
     <div class="err">${esc(error)}</div>
@@ -509,7 +514,7 @@ function render(): void {
   for (const id of ["#name", "#server", "#code"]) ui.querySelector(id)?.addEventListener("input", keep);
   ui.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => {
-      mode = b.dataset.mode as "lan" | "online";
+      mode = b.dataset.mode as "lan" | "online" | "settings";
       error = "";
       try {
         localStorage.setItem("ftl-arena-mode", mode);
@@ -518,16 +523,39 @@ function render(): void {
     }),
   );
   const go = (kind: "create" | "practice" | "join") => () => void act(kind);
-  ui.querySelector("#create")!.addEventListener("click", go("create"));
-  ui.querySelector("#practice")!.addEventListener("click", go("practice"));
-  ui.querySelector("#join")!.addEventListener("click", go("join"));
-  ui.querySelector("#code")!.addEventListener("keydown", (e) => (e as KeyboardEvent).key === "Enter" && void act("join"));
+  ui.querySelector("#create")?.addEventListener("click", go("create"));
+  ui.querySelector("#practice")?.addEventListener("click", go("practice"));
+  ui.querySelector("#join")?.addEventListener("click", go("join"));
+  ui.querySelector("#code")?.addEventListener("keydown", (e) => (e as KeyboardEvent).key === "Enter" && void act("join"));
+  ui.querySelector<HTMLInputElement>("#controller")?.addEventListener("change", (e) => {
+    const on = (e.target as HTMLInputElement).checked;
+    setControllerEnabled(on);
+    net.send({ t: "controller", on });
+    render();
+  });
+}
+
+/** The Settings tab: experimental controller support, what pad is connected, and the button map. */
+function settingsBody(): string {
+  const on = controllerEnabled();
+  const st = !pad.connected ? "No controller detected: connect one and press any button." : pad.standard ? `Connected: ${esc(pad.name)}` : `Connected, but not recognised (no standard mapping): ${esc(pad.name)}`;
+  return `<label class="kv"><span>Controller support <span class="note">(experimental)</span></span><input type="checkbox" id="controller" ${on ? "checked" : ""}></label>
+    <div class="note">${on ? st : "Off. With it on, the AI runs your crew and reactor; you aim weapons, board, hack and mind-control with selector wheels."}</div>
+    ${on ? `<div class="padmap">
+      <div><b>A / B / X / Y</b> weapons 1-4: hold for the target wheel (left stick), tap to clear</div>
+      <div><b>RB</b> teleport: hold to send a crew member to the pad, tap to beam over</div>
+      <div><b>LT</b> hold to bring a boarder back · <b>RT</b> hacking: hold to aim the drone, tap to pulse</div>
+      <div><b>D-pad ↑</b> mind control (hold) · <b>←</b> cloak · <b>→</b> battery</div>
+      <div><b>LB</b> + a button: power that system or gun down · <b>Start</b> pause</div>
+      <div>Menus: <b>D-pad</b> moves, <b>A</b> selects (and edits numbers/lists: D-pad to change, A to submit), <b>B</b> backs out</div>
+    </div>` : ""}`;
 }
 
 /** LAN: find matches by code on the local network; Online: a typed server address (or host here). */
-let mode: "lan" | "online" = "lan";
+let mode: "lan" | "online" | "settings" = "lan";
 try {
-  mode = localStorage.getItem("ftl-arena-mode") === "online" ? "online" : "lan";
+  const saved = localStorage.getItem("ftl-arena-mode");
+  mode = saved === "online" ? "online" : saved === "settings" ? "settings" : "lan";
 } catch {}
 let busy = false;
 let busyNote = "";
@@ -660,6 +688,16 @@ net.onStatus = (s) => {
 };
 net.connect();
 render();
+// Controller: menus with the D-pad (the battle has its own controls, except over its end screens).
+startPad();
+let padSeen = false;
+onPad((p) => {
+  if (p.connected !== padSeen) {
+    padSeen = p.connected;
+    if (!battle && !lobby && mode === "settings") render();
+  }
+  if (!battle || ui.querySelector(".overlay")) menuNav(p, ui);
+});
 // Count the banners down, and give up on a server that's gone quiet mid-battle.
 setInterval(() => {
   if (!battle || (lostAt === null && oppGoneAt === null)) return;
