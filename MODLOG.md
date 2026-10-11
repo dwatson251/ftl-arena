@@ -629,6 +629,9 @@
   back above it. It used to sound at 50% and again at 25%.
 - **Tests:** 3 in `round19.test.ts` (the progress survives a step, pauses while contested, is lost when the
   room empties); 150 passing in total.
+- **Flaky test fixed:** the Survival "boarders stretch the aftermath" test borrowed a crew member from a
+  random enemy, which can be a crewless automated ship. It now falls back to a copy of one of ours (12/12
+  runs pass).
 
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).

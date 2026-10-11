@@ -179,7 +179,8 @@ describe("survival: battles", () => {
     (l as any).start();
     const m = l.match!;
     const [me, them] = m.state.ships;
-    const raider = structuredClone(them.crew[0]);
+    // (The random enemy may be an automated ship with no crew: then a copy of one of ours plays the raider.)
+    const raider = structuredClone(them.crew[0] ?? me.crew[0]);
     Object.assign(raider, { id: 900, owner: 1, tile: me.crew[0].tile, path: [] });
     me.crew.push(raider);
     them.hull = 0;
