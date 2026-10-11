@@ -21,6 +21,8 @@ export interface Preset {
   loadout: Loadout;
   look: PresetLook;
   savedAt: number;
+  /** The Scrap costs mode it was built under ("none" for presets from before there were any). */
+  costs?: "none" | "ships" | "tournament";
 }
 
 export interface PresetBackend {
@@ -97,9 +99,10 @@ export class PresetStore {
     return this.ready;
   }
 
-  /** Newest first. */
-  list(): Preset[] {
-    return [...this.items].sort((a, b) => b.savedAt - a.savedAt);
+  /** Newest first. With `costs`, only those built under that Scrap costs mode, plus FTL-save ships (valid in any). */
+  list(costs?: "none" | "ships" | "tournament"): Preset[] {
+    const fits = (p: Preset) => costs === undefined || p.loadout.origin === "ftl" || (p.costs ?? "none") === costs;
+    return this.items.filter(fits).sort((a, b) => b.savedAt - a.savedAt);
   }
 
   get(id: string): Preset | undefined {
@@ -107,13 +110,14 @@ export class PresetStore {
   }
 
   /** Save a new preset (never overwrites), with its own random backdrop. */
-  save(name: string, loadout: Loadout, rnd: () => number = Math.random): Preset {
+  save(name: string, loadout: Loadout, rnd: () => number = Math.random, costs: "none" | "ships" | "tournament" = "none"): Preset {
     const p: Preset = {
       id: `${Date.now().toString(36)}${Math.floor(rnd() * 1e9).toString(36)}`,
       name: name.trim().slice(0, 40) || "Unnamed ship",
       loadout: structuredClone(loadout),
       look: randomLook(rnd),
       savedAt: Date.now() + this.items.length * 1e-3,
+      costs,
     };
     this.items.push(p);
     this.flush();

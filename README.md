@@ -100,6 +100,8 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
   It brings in that run's ship: hull, systems, reactor, weapons, drones, augments, missiles, drone parts, and
   crew with their skills. It isn't saved until you save it from Launch. Scrap, fuel, hull damage and cargo
   stay in FTL. Only your own app reads your save; the server never offers it to other players.
+- **Per Scrap costs mode:** presets saved under one Scrap costs rule only show in lobbies with the same rule
+  (ships from an FTL save show everywhere).
 - **Where they live:** this computer only: the desktop app's data folder (`presets.json`), or the
   browser's storage.
 

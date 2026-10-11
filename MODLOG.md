@@ -784,6 +784,14 @@
   Tournament, stock re-adds and no extra copies, the lobby's 1500 and Survival's none); 167 in total.
   Check: `tools/align/costs.ts`.
 
+## Round 43: presets per Scrap costs mode
+- A preset remembers the Scrap costs mode it was built under (`Preset.costs`; older presets count as
+  "none"). The Presets step lists only the ones for the lobby's current mode, so a build priced or allowed
+  under one mode can't leak into another.
+- Ships loaded from an FTL save are shown in every mode, since they're valid in any.
+- The step says how many presets are hidden under other modes. Test in `presets.test.ts`; 168 passing in
+  total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

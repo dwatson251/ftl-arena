@@ -55,3 +55,27 @@ describe("ship presets", () => {
     expect(s.save("   ", baseLoadout(db, ship)).name).toBe("Unnamed ship");
   });
 });
+
+describe("presets per Scrap costs mode", () => {
+  it("shows only presets built under the lobby's Scrap costs, plus FTL-save ships (valid in any)", async () => {
+    const db2 = placeholderDb();
+    const ship = Object.keys(db2.ships)[0];
+    const mem: { list: Preset[] } = { list: [] };
+    const store = new PresetStore({ load: () => mem.list, save: (l) => void (mem.list = l) });
+    await store.init();
+    store.save("Plain", baseLoadout(db2, ship), Math.random, "none");
+    store.save("Tour", baseLoadout(db2, ship), Math.random, "tournament");
+    store.save("FromSave", { ...baseLoadout(db2, ship), origin: "ftl" }, Math.random, "ships");
+    const names = (costs: "none" | "ships" | "tournament") => store.list(costs).map((p) => p.name).sort();
+    expect(names("none")).toEqual(["FromSave", "Plain"]);
+    expect(names("tournament")).toEqual(["FromSave", "Tour"]);
+    expect(names("ships")).toEqual(["FromSave"]);
+    expect(store.list().length).toBe(3);
+    // A preset from before modes existed counts as "none".
+    mem.list.push({ ...mem.list[0], id: "old", name: "Old", costs: undefined });
+    const again = new PresetStore({ load: () => mem.list, save: () => {} });
+    await again.init();
+    expect(again.list("none").map((p) => p.name)).toContain("Old");
+    expect(again.list("ships").map((p) => p.name)).not.toContain("Old");
+  });
+});

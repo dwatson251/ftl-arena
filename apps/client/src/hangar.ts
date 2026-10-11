@@ -163,7 +163,7 @@ export class Hangar {
       // The host sets the rules first; everyone else starts on their presets (or the hull, with none).
       // Back from a battle, everyone already has a ship: straight to Launch.
       this.stepChosen = true;
-      this.step = backFromBattle ? "Launch" : lobby.host === this.me() ? "Rules" : presets.list().length ? "Presets" : "Ship";
+      this.step = backFromBattle ? "Launch" : lobby.host === this.me() ? "Rules" : presets.list(lobby.config.costs ?? "none").length ? "Presets" : "Ship";
       backFromBattle = false;
     }
     // Lost the host's chair (or never had it): the Rules step isn't yours.
@@ -574,7 +574,9 @@ export class Hangar {
     const db = this.db;
     const cfg = this.lobby!.config;
     const pool = cfg.shipPool.length ? cfg.shipPool : db.hangar;
-    const list = presets.list();
+    // Only presets built under this lobby's Scrap costs (other modes' prices and bans don't carry over),
+    // and ships from FTL saves, which are valid in any.
+    const list = presets.list(cfg.costs ?? "none");
     const cards = list
       .map((p) => {
         const ship = db.ships[p.loadout.ship];
@@ -604,7 +606,8 @@ export class Hangar {
         ? this.ftl?.ok
           ? "This lobby flies ships from FTL saves: load your run in progress below, or a preset saved from one (unchanged)."
           : "This lobby flies ships from FTL saves, and no FTL run in progress was found on this computer. Start (or continue) a run in FTL, save and quit to the menu, then come back to this step."
-        : list.length ? "Pick a saved ship to fly it (straight to Launch), or build a new one." : "No presets yet: build a ship, then save it from the Launch step to see it here."}</div>
+        : list.length ? "Pick a saved ship to fly it (straight to Launch), or build a new one." : "No presets yet: build a ship, then save it from the Launch step to see it here."}${
+          presets.list().length > list.length ? ` ${presets.list().length - list.length} more saved under other Scrap costs rules aren't shown (their prices and limits differ).` : ""}</div>
       <div class="preset-grid">
         <div class="preset-card preset-new-card"><button class="preset-new" data-preset-new ${this.lobby!.config.ftlOnly ? "disabled" : ""}><span class="plus">+</span><span>New ship</span><span class="note">${this.lobby!.config.ftlOnly ? "Off: this lobby flies ships from FTL saves only" : "Start again from a bare hull"}</span></button>${
           this.confirmNew
@@ -695,7 +698,7 @@ export class Hangar {
     if (!this.loadout) return;
     const input = this.el.querySelector<HTMLInputElement>("[data-preset-name]");
     const name = (input?.value ?? this.saveName ?? "").trim() || (this.db.ships[this.loadout.ship]?.title ?? "My ship");
-    const p = presets.save(name, this.loadout);
+    const p = presets.save(name, this.loadout, Math.random, this.lobby?.config.costs ?? "none");
     this.loaded = { id: p.id, name: p.name, loadout: structuredClone(p.loadout) };
     this.saveName = null;
     this.savedNote = `Saved as preset “${p.name}”.`;
