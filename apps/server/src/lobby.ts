@@ -45,6 +45,8 @@ export class Lobby {
   private enemy: SurvivalEnemy | null = null;
   private offer: Card[] | null = null;
   private aftermathLeft = 0;
+  private aftermathTotal = 0;
+  private aftermathBoarders = false;
   private jumpTimer: ReturnType<typeof setTimeout> | null = null;
   private upgraded: Record<string, WeaponBP> = {};
 
@@ -66,7 +68,8 @@ export class Lobby {
     const r = this.run;
     return {
       battle: r?.battle ?? 1, won: r?.won ?? 0, bosses: r?.bosses ?? 0, score: r ? score(r) : 0, boss: !!this.enemy?.boss,
-      hazard: this.enemy?.hazard ?? "none", aftermathLeft: Math.max(0, Math.ceil(this.aftermathLeft)), offer: this.offer,
+      hazard: this.enemy?.hazard ?? "none", aftermathLeft: Math.max(0, Math.ceil(this.aftermathLeft)), aftermathTotal: this.aftermathTotal || SURVIVAL.aftermath,
+      boarders: this.aftermathBoarders, offer: this.offer,
       picks: r?.picks ?? [], rare: r?.rare ?? 0, over: !!r?.over, weapons: this.upgraded,
     };
   }
@@ -490,7 +493,8 @@ export class Lobby {
     this.bot = new Bot(difficultyToBot(this.enemy.difficulty).level, this.config.seed);
     if (this.autopilot) this.autopilot = new Bot(this.autopilot.level, 99);
     this.speedAcc = 0;
-    this.aftermathLeft = 0;
+    this.aftermathLeft = this.aftermathTotal = 0;
+    this.aftermathBoarders = false;
     this.offer = null;
     this.phase = "battle";
     this.pending = [[], []];
@@ -564,7 +568,11 @@ export class Lobby {
         this.run.won++;
         if (this.enemy?.boss) this.run.bosses++;
         this.phase = "aftermath";
-        this.aftermathLeft = SURVIVAL.aftermath;
+        // Enemy boarders still on our ship: a longer wait before the jump, to fight them off.
+        const ship = m.state.ships[w];
+        this.aftermathBoarders = ship.crew.some((c) => c.owner !== w && !c.dead && c.dying === undefined);
+        this.aftermathTotal = this.aftermathBoarders ? SURVIVAL.aftermathBoarders : SURVIVAL.aftermath;
+        this.aftermathLeft = this.aftermathTotal;
         this.log(`survival: won battle ${this.run.battle}`);
       } else {
         this.run.over = true;

@@ -1073,7 +1073,7 @@ export class Battle {
     if (sv.phase !== "aftermath" && sv.phase !== "reward" && sv.phase !== "jump") return;
     // The aftermath clock ticks once a second from the server; smooth it between updates.
     const left = sv.phase === "aftermath" ? Math.max(0, s.aftermathLeft - (performance.now() - sv.at) / 1000) : 0;
-    const k = 1 - left / SURVIVAL.aftermath;
+    const k = 1 - left / (s.aftermathTotal || SURVIVAL.aftermath);
     const x = 640 - 49;
     const y = 54;
     const base = texNow("buttons/FTL/FTL_base.png");
@@ -1085,7 +1085,7 @@ export class Battle {
     if (off) h.sprite("svO", off, x + 12, y + 20);
     if (bars && k > 0) h.sprite("svF", frame(bars, 0, 0, Math.max(1, Math.round(74 * k)), 29), x + 12, y + 20);
     h.text("svT", full ? "JUMP" : "FTL", 640, y + 4, fstyle("JustinFont12Bold", full ? 0x9cff9c : 0xe8ece8, { stroke: 0x101010 }), [0.5, 0]);
-    const msg = sv.phase === "aftermath" ? `Enemy destroyed  ·  repairs before the jump: ${Math.ceil(left)} s` : sv.phase === "reward" ? "Choose a reward" : "Jumping…";
+    const msg = sv.phase === "aftermath" ? `Enemy destroyed${s.boarders ? "  ·  BOARDERS ABOARD" : ""}  ·  ${s.boarders ? "fight them off" : "repairs"} before the jump: ${Math.ceil(left)} s` : sv.phase === "reward" ? "Choose a reward" : "Jumping…";
     h.text("svM", msg, 640, y + 60, fstyle("JustinFont10", 0xdfe8ff, { stroke: 0x101010 }), [0.5, 0]);
   }
 

@@ -468,6 +468,14 @@
 - **Check:** `tools/align/dropdowns.ts` picks options with the select focused, as a mouse pick leaves it.
   It failed on the old build (no timeout fields, tabs still open) and passes now.
 
+## Round 25: Survival, more time with boarders aboard
+- If enemy boarders (crew or boarding drones) are still on your ship when the enemy ship is destroyed, the
+  aftermath before the reward and jump runs **60 s** instead of 15 s (`SURVIVAL.aftermathBoarders`).
+- The FTL charge bars fill over the longer time, and the banner reads "BOARDERS ABOARD · fight them off
+  before the jump". The Rules text says so too.
+- The full 60 s runs even if the boarders die early, as asked. It's easy to cut short later.
+- Test: `survival.test.ts` (134 passing in total).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

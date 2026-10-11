@@ -144,6 +144,25 @@ describe("survival: battles", () => {
     expect(m.state.projectiles.length).toBe(0);
   });
 
+  it("enemy boarders still aboard when the enemy goes stretch the aftermath to 60 s", () => {
+    const c: Client = { id: "P", name: "P", lobby: null, send: () => {} };
+    const l = new Lobby("SURV", "P", db, { survival: true }, true);
+    l.join(c);
+    l.setReady(c, true);
+    (l as any).start();
+    const m = l.match!;
+    const [me, them] = m.state.ships;
+    const raider = structuredClone(them.crew[0]);
+    Object.assign(raider, { id: 900, owner: 1, tile: me.crew[0].tile, path: [] });
+    me.crew.push(raider);
+    them.hull = 0;
+    (l as any).stepOnce();
+    expect(l.phase).toBe("aftermath");
+    expect(l.state().survival!.boarders).toBe(true);
+    expect(l.state().survival!.aftermathLeft).toBe(SURVIVAL.aftermathBoarders);
+    expect(SURVIVAL.aftermathBoarders).toBe(60);
+  });
+
   it("only practice lobbies get Survival", () => {
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, false).survival).toBe(false);
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, true).survival).toBe(true);

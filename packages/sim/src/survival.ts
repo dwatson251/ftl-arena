@@ -13,6 +13,8 @@ import type { HazardKind, ShipState } from "./state.ts";
 export const SURVIVAL = {
   /** Seconds the sim keeps running after a win (repairs, fires, boarders) before the reward cards. */
   aftermath: 15,
+  /** …stretched to this while enemy boarders are still aboard when the enemy ship goes (time to fight them off). */
+  aftermathBoarders: 60,
   /** Seconds between picking a card and the next battle (the client's jump animation). */
   jump: 3.6,
   /** Difficulty (0-100) of battle n: starts easy, +7 a battle, capped. */

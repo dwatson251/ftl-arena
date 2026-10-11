@@ -21,6 +21,10 @@ export interface SurvivalState {
   hazard: string;
   /** Seconds of aftermath left (while in "aftermath"). */
   aftermathLeft: number;
+  /** How long this aftermath runs (longer with boarders aboard), for the FTL charge bars. */
+  aftermathTotal: number;
+  /** Enemy boarders were aboard when the enemy ship went. */
+  boarders: boolean;
   /** The cards on offer (while in "reward"). */
   offer: Card[] | null;
   picks: string[];

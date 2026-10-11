@@ -110,7 +110,7 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 - **The run:** battles come one after another against random single-player enemies that get tougher each
   jump. The Rebel flagship turns up every 10th battle, and hazards now and then. Hull, crew (health,
   skills and losses), system damage, missiles and drone parts carry over.
-- **After a win:** the ship carries on for 15 s, so the crew can repair, put out fires and deal with
+- **After a win:** the ship carries on for 15 s (60 s if enemy boarders are still aboard), so the crew can repair, put out fires and deal with
   boarders while FTL's jump drive charges. Then time stops and you pick one reward card:
   - gear (white, green, blue, or **gold** for rare finds);
   - a weapon upgrade (damage, shots, charge time or power);

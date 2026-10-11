@@ -356,7 +356,7 @@ export class Hangar {
   private survivalRules(lobby: LobbyState): string {
     const pc = lobby.practice;
     return `<label class="kv"><span>Autonomous ships <span class="note">(not in Survival)</span></span><input type="checkbox" disabled></label>
-      <div class="note">Pick a ship and fly its stock loadout. Battles come one after another against random enemies that get tougher each jump, with the Rebel flagship every ${SURVIVAL.bossEvery} battles and the odd hazard. Your hull, crew, damage and supplies carry over. After each win you have ${SURVIVAL.aftermath} s to patch the ship up, then choose one reward: gear (rare finds are gold), an upgrade, or repairs and supplies. Lose the ship and the run ends with a score.</div>
+      <div class="note">Pick a ship and fly its stock loadout. Battles come one after another against random enemies that get tougher each jump, with the Rebel flagship every ${SURVIVAL.bossEvery} battles and the odd hazard. Your hull, crew, damage and supplies carry over. After each win you have ${SURVIVAL.aftermath} s to patch the ship up (${SURVIVAL.aftermathBoarders} s if enemy boarders are still aboard), then choose one reward: gear (rare finds are gold), an upgrade, or repairs and supplies. Lose the ship and the run ends with a score.</div>
       ${this.pauseRules(lobby.config, true, true)}
       ${pc ? `<label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}`;
   }
