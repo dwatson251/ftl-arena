@@ -7,7 +7,7 @@ import type { Command } from "./commands.ts";
 import { findPath, geometry, key, roomAt, roomCentre, unkey, type Geometry } from "./geometry.ts";
 import { augCount, autoPower, blockedTiles, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
 import { Rng } from "./rng.ts";
-import { DT, raceOf, RACES, RULES, SKILLS, TICK_HZ, TILE, type SkillId } from "./rules.ts";
+import { DT, flightTime, raceOf, RACES, RULES, SKILLS, TICK_HZ, TILE, type SkillId } from "./rules.ts";
 import type {
   CrewState, DroneState, MatchConfig, MatchEvent, MatchState, Projectile, ShipState, SystemState, WeaponTarget,
 } from "./state.ts";
@@ -947,7 +947,7 @@ export class Match {
       const p: Projectile = {
         // Flak throws all its pieces at once (they spread over the target area); other volleys are staggered.
         id: st.nextId++, from: ship.idx, weapon: bp.id, slot, kind: bp.type, delay: bp.type === "BURST" ? 0 : i * RULES.shotSpacing,
-        t: 0, flight: RULES.flight[bp.type] ?? 1, target, px, py, damageBonus: dmgBonus,
+        t: 0, flight: flightTime(bp), target, px, py, damageBonus: dmgBonus,
       };
       if (bp.type === "BEAM") p.flight = RULES.beamSweep;
       st.projectiles.push(p);

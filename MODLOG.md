@@ -792,6 +792,21 @@
 - The step says how many presets are hidden under other modes. Test in `presets.test.ts`; 168 passing in
   total.
 
+## Round 44: per-weapon projectile speed
+- **Correction:** I'd said FTL's flak blueprints give no speed. They do (`SHOTGUN` speed 26); my earlier
+  search only looked a few lines into each blueprint. Other weapons have their own speeds too: Hull Lasers
+  75/90, Ions 30-40, Crystal weapons 50, Swarm Missiles 45.
+- **Flight time is now per weapon** (`flightTime()` in rules.ts): the type's base time (`RULES.flight`)
+  × the type's default speed (`RULES.defaultSpeed`: LASER and BURST 60, MISSILES 35, estimates) ÷ the
+  blueprint's `<speed>`.
+  - Results: Hull Laser I 0.8 s, Ion Blast 2.0 s, Flak 2.3 s (was the guessed 4.4 s), Swarm Missiles
+    1.3 s.
+  - Burst Lasers and Artemis, which have no tag, are unchanged. Bombs and beams keep their own timings.
+  - The on-screen speed follows it.
+- **Naming:** the type names stay FTL's own (BURST = flak and Swarm Missiles; every laser is LASER), with a
+  comment at `RULES.flight`, so they match the game files.
+- Test in `round20.test.ts`; 169 passing in total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

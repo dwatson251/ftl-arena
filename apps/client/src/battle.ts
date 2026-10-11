@@ -952,8 +952,9 @@ export class Battle {
       }
       // Out of the barrel at a steady FTL-like speed, straight along the weapon's facing (right for
       // rotated mounts, up for upright ones), until it leaves this view. The speed follows the weapon's flight
-      // time (RULES.flight): a slower weapon (flak) is slower on screen too, not just longer off it.
-      const base = p.kind === "MISSILES" ? [520, 1.5] : p.kind === "BURST" ? [680, 1.1] : [760, 1.0];
+      // time (flightTime: its type and its own FTL speed): a slower weapon (flak, ion) is slower on screen too,
+      // not just longer off it.
+      const base = p.kind === "MISSILES" ? [520, 1.5] : p.kind === "BURST" ? [680, 1.0] : [760, 1.0];
       const speed = base[0] * (base[1] / Math.max(0.1, F));
       if (t * speed < 1100 && k2 < 0) {
         const slotBp = v.ships[p.from].weapons[p.slot]?.bp ?? p.weapon;

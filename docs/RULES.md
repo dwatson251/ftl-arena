@@ -275,7 +275,7 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Re-rolls (Survival) | 2 to start, +1 per boss or mini-boss beaten | user |
 | Teleported bombs | Appear 0.3 s after firing, beep about 2.1 s, go off at 2.4 s (damage then) | user + FTL sound length |
 | Unpowered guns | Lose their target, however they lost the power | user (FTL) |
-| Flak (BURST) flight | 4.4 s (a quarter of the old 1.1 s) | user (guess) |
+| Projectile flight | Type base (LASER 1.0 s, BURST = flak 1.0 s, MISSILES 1.5 s) × the type's default speed (LASER/BURST 60, MISSILES 35; est) ÷ the weapon's own FTL `<speed>`. Hull Laser I 0.8 s, Ion Blast 2.0 s, Flak 2.3 s, Swarm Missiles 1.3 s; untagged weapons keep the base. Clamped 0.3-6 s | FTL blueprints + est |
 | Crystal Lockdown | Seals a room's doors 12 s (crew power: the crystal's room, 50 s recharge, ready after a jump; bomb: the room hit). Own crew wait; intruders shatter it with 6 s of shooting (est). Airlocks unaffected | FTL wiki + est |
 | Scrap costs (Arena) | None; Ship expenses: hull = stock fit value × 1 + layout premium (A 0/B 40/C 70) + family premium (0-70); Tournament: hull prices + weapons/augments × rarity (0.9/1/1.1/1.25/1.5), unobtainable items off. Switching raises scrap to 1500. All in `PRICING` | user + est |
 | Unobtainable items (Arena checkbox) | Off: store-rarity-0 crew, weapons and augments only as the hull's stock fit (Slug, Crystal, Lanius crew allowed: events) | user |

@@ -114,3 +114,23 @@ describe("playtest round 20: running out of missiles", () => {
     expect(me.weapons[0].powered).toBe(false);
   });
 });
+
+describe("projectile speeds follow each weapon's FTL speed", () => {
+  it("base time per type, scaled by the type's default speed over the weapon's own", async () => {
+    const { existsSync } = await import("node:fs");
+    const { loadDb } = await import("@ftl/extract");
+    const { flightTime } = await import("@ftl/sim");
+    // A weapon with no speed of its own flies at its type's base.
+    expect(flightTime({ type: "LASER" })).toBe(1);
+    expect(flightTime({ type: "MISSILES", speed: 0 })).toBe(1.5);
+    expect(flightTime({ type: "BOMB", speed: 30 })).toBe(2.4);
+    if (!existsSync("assets-local/manifest.json")) return;
+    const db = loadDb("assets-local");
+    const t = (id: string) => flightTime(db.weapons[id]);
+    expect(t("LASER_BURST_1")).toBe(1);
+    expect(t("LASER_HULL_1")).toBeCloseTo(0.8); // speed 75: sooner
+    expect(t("ION_1")).toBeCloseTo(2); // speed 30: later
+    expect(t("SHOTGUN")).toBeCloseTo(60 / 26); // flak, speed 26: about 2.3 s
+    expect(t("MISSILES_1")).toBe(1.5);
+  });
+});

@@ -80,8 +80,14 @@ export const RULES = {
   /** Projectile flight seconds by weapon type (est; FTL's <speed> is screen-space). */
   /** Seconds from firing to impact. A bomb: the launcher's teleport (bombAppear), then it sits in the room
    *  beeping (FTL's bomb sound, about 2.1 s) and goes off; the damage lands then. */
-  /** Flak (BURST) is slow: a quarter of its old speed (the user's playtest; FTL's blueprints give it no speed). */
-  flight: { LASER: 1.0, BURST: 4.4, MISSILES: 1.5, BOMB: 2.4, BEAM: 0.0 } as Record<string, number>,
+  /**
+   * Base flight time per weapon type, for a weapon at the type's default speed (below). The type names are
+   * FTL's own (its blueprints' <type>): BURST is flak (and the Swarm Missiles); every laser (burst, heavy,
+   * hull, ion) is LASER. A weapon's own <speed> scales it: flightTime().
+   */
+  flight: { LASER: 1.0, BURST: 1.0, MISSILES: 1.5, BOMB: 2.4, BEAM: 0.0 } as Record<string, number>,
+  /** FTL's projectile speed for a type when a blueprint gives none (est: lasers 60; missiles 35). */
+  defaultSpeed: { LASER: 60, BURST: 60, MISSILES: 35 } as Record<string, number>,
   /** When a teleported bomb appears in the target room (the launcher's firing animation). */
   bombAppear: 0.3,
   /** Delay between shots of one volley (est). */
@@ -277,3 +283,16 @@ export const AUGMENT_EFFECTS: Record<string, string> = {
   HACKING_STUN: "Everyone in the hacked room is stunned for the length of a pulse.",
   ZOLTAN_BYPASS: "Teleporting, bombs and mind control work through a Zoltan super shield.",
 };
+
+/**
+ * Seconds a weapon's shot takes to arrive: its type's base flight, scaled by the type's default speed over the
+ * blueprint's own <speed> (Hull Lasers 75-90 arrive sooner, Ions 30 later, Flak 26 at about 2.3 s). Bombs
+ * teleport and beams sweep: their own timings.
+ */
+export function flightTime(bp: { type: string; speed?: number }): number {
+  const base = RULES.flight[bp.type] ?? 1;
+  const def = RULES.defaultSpeed[bp.type];
+  if (!def || !bp.speed || bp.speed <= 0) return base;
+  return Math.max(0.3, Math.min(6, (base * def) / bp.speed));
+}
+
