@@ -156,6 +156,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
       s.ionTimer = 0;
       s.repair = 0;
       s.sabotage = 0;
+      delete s.wreck;
     }
     ev.reactor = -1;
   }

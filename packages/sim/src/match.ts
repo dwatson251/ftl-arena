@@ -1038,7 +1038,6 @@ export class Match {
     const doorLevel = Math.min(RULES.doorBreak.length - 1, this.eff(ship.systems.doors));
     this.refillStations(ship, g);
     this.cloneTick(ship, g);
-    for (const s of Object.values(ship.systems)) if (s) s.sabotage = 0;
     /** Boarders who died here go home to their owner's ship (its clone bay may bring them back). */
     const leaving: CrewState[] = [];
     /** Crew whose beam-out finished: moved aboard the other ship after the loop. */
@@ -1139,7 +1138,6 @@ export class Match {
       // Movement. Intruders have to break closed doors first (longer for better doors).
       if (c.path.length) {
         this.endAttack(c);
-        c.sab = 0;
         const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
         const door = edge && edge.door >= 0 ? edge.door : -1;
         if (door >= 0 && !this.doorOpen(ship, door)) {
@@ -1205,10 +1203,12 @@ export class Match {
       if (!ownShip) {
         // Boarders wreck the system in their room (ion intruders ionise it instead).
         if (sys && (tr.ionBoarder ? sys.level > 0 : sys.damage < sys.level)) {
-          // Its own progress, so time spent breaking a door on the way in doesn't count toward the system.
-          c.sab = (c.sab ?? 0) + RULES.sabotageRate * Math.max(0.5, tr.combat) * (tr.sabotage ?? 1) * DT;
-          if (c.sab >= 1) {
-            c.sab = 0;
+          // The progress belongs to the system: every boarder working it adds to it, a fight in the room pauses
+          // it (nobody's wrecking while they brawl), and it's only lost once the last boarder has left the
+          // room. Breaking a door on the way in doesn't count.
+          sys.wreck = (sys.wreck ?? 0) + RULES.sabotageRate * Math.max(0.5, tr.combat) * (tr.sabotage ?? 1) * DT;
+          if (sys.wreck >= 1) {
+            sys.wreck = 0;
             if (tr.ionBoarder) this.addIon(sys, 1);
             else {
               sys.damage = Math.min(sys.level, sys.damage + 1);
@@ -1217,13 +1217,9 @@ export class Match {
               this.wrecked(ship, sys);
             }
           }
-          if (!tr.ionBoarder) sys.sabotage = Math.max(sys.sabotage ?? 0, c.sab);
           c.task = "sabotage";
           c.face = sabotageFacing(g, room, c.tile);
-        } else {
-          c.sab = 0;
-          c.task = "idle";
-        }
+        } else c.task = "idle";
         continue;
       }
       // Work in the current room, FTL's priority order: fire, breach, system repair, station.
@@ -1259,6 +1255,14 @@ export class Match {
       if (!sys || sys.repair <= 0) continue;
       const present = ship.crew.some((q) => q.owner === ship.idx && !q.dead && q.dying === undefined && g.tiles.get(q.tile)?.room === sys.room && !(q.path.length && g.tiles.get(q.path[q.path.length - 1])?.room !== sys.room));
       if (!present) sys.repair = 0;
+    }
+    // Wrecking progress lasts while any boarder is still in the room (walking, fighting or working); once
+    // they've all gone it's lost. The HUD's bar shows it (ion intruders' progress isn't shown as damage).
+    for (const s of Object.values(ship.systems)) {
+      if (!s) continue;
+      const boarders = ship.crew.filter((q) => q.owner !== ship.idx && !q.dead && q.dying === undefined && g.tiles.get(q.tile)?.room === s.room);
+      if (!boarders.length) s.wreck = 0;
+      s.sabotage = boarders.some((q) => !raceOf(q.race).ionBoarder) ? s.wreck ?? 0 : 0;
     }
     for (const [c, dest, tile] of moving) {
       this.moveAboard(c, ship, dest, tile);

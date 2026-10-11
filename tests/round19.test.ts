@@ -80,3 +80,58 @@ describe("playtest round 19", () => {
     if (me.crew.filter((c) => c.owner === 0).length > 2) expect(moves.some((c) => c.room === me.systems.shields!.room) || me.crew.some((c) => c.owner === 0 && g.tiles.get(c.home)!.room === me.systems.shields!.room)).toBe(true);
   });
 });
+
+describe("boarders' wrecking progress", () => {
+  const setup = () => {
+    const m = new Match(db, DEFAULT_CONFIG, [b, b], ["a", "b"]);
+    const [me, them] = m.state.ships;
+    const sys = me.systems.shields!;
+    const g = m.geo(me);
+    const tiles = g.roomTiles.get(sys.room)!;
+    const raider = structuredClone(them.crew[0]);
+    Object.assign(raider, { id: 900, owner: 1, tile: tiles[0], home: tiles[0], path: [], x: Number(tiles[0].split(",")[0]), y: Number(tiles[0].split(",")[1]), hp: 1e6, maxHp: 1e6 });
+    me.crew = me.crew.filter((c) => g.tiles.get(c.tile)!.room !== sys.room);
+    for (const c of me.crew) c.stun = 1e6; // nobody comes to stop it
+    me.crew.push(raider);
+    return { m, me, sys, g, tiles, raider };
+  };
+
+  it("belongs to the system: a boarder stepping about the room keeps it", () => {
+    const { m, sys, tiles, raider } = setup();
+    run(m, 1);
+    const before = sys.wreck ?? 0;
+    expect(before).toBeGreaterThan(0);
+    if (tiles.length > 1) m.push(1, { c: "moveCrew", crew: [raider.id], room: sys.room, enemy: true });
+    raider.path = tiles.length > 1 ? [tiles[1]] : [];
+    run(m, 0.3);
+    expect(sys.wreck ?? 0).toBeGreaterThanOrEqual(before);
+  });
+
+  it("pauses while a defender fights them in the room, and goes on afterwards", () => {
+    const { m, me, sys, tiles } = setup();
+    run(m, 1);
+    const before = sys.wreck ?? 0;
+    // A defender arrives (immortal for the test) and the room is contested.
+    const d = me.crew.find((c) => c.owner === 0)!;
+    Object.assign(d, { tile: tiles[tiles.length - 1], home: tiles[tiles.length - 1], path: [], stun: 0, hp: 1e6, maxHp: 1e6 });
+    [d.x, d.y] = tiles[tiles.length - 1].split(",").map(Number);
+    run(m, 1);
+    expect(Math.abs((sys.wreck ?? 0) - before)).toBeLessThan(1e-9);
+    expect(sys.sabotage ?? 0).toBeGreaterThan(0);
+    d.stun = 1e6;
+    Object.assign(d, { tile: "nowhere" });
+    me.crew = me.crew.filter((c) => c !== d);
+    run(m, 0.5);
+    expect(sys.wreck ?? 0).toBeGreaterThan(before);
+  });
+
+  it("is lost once every boarder has left the room", () => {
+    const { m, me, sys, raider } = setup();
+    run(m, 1);
+    expect(sys.wreck ?? 0).toBeGreaterThan(0);
+    me.crew = me.crew.filter((c) => c !== raider);
+    run(m, 0.1);
+    expect(sys.wreck ?? 0).toBe(0);
+    expect(sys.sabotage ?? 0).toBe(0);
+  });
+});

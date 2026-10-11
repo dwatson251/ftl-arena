@@ -68,6 +68,8 @@ export interface SystemState {
   repair: number;
   /** Boarders' progress (0..1) toward breaking the next bar, for the HUD (recomputed every tick). */
   sabotage?: number;
+  /** That progress itself: kept while any boarder is in the room, paused while they fight, lost when they all leave. */
+  wreck?: number;
   /** Ion stacks lock bars; `ionTimer` counts down the current stack. */
   ion: number;
   ionTimer: number;
@@ -135,9 +137,8 @@ export interface CrewState {
   owner: 0 | 1;
   /** Drone units: the owner's drone slot that launched it. */
   drone?: number;
-  /** Seconds of door-bashing progress, and sabotage progress toward the next broken bar (boarders). */
+  /** Seconds of door-bashing progress (boarders; the wrecking progress is the system's, `SystemState.wreck`). */
   bash?: number;
-  sab?: number;
   /**
    * The current attack, as FTL runs it: a foe picked when each 1-1.3 s swing starts (whoever shares the tile,
    * else anyone in the room), the swing's length and time left, whether it's a punch (same tile) or a shot,

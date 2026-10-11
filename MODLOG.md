@@ -618,6 +618,18 @@
 - **Check:** `tools/align/escmenu.ts` (pauses in practice, runs on with pausing off, Quit reaches the main
   menu).
 
+## Round 33: boarders' wrecking progress, low-health beep
+- **Wrecking progress belongs to the system** (`SystemState.wreck`).
+  - Before, each boarder carried its own progress. It reset whenever they took a step, and the bar showed
+    nothing while a defender fought them.
+  - Now every boarder working the room adds to the system's progress. A fight in the room pauses it, and
+    the bar keeps showing it. It's lost only once the last boarder has left the room.
+  - Breaking a door on the way in still doesn't count.
+- **Low crew health beep:** once when a crew member drops below 30% (`LOW_HP_BEEP`), re-armed when healed
+  back above it. It used to sound at 50% and again at 25%.
+- **Tests:** 3 in `round19.test.ts` (the progress survives a step, pauses while contested, is lost when the
+  room empties); 150 passing in total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

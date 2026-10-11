@@ -16,9 +16,11 @@ import { Wheel, type WheelItem } from "./wheel.ts";
 import { animFrame, frame, texNow } from "./assets.ts";
 import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, stopLoops, timeStop } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
-import { attackPhase, LOW_HP, SHOT_AT, ShipRenderer, type CrewDraw } from "./render/ship.ts";
+import { attackPhase, SHOT_AT, ShipRenderer, type CrewDraw } from "./render/ship.ts";
 
 const W = 1280;
+/** Crew health (share of max) below which FTL's low-health beep sounds. */
+const LOW_HP_BEEP = 0.3;
 const H = 720;
 /** Own-ship view: the ship is centred where FTL centres the player's ship. */
 const OWN = { cx: 467, cy: 346, w: 700, h: 470, clipX: 868 };
@@ -1514,11 +1516,11 @@ export class Battle {
     loop(this.db, "cloneBroken", !over && !!cbs && queued && (cbs.power + (cbs.bonus ?? 0) <= 0 || cbs.damage >= cbs.level || !!cbs.hacked) && !(own.augments ?? []).includes("BACKUP_DNA"), 0.7);
     loop(this.db, "extinguish", !over && alive.some((c) => c.task === "fire"), 0.8);
     loop(this.db, "healing", !over && alive.some((c) => c.healing && c.hp < c.maxHp), 0.7);
-    // Low-health beep for our own crew wherever they are (never for enemies, even aboard our ship): once per
-    // threshold crossed (50 %, then the red-box level), re-armed when healed past it.
+    // Low-health beep for our own crew wherever they are (never for enemies, even aboard our ship): once as
+    // they drop below 30 %, re-armed when healed back above it.
     for (const c of this.myCrew(v).filter((q) => !q.dead && q.dying === undefined && q.owner === v.you)) {
       const k = c.hp / c.maxHp;
-      const level = k < LOW_HP ? 2 : k < 0.5 ? 1 : 0;
+      const level = k < LOW_HP_BEEP ? 1 : 0;
       const beeped = this.lowHpBeep.get(c.id) ?? 0;
       if (level > beeped) play(this.db, ["lowCrewHealth"]);
       this.lowHpBeep.set(c.id, level);
