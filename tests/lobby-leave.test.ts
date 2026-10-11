@@ -61,4 +61,32 @@ describe("captains leaving", () => {
     l.leave(a, false);
     expect(l.seated("A")).toBe(true);
   });
+
+  it("the host's app closing mid-battle: the host forfeits and the friend is told they won", () => {
+    const l = lobby();
+    const a = client("A"), b = client("B");
+    a.local = true;
+    l.join(a);
+    l.join(b);
+    (l as any).start();
+    b.got.length = 0;
+    l.shutdown();
+    expect(l.phase).toBe("over");
+    const snap = b.got.find((m) => m.t === "snap" && m.view.winner !== null);
+    expect(snap.view.winner).toBe(snap.view.you);
+    expect(snap.view.endReason).toMatch(/A closed the game/);
+    expect(snap.view.events.some((e: any) => e.e === "end")).toBe(true);
+  });
+
+  it("a dedicated server shutting down mid-battle: a draw, nobody blamed", () => {
+    const l = lobby();
+    const a = client("A"), b = client("B");
+    l.join(a);
+    l.join(b);
+    (l as any).start();
+    l.shutdown();
+    expect(b.got.at(-1)).toBeTruthy();
+    const snap = b.got.filter((m) => m.t === "snap").at(-1);
+    expect(snap.view.winner).toBe(-1);
+  });
 });

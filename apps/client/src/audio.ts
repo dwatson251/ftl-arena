@@ -10,7 +10,8 @@ const cache = new Map<string, HTMLAudioElement | null>();
 let sfxOn = true;
 let musicOn = true;
 try {
-  sfxOn = localStorage.getItem("ftl-arena-sfx") !== "0";
+  // Sound effects always start on: an "off" saved by the old M hotkey would mute them with no way back.
+  localStorage.removeItem("ftl-arena-sfx");
   musicOn = localStorage.getItem("ftl-arena-music") !== "0";
 } catch {}
 export const setSound = (on: boolean) => {

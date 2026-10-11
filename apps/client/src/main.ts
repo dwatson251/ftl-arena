@@ -70,6 +70,15 @@ let debugInfo: DebugInfo | null = null;
 let debugOpen = true;
 let error = "";
 let hasArt = false;
+/** Mid-battle troubles: when the connection to the server dropped, and when the opponent's did. */
+let lostAt: number | null = null;
+let oppGoneAt: number | null = null;
+/** The battle was ended here, not by the server (it's gone): only Leave makes sense afterwards. */
+let localEnd = false;
+/** How long a lost connection mid-battle waits for the server before calling it a forfeit by the host. */
+const LOST_FORFEIT_S = 8;
+/** The server's grace period for a disconnected captain (lobby.ts GRACE_MS). */
+const GRACE_S = 20;
 
 const net = new Net(wsUrl, name || "Captain");
 artReady.push(() => render());
@@ -93,10 +102,19 @@ function onMsg(m: ServerMsg): void {
         });
       }
       break;
-    case "lobby":
+    case "lobby": {
       lobby = m.lobby;
-      if (battle && (!lobby || lobby.phase === "lobby")) endBattle();
+      // Back in touch, but the server has no match for us any more (the host's game closed and came back,
+      // or we reached a different server): the battle can't go on, and it wasn't us who left.
+      if (battle && !lobby && lastView && lastView.winner === null) {
+        endLocally("The host's game closed: victory by forfeit");
+        break;
+      }
+      if (battle && (!lobby || lobby.phase === "lobby") && !localEnd) endBattle();
+      const opp = battle && lastView && lobby?.players[1 - lastView.you];
+      oppGoneAt = opp && !opp.connected && !opp.bot && lastView!.winner === null ? (oppGoneAt ?? performance.now()) : null;
       break;
+    }
     case "start":
       if (battle) endBattle(); // debug restart
       startBattle(m.you);
@@ -138,7 +156,23 @@ function startBattle(you: 0 | 1): void {
   layoutBattle();
 }
 
+/**
+ * End the battle on this side, with a win by forfeit, when the server that ran it is gone (it lived in the
+ * host's app, and they closed it). The server says so itself when it shuts down cleanly; this covers the rest.
+ */
+function endLocally(reason: string): void {
+  if (!battle || !lastView || lastView.winner !== null) return;
+  localEnd = true;
+  lostAt = oppGoneAt = null;
+  const you = lastView.you;
+  lastView = { ...lastView, winner: you, endReason: reason, events: [{ e: "end", winner: you, reason }] };
+  battle.onSnapshot(lastView);
+  render();
+}
+
 function endBattle(): void {
+  localEnd = false;
+  lostAt = oppGoneAt = null;
   if (!battle) return;
   app.stage.removeChild(battle.stage);
   battle.destroy();
@@ -273,15 +307,17 @@ function render(): void {
     const v = lastView;
     if (v && v.winner !== null && battle.endReady()) {
       const won = v.winner === v.you;
+      // The server that ran it is gone (the host's game closed): there's no hangar to go back to.
+      const stranded = localEnd || !net.connected;
       const s = v.ships[v.you].stats;
       const o = document.createElement("div");
       o.className = "overlay";
       o.innerHTML = `<div class="menu"><h1>${v.winner === -1 ? "DRAW" : won ? "VICTORY" : "DEFEAT"}</h1>
         <p>${esc(v.endReason)}</p>
         <p class="note">You fired ${s.shotsFired} shots: ${s.hits} hit, ${s.misses} missed, ${s.blocked} blocked · ${s.damageDealt} hull damage dealt</p>
-        <div class="row" style="justify-content:center"><button class="primary" id="rematch">Back to hangar</button><button id="leave">Leave</button></div></div>`;
+        <div class="row" style="justify-content:center">${stranded ? "" : `<button class="primary" id="rematch">Back to hangar</button>`}<button id="leave"${stranded ? ` class="primary"` : ""}>Leave</button></div></div>`;
       ui.appendChild(o);
-      o.querySelector("#rematch")!.addEventListener("click", () => net.send({ t: "rematch" }));
+      o.querySelector("#rematch")?.addEventListener("click", () => net.send({ t: "rematch" }));
       o.querySelector("#leave")!.addEventListener("click", () => {
         net.send({ t: "leave" });
         endBattle();
@@ -289,6 +325,12 @@ function render(): void {
       });
     }
     if (error) ui.insertAdjacentHTML("beforeend", `<div class="toast">${esc(error)}</div>`);
+    const left = (at: number, of: number) => Math.max(0, Math.ceil(of - (performance.now() - at) / 1000));
+    if (lostAt !== null) ui.insertAdjacentHTML("beforeend", `<div class="toast">Lost the connection to the host. Reconnecting… (${left(lostAt, LOST_FORFEIT_S)} s)</div>`);
+    else if (oppGoneAt !== null) {
+      const opp = lobby?.players[1 - (lastView?.you ?? 0)];
+      ui.insertAdjacentHTML("beforeend", `<div class="toast">${esc(opp?.name ?? "Your opponent")} disconnected. They forfeit in ${left(oppGoneAt, GRACE_S)} s unless they come back.</div>`);
+    }
     renderDebug();
     return;
   }
@@ -503,7 +545,18 @@ async function shareFor(addr: string): Promise<void> {
 
 net.onStatus = (s) => {
   netStatus = s;
+  if (battle && lastView && lastView.winner === null && !localEnd) {
+    if (s.startsWith("disconnected")) lostAt ??= performance.now();
+    else if (s === "connected") lostAt = null;
+  }
+  if (battle) render();
   if (!battle && !lobby) render();
 };
 net.connect();
 render();
+// Count the banners down, and give up on a server that's gone quiet mid-battle.
+setInterval(() => {
+  if (!battle || (lostAt === null && oppGoneAt === null)) return;
+  if (lostAt !== null && performance.now() - lostAt > LOST_FORFEIT_S * 1000) endLocally("Lost the connection to the host: victory by forfeit");
+  else render();
+}, 500);

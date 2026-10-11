@@ -4,7 +4,7 @@
  * app starts it in-process.
  */
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -154,8 +154,9 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
 
   const wss = new WebSocketServer({ server: http, path: "/ws", maxPayload: 64 * 1024, perMessageDeflate: true });
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     let client: Client | null = null;
+    const local = /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress ?? "");
     const send = (m: ServerMsg) => ws.readyState === ws.OPEN && ws.send(encode(m));
     const err = (msg: string | null) => {
       if (!msg) return;
@@ -176,6 +177,7 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
         client = old ?? { id: randomBytes(9).toString("base64url"), name, send, lobby: null };
         client.send = send;
         client.name = name;
+        client.local = local;
         sessions.set(client.id, client);
         if (!old) log(`${name} connected`);
         send({ t: "welcome", v: PROTOCOL_VERSION, token: client.id, db });
@@ -285,12 +287,22 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
             try {
               responder?.close();
             } catch {}
-            for (const c of wss.clients) c.terminate();
+            // Battles still running end first (the host leaving forfeits), and the word gets out before the
+            // sockets go: close() lets queued frames flush, terminate() is the backstop.
+            for (const l of lobbies.values()) {
+              try {
+                l.shutdown();
+              } catch {}
+            }
+            for (const c of wss.clients) c.close(1001, "server shutting down");
+            setTimeout(() => {
+              for (const c of wss.clients) c.terminate();
+            }, 300).unref();
             wss.close();
             // http.close() alone waits for every keep-alive connection (the game window's own) to end, which
             // can be never: drop them all so the port is free and the process can exit.
             http.close(() => done());
-            http.closeAllConnections();
+            setTimeout(() => http.closeAllConnections(), 300).unref();
             setTimeout(done, 1000).unref();
           }),
       });

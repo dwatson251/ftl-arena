@@ -13,6 +13,8 @@ export interface Client {
   name: string;
   send(m: ServerMsg): void;
   lobby: Lobby | null;
+  /** Connected from this machine (the hosting player's own window, when the server runs inside their app). */
+  local?: boolean;
 }
 
 const COUNTDOWN = 5;
@@ -240,13 +242,13 @@ export class Lobby {
       // Disconnected mid-battle: hold the seat for a grace period, then forfeit.
       p.connected = false;
       this.dropTimers.set(c.id, setTimeout(() => {
-        this.forfeit(p.id, "opponent disconnected");
+        this.forfeit(p.id, `${p.name} disconnected: victory by forfeit`);
         this.drop(p);
         this.broadcast();
       }, GRACE_MS));
     } else {
       // Left for good (or between battles): free the seat, and the other captain takes over as host.
-      if (this.phase === "battle") this.forfeit(p.id, "opponent left");
+      if (this.phase === "battle") this.forfeit(p.id, `${p.name} left the battle: victory by forfeit`);
       this.drop(p);
     }
     this.broadcast();
@@ -260,6 +262,26 @@ export class Lobby {
     for (const q of this.players) q.ready = q.bot ?? false;
     if (this.phase === "countdown") this.phase = "lobby";
     this.log(`${p.name} left${this.players.length ? `; ${this.players.find((q) => q.id === this.host)?.name ?? "?"} is host` : ""}`);
+  }
+
+  /**
+   * The server is shutting down mid-battle. When it lives in the host's app, the host is the one whose
+   * window is on this machine: they forfeit to the other captain. Otherwise (a dedicated server going down,
+   * or nobody to blame) it's a draw.
+   */
+  shutdown(): void {
+    if (this.phase !== "battle" || !this.match || this.match.over) return;
+    const locals = this.players.filter((p) => !p.bot && this.clients.get(p.id)?.local);
+    if (locals.length === 1) this.forfeit(locals[0].id, `${locals[0].name} closed the game: victory by forfeit`);
+    else {
+      const st = this.match.state;
+      st.winner = -1;
+      st.endReason = "the server shut down";
+      for (const q of this.pending) q.push({ e: "end", winner: -1, reason: st.endReason });
+      this.phase = "over";
+      this.sendSnaps();
+      this.broadcast();
+    }
   }
 
   /** Does this session hold a seat here (so a reconnect goes straight back in)? */

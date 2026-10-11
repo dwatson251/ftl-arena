@@ -11,7 +11,7 @@ import type { GameDB, SystemId } from "@ftl/data";
 import { baseSystemId, SUBSYSTEMS } from "@ftl/data";
 import { RULES, SNAP_HZ, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
 import { animFrame, frame, texNow } from "./assets.ts";
-import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, setSound, soundOn, stopLoops, timeStop } from "./audio.ts";
+import { loop, music, musicEnabled, pickBattleTrack, play, setMusic, stopLoops, timeStop } from "./audio.ts";
 import { fstyle, Imm } from "./imm.ts";
 import { attackPhase, LOW_HP, SHOT_AT, ShipRenderer, type CrewDraw } from "./render/ship.ts";
 
@@ -423,13 +423,11 @@ export class Battle {
       case "end": {
         const loser = e.winner === -1 ? -1 : 1 - e.winner;
         const destroyed = /destroyed/.test(e.reason) ? (loser === -1 ? [0, 1] : [loser]) : [];
-        // The Rebel flagship's first two stages don't break apart: after a few blasts it jumps away, as in FTL.
-        for (const i of destroyed) {
-          if (/^BOSS_[12](_HARD)?$/.test(this.view!.ships[i].bp)) this.jumpAway(i);
-          else this.explode(i);
-        }
+        // Every hull blows apart the same way, the Rebel flagship's stages included (each has its own gibs).
+        for (const i of destroyed) this.explode(i);
+        // (frame() calls onEndReady when the battle clock gets there: a timer could fire while slow frames
+        // still have the clock short, and the end screen would never come.)
         this.endReadyAt = this.time + (destroyed.length ? 4.2 + EXPLODE_PRE : 1.2);
-        setTimeout(() => this.onEndReady(), (this.endReadyAt - this.time) * 1000 + 50);
         break;
       }
       default:
@@ -540,37 +538,6 @@ export class Battle {
     });
   }
 
-  /** When a ship started jumping away (the flagship between stages). */
-  private jumpAt = new Map<number, number>();
-  private jumpBase: { x: number; y: number; sy: number } | null = null;
-
-  private jumpAway(ship: number): void {
-    this.jumpAt.set(ship, this.time);
-    const b = this.rOf(ship).bounds();
-    for (let i = 0; i < 5; i++) {
-      setTimeout(() => {
-        if (!this.view) return;
-        this.boom(ship, b.x + b.w * (0.2 + 0.6 * hash01(i * 5 + 1)), b.y + b.h * (0.2 + 0.6 * hash01(i * 11 + 2)), 1.4 + hash01(i) * 0.8);
-        if (i % 2 === 0) play(this.db, ["explosion1", "explosion2", "explosion3"]);
-      }, i * 220);
-    }
-    setTimeout(() => this.view && play(this.db, ["jumpLeave"], 1), 1400);
-  }
-
-  /** The jump itself: the hull stretches and streaks out of the window, fading. */
-  private jumpFrame(): void {
-    for (const [ship, at] of this.jumpAt) {
-      const r = this.rOf(ship);
-      const t = this.time - at - 1.4;
-      if (t < 0) continue;
-      this.jumpBase ??= { x: r.root.position.x, y: r.root.position.y, sy: r.root.scale.y };
-      const k = Math.min(1, t / 0.8);
-      r.root.position.set(this.jumpBase.x, this.jumpBase.y - 900 * k * k);
-      r.root.scale.y = this.jumpBase.sy * (1 + 2.5 * k);
-      r.root.alpha = Math.max(0, 1 - k);
-    }
-  }
-
   /**
    * A ship's death as in FTL: blasts ripple across the still-whole hull for EXPLODE_PRE seconds, then a last
    * big one and it breaks apart (the gibs; `explodedAt` is when the break-up starts).
@@ -599,8 +566,14 @@ export class Battle {
   private snapK = 0;
   private frameDt = 0;
 
+  private endFired = false;
+
   frame(dt: number): void {
     this.time += dt;
+    if (!this.endFired && this.endReady()) {
+      this.endFired = true;
+      this.onEndReady();
+    }
     this.frameDt = dt;
     const v = this.view;
     if (!v) return;
@@ -631,7 +604,6 @@ export class Battle {
       destinations: true, flashTiles: this.flashTilesEnemy, clock: this.time,
     });
     this.crewSounds(v);
-    this.jumpFrame();
     this.drawTargets(ownV);
     this.drawProjectiles(v, k);
     this.drawDrones(v);
@@ -1978,7 +1950,6 @@ export class Battle {
       .stroke({ color: anyAuto ? 0xfff2a0 : 0xd8e4dc, width: 2 });
     this.label("autoT", "AUTOFIRE", ax + 59, ay + 3, anyAuto ? 0x3a3a10 : 0x2a3434, anyAuto ? 0xfff8d0 : 0xc8d4d0, [0.5, 0]);
     this.autoBox = { x: ax, y: ay, w: 118, h: 29 };
-    void soundOn;
   }
 
   private droneHit: { slot: number; box: Box }[] = [];
@@ -2616,10 +2587,9 @@ export class Battle {
     } else if (/^[1-4]$/.test(e.key)) this.clickWeapon(Number(e.key) - 1, false);
     else if (e.key === "Escape") this.disarm();
     else if (e.key.toLowerCase() === "a" && this.armed !== null) this.send({ c: "autofire", slot: this.armed, on: !own.weapons[this.armed].autofire });
-    else if (e.key.toLowerCase() === "m") {
-      setSound(!soundOn());
-      this.say(soundOn() ? "Sound on" : "Sound off");
-    } else if (e.key.toLowerCase() === "n") {
+    // (M used to switch sound effects off, saved for good: one stray press and they were gone with nothing
+    // on screen to say why. Off for now; setSound() is still there if a visible toggle comes back.)
+    else if (e.key.toLowerCase() === "n") {
       setMusic(!musicEnabled());
       this.say(musicEnabled() ? "Music on" : "Music off");
     }

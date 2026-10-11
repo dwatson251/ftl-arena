@@ -402,6 +402,33 @@
   explodes when the ship breaks apart, with a small blast and a sound, and is no longer drawn. Its pulse
   lightning stops at the first blast.
 
+## Round 22: forfeits when the host leaves, flagship gibs, sound effects back
+- **Host leaving mid-battle:**
+  - **Clean quit:** when the server shuts down cleanly (the desktop app's quit), it first ends any battle
+    still running. The player on the server's own machine forfeits (`Client.local`, loopback): "Host closed
+    the game: victory by forfeit". On a dedicated server going down, it's a draw. Sockets then close
+    gracefully so the message gets out before the port is freed.
+  - **Server vanishes without a word (crash):** the friend sees "Lost the connection to the host.
+    Reconnecting… (8 s)", then a win by forfeit.
+  - **Reconnect finds no match:** if they reconnect to a server that has no match for them, it's a win by
+    forfeit straight away.
+  - **Result screen:** offers only Leave, since there's no hangar to return to.
+  - **Opponent disconnects but the server stays up:** a banner counts down the 20 s grace before their
+    forfeit.
+  - **Forfeit reasons** now name the player ("X left the battle: victory by forfeit").
+- **End screen fix:** the end screen waited on a one-shot timer, but the battle clock only moves with
+  rendered frames. With slow frames the timer fired early and the screen never came. It now fires from the
+  frame loop.
+- **Flagship:** the jump-away between stages is gone. Every stage blows apart like any other hull, with
+  blasts and then its own gibs (`boss_N_gib1-4`).
+- **Sound effects "stopped working":**
+  - **Cause:** almost certainly the battle hotkey **M**. It switched effects off and saved that for good, so
+    music, on its own key N, kept playing. I couldn't reproduce a code fault: blob and clone playback holds
+    up past 1,500 plays in Chromium.
+  - **Fix:** M is disabled, and any saved "off" is cleared at start-up.
+- Tests: lobby shutdown forfeits (118 passing in total); `tools/align/forfeit.ts` (clean and crash) and
+  `tools/align/flagship-gibs.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
