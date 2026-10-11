@@ -22,6 +22,9 @@ export interface Loadout {
   /** Survival: progress carried from the last fight, per system: repairs toward the next mended bar,
    *  boarders' wrecking toward the next broken one, and damage a reinforced system has soaked. */
   progress?: Partial<Record<SystemId, { repair?: number; wreck?: number; armour?: number }>>;
+  /** Survival: each room's oxygen (%, by room id) and which doors stood open, carried from the last fight. */
+  o2?: Record<number, number>;
+  doorsOpen?: boolean[];
   /** Survival: systems reinforced by reward cards, once per stack (each stack: 10% more health per bar). */
   reinforced?: SystemId[];
   /** Survival: enemy boarders still aboard after the last fight; they fight on for the next enemy. */
@@ -337,8 +340,8 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
   }
   const ship: ShipState = {
     idx, player, bp: l.ship, layout: bp.layout, hull: Math.min(l.hull ?? bp.health, l.hullNow ?? l.hull ?? bp.health), maxHull: l.hull ?? bp.health, reactor: l.reactor, systems,
-    rooms: layout.rooms.map((r) => ({ id: r.id, o2: 100, fires: {}, breaches: {} })),
-    doors: layout.doors.map(() => false),
+    rooms: layout.rooms.map((r) => ({ id: r.id, o2: Math.max(0, Math.min(100, l.o2?.[r.id] ?? 100)), fires: {}, breaches: {} })),
+    doors: layout.doors.map((_, i) => (l.doorsOpen?.length === layout.doors.length ? !!l.doorsOpen[i] : false)),
     crew: [],
     weapons: l.weapons.map((w, slot) => ({ slot, bp: w, powered: false, charge: 0, volleys: 0, target: null, autofire: false, boost: 0 })),
     missiles: l.missiles, shieldLayers: 0, shieldCharge: 0, evasion: 0,

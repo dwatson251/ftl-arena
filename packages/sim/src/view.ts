@@ -5,7 +5,7 @@
  */
 import { geometry } from "./geometry.ts";
 import type { Match } from "./match.ts";
-import type { HazardKind, MatchEvent, MatchState, Projectile, ShipState } from "./state.ts";
+import type { CrewState, HazardKind, MatchEvent, MatchState, Projectile, ShipState } from "./state.ts";
 import { raceOf, RULES } from "./rules.ts";
 
 export interface ShipView extends ShipState {
@@ -17,6 +17,8 @@ export interface ShipView extends ShipState {
   weaponsKnown: boolean;
   /** Level 4 (manned level 3) sensors: system power, ion and repair or sabotage progress. */
   systemsKnown: boolean;
+  /** Our own ship with sensors down: intruders we can't see but can hear (fighting, wrecking), no positions. */
+  heard?: { id: number; task: CrewState["task"]; punch?: boolean; atk?: number; atkDur?: number }[];
   /** Weapon charge is shown even without sensors: the viewer's hacking drone sits on the weapons room. */
   weaponChargeKnown?: boolean;
   /** Their shield recharge bar is readable: a hacking drone sits on their shields room. */
@@ -110,6 +112,11 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     const seen = sight(own);
     ownView.visibleRooms = [...seen];
     ownView.crew = sense(own, seen, ownView.crew);
+    // What can't be seen can still be heard: intruders brawling and wrecking aboard (who, not where).
+    const shown = new Set(ownView.crew.map((c) => c.id));
+    ownView.heard = own.crew
+      .filter((c) => !shown.has(c.id) && !c.dead && c.dying === undefined && (c.task === "fight" || c.task === "sabotage"))
+      .map((c) => ({ id: c.id, task: c.task, punch: c.punch, atk: c.atk, atkDur: c.atkDur }));
   }
 
   const ev = structuredClone(enemy) as ShipView;

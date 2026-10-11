@@ -1,0 +1,24 @@
+/** The weapon hotbar: white when powered, red while aiming (yellow with autofire), the missile glyph. traces/hotbar/ */
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+const URL = process.env.ARENA_URL ?? "http://localhost:5173";
+mkdirSync("traces/hotbar", { recursive: true });
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })).newPage();
+await p.goto(URL);
+await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
+await p.click("#practice");
+await p.waitForSelector(".hg-step");
+await p.waitForTimeout(400);
+await p.locator(".hg-step", { hasText: "Launch" }).click();
+await p.click('button[data-ready="1"]');
+const force = await p.waitForSelector('button[data-force="1"]', { timeout: 1500 }).catch(() => null);
+if (force) await force.click();
+await p.waitForFunction(() => !document.querySelector(".hg-step"), null, { timeout: 20000 });
+await p.waitForTimeout(2500);
+const clip = { x: 170, y: 540, width: 330, height: 75 };
+await p.screenshot({ path: "traces/hotbar/1-powered.png", clip });
+await p.keyboard.press("2");
+await p.waitForTimeout(300);
+await p.screenshot({ path: "traces/hotbar/2-aiming.png", clip });
+await b.close();

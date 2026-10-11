@@ -388,6 +388,30 @@ export class Match {
     return bp.type === "BEAM" && roomAt(g, t.x1, t.y1) >= 0;
   }
 
+  /** A boarder with nothing to do where it stands heads for the nearest crew to fight or system to wreck. */
+  private seekWork(ship: ShipState, g: Geometry, c: CrewState, ion: boolean): void {
+    const here = g.tiles.get(c.tile)?.room;
+    const crewRooms = new Set<number>();
+    for (const q of ship.crew) if (q.owner === ship.idx && !q.dead && q.dying === undefined) crewRooms.add(g.tiles.get(q.tile)?.room ?? -1);
+    // Badly hurt, a boarder keeps out of fights (it only goes for systems nobody's guarding).
+    const hurt = c.hp < c.maxHp * 0.5;
+    const wanted = new Set<number>(hurt ? [] : crewRooms);
+    for (const s of Object.values(ship.systems)) if (s && s.level > 0 && (ion ? s.ion < s.level : s.damage < s.level) && !(hurt && crewRooms.has(s.room))) wanted.add(s.room);
+    wanted.delete(-1);
+    if (here !== undefined) wanted.delete(here);
+    let best = -1;
+    let bestLen = Infinity;
+    for (const r of wanted) {
+      const t = g.roomTiles.get(r)?.[0];
+      const p = t ? findPath(g, c.tile, t) : null;
+      if (p && p.length < bestLen) {
+        bestLen = p.length;
+        best = r;
+      }
+    }
+    if (best >= 0) this.sendCrew(ship, g, c, best);
+  }
+
   private sendCrew(ship: ShipState, g: Geometry, c: CrewState, room: number): void {
     const tiles = g.roomTiles.get(room)!;
     // A tile holds one crew member per side (FTL lets a defender and an intruder share it).
@@ -777,6 +801,8 @@ export class Match {
   private wrecked(ship: ShipState, sys: SystemState): void {
     if (sys.damage < sys.level || this.god.has(ship.idx)) return;
     ship.hull = Math.max(0, ship.hull - 1);
+    // A system taken out from inside (fire, boarders) goes with a small explosion in its room.
+    this.state.events.push({ e: "systemDown", ship: ship.idx, room: sys.room });
   }
 
   /** Evasion % (0..100). Needs a working helm; manned helm and engines add their bonuses. */
@@ -1334,7 +1360,12 @@ export class Match {
           }
           c.task = "sabotage";
           c.face = sabotageFacing(g, room, c.tile);
-        } else c.task = "idle";
+        } else {
+          c.task = "idle";
+          // Nothing left to do here: on to the nearest room with crew to fight or a system still standing
+          // (looked at once a second; an order from the player still comes first, since it gives them a path).
+          if (c.drone === undefined && !c.mind && (st.tick + c.id) % TICK_HZ === 0) this.seekWork(ship, g, c, !!tr.ionBoarder);
+        }
         continue;
       }
       // Work in the current room, FTL's priority order: fire, breach, system repair, station.

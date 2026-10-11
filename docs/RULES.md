@@ -255,7 +255,7 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Mini-bosses | Every other 5th battle (5, 10, 15, 20, 30…): a random player cruiser with 30 hull and a full crew, fitted out by the bot's hangar on 250 + 6d scrap; no hazard. Its hand has an extra gear card, and the first is a tier better. 250 points | user + est |
 | Hazards | From battle 4: a 12% chance of a random hazard (never with a boss) | user (rare) |
 | Carried over | Hull and max hull; live crew aboard with their HP and XP (anyone left on the wreck is lost); system damage; missiles; drone parts | user |
-| Reset at the jump | Fires, breaches, ion, O2, weapon charge, deployed drones (boarding drones are lost with their ship) | est |
+| Reset at the jump | Fires, breaches, ion, weapon charge, deployed drones (boarding drones are lost with their ship). Room O2 and door states carry over | est + user |
 | Boarders | Enemy crew still alive aboard at the jump come along, in the same tiles with their HP, and fight for the next enemy | user |
 | Aftermath | 15 s (60 s if enemy boarders or boarding drones are still aboard when the enemy ship goes; once they're all dead the clock drops to 15 s if more is left) of the winner's own ship (crew, systems, air, power); nothing fires; orders and pause work. Then the sim pauses for the cards | user |
 | Cards | Gear (weapon 5 : drone 2 : augment 2 weight; drones only with a drone system), a ship card (weapon upgrade, system level or install, reactor +2, crew), and supplies. A boss win adds a 4th card and makes the gear rare | user + est |
@@ -279,3 +279,4 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Crystal Lockdown | Seals a room's doors 12 s (crew power: the crystal's room, 50 s recharge, ready after a jump; bomb: the room hit). Own crew wait; intruders shatter it with 6 s of shooting (est). Airlocks unaffected | FTL wiki + est |
 | Scrap costs (Arena) | None; Ship expenses: hull = stock fit value × 1 + layout premium (A 0/B 40/C 70) + family premium (0-70); Tournament: hull prices + weapons/augments × rarity (0.9/1/1.1/1.25/1.5), unobtainable items off. Switching raises scrap to 1500. All in `PRICING` | user + est |
 | Unobtainable items (Arena checkbox) | Off: store-rarity-0 crew, weapons and augments only as the hull's stock fit (Slug, Crystal, Lanius crew allowed: events) | user |
+| Suffocation | 6.4 HP/s below 5% O2: equal to a level-1 medbay's healing | FTL players' reports |

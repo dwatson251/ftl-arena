@@ -194,6 +194,7 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   for (const b of BACKDROPS) files.add(`stars/${b}.png`);
   files.add("effects/glowing_star.png");
   // Crystal Lockdown's shards (forming and shattering).
+  files.add("Missile.png");
   files.add("people/crystal_1.png");
   files.add("people/crystal_2.png");
   files.add("warnings/backglow_warning_red.png");

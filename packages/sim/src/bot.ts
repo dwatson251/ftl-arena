@@ -20,7 +20,7 @@ import { baseLoadout, buyableWeapons, hullSystems, priceLoadout, randomCrewName,
 import type { PriceRules } from "./pricing.ts";
 import type { Match } from "./match.ts";
 import { Rng } from "./rng.ts";
-import { DT, RACES } from "./rules.ts";
+import { DT, raceOf, RACES } from "./rules.ts";
 import type { CrewState, ShipState } from "./state.ts";
 
 export interface BotSkills {
@@ -404,7 +404,7 @@ export class Bot {
         continue;
       }
       if (c.path.length || c.task === "fight" || c.task === "sabotage") continue;
-      const next = Object.values(enemy.systems).find((s) => s && s.level > 0 && s.damage < s.level && !(this.recovering.has(c.id) && this.deadly(enemy, s.room, foes(s.room))));
+      const next = Object.values(enemy.systems).find((s) => s && s.level > 0 && s.damage < s.level && !(this.recovering.has(c.id) && this.deadly(enemy, s.room, foes(s.room), c)));
       if (next) out.push({ c: "moveCrew", crew: [c.id], room: next.room, enemy: true });
     }
   }
@@ -419,23 +419,26 @@ export class Bot {
     return this.recovering.has(c.id);
   }
 
-  /** A room that would kill a hurt crew member: the air nearly gone, a fire, or foes in it. */
-  private deadly(ship: ShipState, room: number, foes: boolean): boolean {
+  /** A room that would kill a hurt crew member: the air nearly gone (unless they don't breathe), a fire, or foes in it. */
+  private deadly(ship: ShipState, room: number, foes: boolean, c?: CrewState): boolean {
     const rs = ship.rooms.find((r) => r.id === room);
-    return !!rs && (rs.o2 < CRITICAL_O2 || Object.keys(rs.fires).length > 0 || foes);
+    const breathes = !c || raceOf(c.race).suffocation > 0;
+    return !!rs && ((breathes && rs.o2 < CRITICAL_O2) || Object.keys(rs.fires).length > 0 || foes);
   }
 
   /** Get out now: the air is nearly gone, or badly hurt in a fight or a fire. */
   private inPeril(c: CrewState, ship: ShipState, room: number, foes: boolean): boolean {
     const rs = ship.rooms.find((r) => r.id === room);
     if (!rs) return false;
-    if (rs.o2 < CRITICAL_O2) return true;
+    // Lanius (and anything else that doesn't breathe) don't mind the air going.
+    if (rs.o2 < CRITICAL_O2 && raceOf(c.race).suffocation > 0) return true;
     return this.trackRecovery(c) && (foes || Object.keys(rs.fires).length > 0);
   }
 
   /** The nearest room with air, no fire and no foes (null if there's none to reach). */
   private safeRoom(g: Geometry, ship: ShipState, c: CrewState, foes: (room: number) => boolean, prefer?: number): number | null {
-    const ok = (room: number) => !this.deadly(ship, room, foes(room)) && (ship.rooms.find((r) => r.id === room)?.o2 ?? 0) >= 40;
+    const breathes = raceOf(c.race).suffocation > 0;
+    const ok = (room: number) => !this.deadly(ship, room, foes(room), c) && (!breathes || (ship.rooms.find((r) => r.id === room)?.o2 ?? 0) >= 40);
     if (prefer !== undefined && ok(prefer)) return prefer;
     let best: number | null = null;
     let bestD = Infinity;
@@ -551,7 +554,7 @@ export class Bot {
       if (safe !== null) send(c, safe, "get out (hurt / no air)");
     }
     for (const t of tasks) {
-      const cands = alive.filter((c) => free.has(c.id) && !(t.kind === "fight" && weak(c) && !allWeak) && !(t.kind === "fight" && c.hp < c.maxHp * 0.35) && !(this.recovering.has(c.id) && this.deadly(ship, t.room, foesIn(t.room))));
+      const cands = alive.filter((c) => free.has(c.id) && !(t.kind === "fight" && weak(c) && !allWeak) && !(t.kind === "fight" && c.hp < c.maxHp * 0.35) && !(this.recovering.has(c.id) && this.deadly(ship, t.room, foesIn(t.room), c)));
       if (!cands.length) continue;
       const c = cands.reduce((a, b) => (dist(b, t.room) < dist(a, t.room) ? b : a));
       if (dist(c, t.room) >= 1e9) continue;

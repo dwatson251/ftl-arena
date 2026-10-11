@@ -67,7 +67,8 @@ export const RULES = {
   doorFlow: 0.8,
   /** Below this O2 % crew suffocate at suffocateDps; FTL's warning stripes show at the same level (wiki 5 %). */
   suffocateAt: 5,
-  suffocateDps: 5,
+  /** Matches the level-1 medbay's 6.4 HP/s, so a level-1 medbay just holds a suffocating crew member (FTL players' reports). */
+  suffocateDps: 6.4,
   /** Fire: HP of a new fire tile, per-second spread chance, burn-out below this O2 %, damages (est). */
   fireHp: 100,
   fireSpreadPerSec: 0.16,

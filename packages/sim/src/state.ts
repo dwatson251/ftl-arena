@@ -300,6 +300,8 @@ export type MatchEvent =
   | { e: "fireStart" | "breach"; ship: 0 | 1; room: number }
   /** A Crystal lockdown sealed a room (on) or ended (off; `broken` when intruders shot it down). */
   | { e: "lockdown"; ship: 0 | 1; room: number; on: boolean; broken?: boolean }
+  /** Fire or boarders destroyed the system in a room (its last bar): a small explosion there. */
+  | { e: "systemDown"; ship: 0 | 1; room: number }
   /** A ship ran out of missiles: its missile guns powered down. */
   | { e: "noMissiles"; ship: 0 | 1 }
   /** A crew member died: who (race and name ride along, as the body may be gone from the next view). */

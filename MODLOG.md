@@ -829,6 +829,31 @@
   lobby's left column is 280 px (250 on narrow screens; was 240/220).
 - **Long player names** are cut off with an ellipsis; the ready state keeps its place.
 
+## Round 47: weapon hotbar look, Lanius air, roaming boarders, system blasts, heard intruders, air and doors carried, suffocation
+- **Weapon hotbar** (FTL's look):
+  - Powered weapons have a white border and white power pips (were green).
+  - While one is being aimed, its border, pips and name turn red, or yellow when the shot will autofire
+    (the AUTOFIRE button, or Shift held). They go back once a target is picked.
+  - An aimed weapon's charge fill is red, or yellow on autofire.
+  - Missile weapons show FTL's missile glyph (`img/Missile.png`) on a line under the name.
+  - Check: `tools/align/hotbar.ts`.
+- **Lanius** (and anything else that doesn't breathe) no longer flee rooms without air, or avoid them while
+  hurt.
+- **Boarders keep working:** one with nothing left to do in its room heads for the nearest room with crew
+  to fight or a system still standing (`Match.seekWork`, looked at once a second). This covers the player's
+  boarders and the bot's. A badly hurt one only goes for unguarded systems; the player's orders still come
+  first.
+- **Systems wrecked from inside** (fire, boarders) go with a small explosion and a sound in their room
+  (`systemDown` event).
+- **Sensors down:** intruders on your own ship that you can't see are still heard. The view carries a
+  position-free `heard` list (id and attack timing) for their shots and punches. Fire and breach sounds
+  already played without sensors.
+- **Survival:** each room's oxygen and the doors' open/closed state now carry over between jumps (they used
+  to reset).
+- **Suffocation:** 6.4 HP/s (was 5), the same as a level-1 medbay's healing, so a level-1 medbay just holds a
+  suffocating crew member. This follows FTL players' reports; the wiki wasn't reachable.
+- **Tests:** `round46.test.ts` (6); 182 passing in total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

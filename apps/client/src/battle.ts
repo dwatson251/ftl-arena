@@ -144,6 +144,8 @@ export class Battle {
     this.stage.on("pointermove", (e) => this.onMove(e));
     this.stage.on("pointerup", (e) => this.onUp(e));
     window.addEventListener("keydown", this.keyHandler);
+    window.addEventListener("keydown", this.shiftKeys);
+    window.addEventListener("keyup", this.shiftKeys);
   }
 
   destroy(): void {
@@ -151,6 +153,8 @@ export class Battle {
     stopLoops();
     timeStop(false);
     window.removeEventListener("keydown", this.keyHandler);
+    window.removeEventListener("keydown", this.shiftKeys);
+    window.removeEventListener("keyup", this.shiftKeys);
     this.stage.destroy({ children: true });
   }
 
@@ -474,6 +478,13 @@ export class Battle {
         // Each race's own death cry: the event says who it was (the body may already be gone from the view).
         const c = v.ships.flatMap((s) => s.crew).find((q) => q.id === e.crew);
         play(this.db, this.deathSound(e.race ?? c?.race ?? "human", e.name ?? c?.name ?? ""), e.ship === v.you ? 1 : 0.5);
+        break;
+      }
+      case "systemDown": {
+        // A system burnt or wrecked to nothing: a small explosion in its room.
+        const r = this.rOf(e.ship).layout.rooms.find((q) => q.id === e.room);
+        if (r) this.boom(e.ship, (r.x + r.w / 2) * 35, (r.y + r.h / 2) * 35, 0.8);
+        play(this.db, ["smallExplosion"], e.ship === v.you ? 0.9 : 0.6);
         break;
       }
       case "lockdown":
@@ -1505,6 +1516,19 @@ export class Battle {
         if (crossed && seen) play(this.db, ["crewLaser1", "crewLaser2", "crewLaser3"], s.idx === v.you ? 0.9 : 0.5);
       }
     }
+    // Aboard our own ship, intruders we can't see (sensors down) are still heard: their shots and punches.
+    for (const hc of v.ships[v.you].heard ?? []) {
+      const c = { ...hc, dead: false, blip: false } as unknown as Parameters<typeof attackPhase>[0];
+      if (hc.task === "fight" && hc.punch) punching = true;
+      const ph = attackPhase(c, this.animTime);
+      const was = this.shotPhase.get(hc.id);
+      if (ph === null) {
+        this.shotPhase.delete(hc.id);
+        continue;
+      }
+      this.shotPhase.set(hc.id, ph);
+      if (was !== undefined && ((was < SHOT_AT && ph >= SHOT_AT) || (ph < was && ph >= SHOT_AT))) play(this.db, ["crewLaser1", "crewLaser2", "crewLaser3"], 0.75);
+    }
     loop(this.db, "brawling", punching, 0.8);
   }
 
@@ -2212,17 +2236,17 @@ export class Battle {
     const h = this.hud;
     const lv = Math.max(1, Math.min(4, sys.level));
     const frameT = texNow(`systemUI/button_artillery_${lv}.png`);
-    const x = cx - 11;
-    const y = bottom - 75;
+    const x = cx + 5;
+    const y = bottom - 30;
     this.artilleryBtn = { x, y, w: 23, h: 75 };
     if (frameT) h.sprite("arB", frameT, x, y);
     const bp = sys.weapon ? this.db.weapons[sys.weapon] : undefined;
     if (!bp) return;
     const fast = bp.id.startsWith("ARTILLERY_FED") ? RULES.artilleryCharge[Math.min(4, usable(sys))] : 1;
     const k = Math.min(1, (sys.charge ?? 0) / (bp.cooldown * fast || 1));
-    const top = y + 4 + (4 - lv) * 10;
-    const hgt = y + 62 - top;
-    h.gfx("arG").rect(x + 6, top + Math.round(hgt * (1 - k)), 11, Math.round(hgt * k)).fill({ color: k >= 1 ? 0x78ff78 : 0xffd040 });
+    const top = (y - 21.9) + (4 - lv) * 10;
+    const hgt = y + 60 - top;
+    h.gfx("arG").rect(x + 7.75, top + Math.round(hgt * (1 - k)), 7.4, Math.round(hgt * k)).fill({ color: k >= 1 ? 0x78ff78 : 0xffd040 });
     if (this.teleMode === "artillery") h.text("arHint", "Click an enemy room to aim the artillery (right-click: random rooms)", OWN.cx, 588, fstyle("JustinFont10", 0xffd27a, { stroke: 0x101010 }), [0.5, 0]);
   }
 
@@ -2282,6 +2306,12 @@ export class Battle {
    * the bottom left, the name centred (wrapping to two lines) and the slot number in the corner; the
    * WEAPONS label in the tray's tab and the AUTOFIRE button beside it.
    */
+  /** Shift held (autofire this shot), for the tray's aiming colour. */
+  private shiftHeld = false;
+  private shiftKeys = (e: KeyboardEvent) => {
+    if (e.key === "Shift") this.shiftHeld = e.type === "keydown";
+  };
+
   private weaponsTray(s: ShipView): void {
     const h = this.hud;
     this.weapHit = [];
@@ -2303,12 +2333,15 @@ export class Battle {
       const armed = this.armed === i;
       const ready = w.powered && w.volleys > 0;
       const dragging = this.weaponDrag?.moved && this.weaponDrag.slot === i;
-      const edge = dragging ? 0xffffff : armed ? 0xffd040 : w.powered ? 0x78ff78 : 0x8a8e8a;
+      // FTL's tray colours: powered weapons in white; while one is being aimed it turns red (yellow when the
+      // shot will autofire: the AUTOFIRE button, or Shift held), back to white once a target is picked.
+      const aimCol = this.autoMode !== this.shiftHeld ? 0xffd040 : 0xff4a3a;
+      const edge = dragging ? 0xffffff : armed ? aimCol : w.powered ? 0xffffff : 0x8a8e8a;
       if (ready) {
         const glow = texNow("bar_weapon_minibox_glow.png");
-        if (glow) h.sprite(`wg${i}`, glow, bx - 17, by - 13, { w: SLOT.w + 34, h: SLOT.h + 26, tint: armed ? 0xffd040 : 0x78ff78, alpha: 0.55 });
+        if (glow) h.sprite(`wg${i}`, glow, bx - 17, by - 13, { w: SLOT.w + 34, h: SLOT.h + 26, tint: armed ? aimCol : 0x78ff78, alpha: 0.55 });
       }
-      g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).fill({ color: armed ? 0x3a3010 : ready ? 0x1d3a1f : 0x0f1414, alpha: 0.9 }).stroke({ color: edge, width: 2 });
+      g.rect(bx + 1, by + 1, SLOT.w - 2, SLOT.h - 2).fill({ color: armed ? (aimCol === 0xffd040 ? 0x3a3010 : 0x3a1410) : ready ? 0x1d3a1f : 0x0f1414, alpha: 0.9 }).stroke({ color: edge, width: 2 });
       // Charge: a thin vertical bar filling from the bottom in 2 px steps. Manning and chain boosts don't
       // speed it up; they lower its ceiling (the bar's top comes down to the shorter charge time).
       const baseCd = bp?.cooldown ?? 1;
@@ -2321,16 +2354,24 @@ export class Battle {
       // a white block; chain weapons show their boosts as lights on the gun, not here.
       g.rect(bx + 4.5, by + 4.5, 5, full + 1).stroke({ color: w.powered ? 0xe8ece8 : 0x8a8e8a, width: 1 });
       if (ceil < full) g.rect(bx + 5, by + 5, 4, full - ceil).fill({ color: w.powered ? 0xe8ece8 : 0x8a8e8a });
-      if (fill > 0) g.rect(bx + 5, by + 5 + full - fill, 4, fill).fill({ color: 0x78ff78 });
+      // The charge fill: green, or (aimed at something) red, yellow when it autofires.
+      const fillCol = w.target ? (w.autofire ? 0xffd040 : 0xff4a3a) : 0x78ff78;
+      if (fill > 0) g.rect(bx + 5, by + 5 + full - fill, 4, fill).fill({ color: fillCol });
       // Power bars, bottom left, one per power the weapon needs.
       const pw = bp?.power ?? 1;
       for (let p = 0; p < pw; p++) {
         const py = by + SLOT.h - 11 - p * 8;
-        if (w.powered) g.rect(bx + 12, py, 16, 6).fill({ color: 0x78ff78 });
+        if (w.powered) g.rect(bx + 12, py, 16, 6).fill({ color: armed ? aimCol : 0xffffff }).stroke({ color: armed ? aimCol : 0xffffff, width: 1 });
         else g.rect(bx + 12.5, py + 0.5, 15, 5).stroke({ color: 0x8a8e8a, width: 1 });
       }
       const title = bp?.short ?? bp?.title ?? w.bp;
-      h.text(`wn${i}`, title, bx + 54, by + 3, fstyle("JustinFont8", w.powered ? (ready ? 0xb8ffb8 : 0xffffff) : 0x9aa09a, { align: "center", wrap: 66 }), [0.5, 0]);
+      const nameCol = armed ? aimCol : w.powered ? (ready ? 0xb8ffb8 : 0xffffff) : 0x9aa09a;
+      const nt = h.text(`wn${i}`, title, bx + 54, by + 3, fstyle("JustinFont8", nameCol, { align: "center", wrap: 66 }), [0.5, 0]);
+      // Missile weapons: FTL's missile glyph on a line of its own under the name.
+      if ((bp?.missiles ?? 0) > 0) {
+        const mi = texNow("Missile.png");
+        if (mi) h.sprite(`wmi${i}`, mi, bx + 54, by + 3 + nt.height + 7, { anchor: 0.5, scale: 0.42, tint: armed ? aimCol : w.powered ? 0xffffff : 0x9aa09a });
+      }
       if (bp?.chargeLevels && bp.chargeLevels > 1) h.text(`wcl${i}`, `${w.volleys}/${bp.chargeLevels}`, bx + 34, by + SLOT.h - 13, fstyle("JustinFont8", 0xffe070));
       // Slot number tag in the bottom-right corner.
       g.rect(bx + SLOT.w - 12, by + SLOT.h - 12, 11, 11).fill({ color: 0x0f1414 }).stroke({ color: edge, width: 1 });

@@ -474,6 +474,9 @@ export function carryOver(run: SurvivalRun, ship: ShipState): void {
     .filter((c) => c.owner === ship.idx && !c.dead && c.dying === undefined && c.drone === undefined)
     // Where each one stood, or was walking to, is where they'll be after the jump.
     .map((c) => ({ name: c.name, race: c.race, xp: { ...c.xp }, hp: Math.max(1, Math.round(c.hp)), tile: c.home || c.tile }));
+  // The air in each room and the doors as they were left.
+  l.o2 = Object.fromEntries(ship.rooms.map((r) => [r.id, Math.round(r.o2 * 10) / 10]));
+  l.doorsOpen = [...ship.doors];
   l.damage = {};
   l.progress = {};
   for (const s of Object.values(ship.systems)) {
