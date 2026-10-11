@@ -254,7 +254,7 @@ function menuOverlay(): HTMLDivElement {
 function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement {
   const o = document.createElement("div");
   o.className = "overlay reward";
-  const kind: Record<string, string> = { weapon: "Weapon", upgrade: "Weapon upgrade", drone: "Drone", augment: "Augment", system: "System", reactor: "Reactor", crew: "Crew", supplies: "Supplies", reinforce: "Reinforcement" };
+  const kind: Record<string, string> = { weapon: "Weapon", upgrade: "Weapon upgrade", drone: "Drone", augment: "Augment", system: "System", reactor: "Reactor", crew: "Crew", supplies: "Supplies", reinforce: "Reinforcement", options: "More choices" };
   const cards = (sv.offer ?? []).map((c, i) => `<button class="rcard tier${c.tier}" data-pick="${i}">
       <span class="rkind">${esc(kind[c.kind] ?? c.kind)}${c.tier === 4 ? " · RARE" : ""}</span>
       <span class="rtitle">${esc(c.title)}</span>
@@ -262,7 +262,14 @@ function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement 
   o.innerHTML = `<div class="menu reward-menu"><h1>${sv.boss ? "FLAGSHIP DOWN" : sv.mini ? "RIVAL DEFEATED" : `BATTLE ${sv.battle} WON`}</h1>
     <p class="note">Choose one. Your ship jumps to the next fight as soon as you do.</p>
     <div class="rcards">${cards}</div>
+    <div class="row" style="justify-content:center"><button id="reroll" ${sv.rerolls > 0 ? "" : "disabled"}>Re-roll (${sv.rerolls} left)</button></div>
+    <p class="note">A re-roll deals a fresh hand. Earn one for every boss or mini-boss beaten.</p>
     <p class="note">Score ${sv.score} · ${sv.won} won${sv.bosses ? ` · ${sv.bosses} boss${sv.bosses > 1 ? "es" : ""}` : ""}</p></div>`;
+  o.querySelector<HTMLButtonElement>("#reroll")?.addEventListener("click", (e) => {
+    (e.currentTarget as HTMLButtonElement).disabled = true;
+    play(db!, ["powerUpSystem"], 1);
+    net.send({ t: "reroll" });
+  });
   o.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) => {
     // FTL's menu hover beep as the pointer (or the controller's ring) lands on a card; the store's buy sound
     // when one is taken.

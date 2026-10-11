@@ -72,7 +72,7 @@ describe("survival: rewards", () => {
     const run = newRun(db, ship);
     run.battle = 25;
     expect(drawCards(db, run, 3).some((c) => c.tier === 4)).toBe(true);
-    expect(drawCards(db, run, 3).length).toBeGreaterThanOrEqual(5);
+    expect(drawCards(db, run, 3).length).toBe(3);
   });
 
   it("the supplies package is worth about as much as the gear beside it", () => {
@@ -93,17 +93,17 @@ describe("survival: rewards", () => {
     expect(run.loadout.hull).toBe(db.ships[ship].health + full.maxHull!);
   });
 
-  it("every hand offers a system or reactor upgrade while the ship has room for one", () => {
+  it("every hand offers a system or reactor upgrade (unless a +1 choice card took its place)", () => {
     for (let seed = 1; seed <= 40; seed++) {
       const run = newRun(db, ship);
       run.battle = 1 + (seed % 9);
       const hand = drawCards(db, run, seed);
-      expect(hand.some((c) => c.kind === "system" || c.kind === "reactor" || c.kind === "reinforce")).toBe(true);
-      expect(hand.length).toBeGreaterThanOrEqual(4);
+      expect(hand.some((c) => c.kind === "system" || c.kind === "reactor" || c.kind === "reinforce" || c.kind === "options")).toBe(true);
+      expect(hand.length).toBe(3);
     }
   });
 
-  it("reinforcement: a rare card for one system, whose bars then take 10% more punishment per bar", () => {
+  it("reinforcement: a rare card; each stack gives every bar of that system 10% more health", () => {
     let card: Card | undefined;
     for (let seed = 1; seed < 400 && !card; seed++) card = drawCards(db, newRun(db, ship), seed).find((c) => c.kind === "reinforce");
     expect(card).toBeTruthy();
@@ -112,21 +112,51 @@ describe("survival: rewards", () => {
     applyCard(db, run, { ...card!, system: "shields" });
     const m = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
     const sh = m.state.ships[0].systems.shields!;
-    expect(sh.reinforced).toBe(true);
-    sh.level = 4; // toughness 1.4: seven 1-point hits break five bars... capped at its four
-    const hits = (n: number) => { for (let i = 0; i < n; i++) (m as any).hurtSystem(sh, 1); };
-    hits(4);
-    expect(sh.damage).toBe(2); // 4 / 1.4 = 2.86 → 2 whole bars
-    hits(3);
-    expect(sh.damage).toBe(4);
-    // An ordinary system takes every point.
-    const en = m.state.ships[0].systems.engines!;
-    en.damage = 0;
-    (m as any).hurtSystem(en, 2);
-    expect(en.damage).toBe(Math.min(en.level, 2));
+    expect(sh.reinforced).toBe(1);
+    sh.level = 12;
+    sh.damage = 0;
+    // One stack: each bar takes 1.1 points, so eleven 1-point hits break ten bars.
+    for (let i = 0; i < 11; i++) (m as any).hurtSystem(sh, 1);
+    expect(sh.damage).toBe(10);
+    // Stacks add up (two stacks: 1.2 a bar), and an ordinary system takes every point.
+    const run2 = newRun(db, ship);
+    applyCard(db, run2, { ...card!, system: "shields" });
+    applyCard(db, run2, { ...card!, system: "shields" });
+    const m2 = new Match(db, DEFAULT_CONFIG, [run2.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
+    expect(m2.toughness(m2.state.ships[0].systems.shields!)).toBeCloseTo(1.2);
+    expect(m2.toughness(m2.state.ships[0].systems.engines!)).toBe(1);
   });
 
-    it("taking a card puts it on the ship", () => {
+  it("the same system's further stacks get rarer", () => {
+    const count = (stacks: number) => {
+      let n = 0;
+      for (let seed = 1; seed <= 600; seed++) {
+        const run = newRun(db, ship);
+        run.loadout.reinforced = Object.keys(run.loadout.systems).filter((k) => (run.loadout.systems as any)[k] > 0).flatMap((id) => Array(stacks).fill(id));
+        n += drawCards(db, run, seed).filter((c) => c.kind === "reinforce").length;
+      }
+      return n;
+    };
+    expect(count(2)).toBeLessThan(count(0));
+  });
+
+  it("hands start at 3 cards; +1 choice cards raise it to 5 (the second rare), and no further", () => {
+    const run = newRun(db, ship);
+    expect(drawCards(db, run, 1).length).toBe(3);
+    let plus: Card | undefined;
+    for (let seed = 1; seed < 200 && !plus; seed++) plus = drawCards(db, run, seed).find((c) => c.kind === "options");
+    expect(plus?.tier).toBe(2);
+    applyCard(db, run, plus!);
+    expect(drawCards(db, run, 1).length).toBe(4);
+    let rare: Card | undefined;
+    for (let seed = 1; seed < 2000 && !rare; seed++) rare = drawCards(db, run, seed).find((c) => c.kind === "options");
+    expect(rare?.tier).toBe(4);
+    applyCard(db, run, rare!);
+    expect(drawCards(db, run, 1).length).toBe(5);
+    for (let seed = 1; seed < 300; seed++) expect(drawCards(db, run, seed).some((c) => c.kind === "options")).toBe(false);
+  });
+
+  it("taking a card puts it on the ship", () => {
     const run = newRun(db, ship);
     const before = run.loadout.missiles;
     applyCard(db, run, { kind: "supplies", title: "Supplies", blurb: "", tier: 1, value: 30, missiles: 5 } as Card);
@@ -280,6 +310,20 @@ describe("survival: battles", () => {
     expect(seen.some((e) => (e.e === "hit" || e.e === "miss" || e.e === "shield") && e.ship === 1)).toBe(false);
   });
 
+    it("beating a mini-boss (or the flagship) earns a re-roll", () => {
+    const c: Client = { id: "P", name: "P", lobby: null, send: () => {} };
+    const l = new Lobby("SURV", "P", db, { survival: true }, true);
+    l.join(c);
+    l.setReady(c, true);
+    l.run = newRun(db, ship);
+    l.run.battle = 5; // a mini-boss
+    (l as any).start();
+    expect(l.state().survival!.mini).toBe(true);
+    l.match!.state.ships[1].hull = 0;
+    (l as any).stepOnce();
+    expect(l.state().survival!.rerolls).toBe(3);
+  });
+
     it("only practice lobbies get Survival", () => {
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, false).survival).toBe(false);
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, survival: true }, true).survival).toBe(true);
@@ -303,7 +347,13 @@ describe("survival: battles", () => {
     l.tick();
     expect(l.phase).toBe("reward");
     const offer = l.state().survival!.offer!;
-    expect(offer.length).toBeGreaterThanOrEqual(3);
+    expect(offer.length).toBe(3);
+    // Re-rolls: two to start; each deals a fresh hand; then none.
+    expect(l.state().survival!.rerolls).toBe(2);
+    expect(l.reroll(c)).toBeNull();
+    expect(l.reroll(c)).toBeNull();
+    expect(l.reroll(c)).toMatch(/no re-rolls/);
+    expect(l.state().survival!.rerolls).toBe(0);
     expect(l.pick(c, 0)).toBeNull();
     expect(l.phase).toBe("jump");
     expect(l.run!.battle).toBe(2);

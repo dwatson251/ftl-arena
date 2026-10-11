@@ -668,6 +668,23 @@
 - **Guns without power drop their target**, whether switched off by hand or knocked out by damage, ion or
   a power shortage (`weaponPower` off and `clampWeapons`). Test in `round20.test.ts`.
 
+## Round 36: Survival reinforcement stacks, card choices, re-rolls
+- **Reinforcement is per bar and stacks**, as the user specified. Each card gives every bar of one system
+  10% more health (`toughness = 1 + 0.1 × stacks`), so a 4-bar system takes 40% more in total, but each bar
+  only 10% more.
+  - The same system can be reinforced again. Each further stack is rarer (weight 1/(stacks+1)²), and so is
+  the card once the ship is well reinforced.
+  - The card is named "Reinforced Shields +", "++"… for later stacks.
+- **Choices:** hands start at **3 cards**, filled in order: gear, a system or reactor, a weapon upgrade or
+  crew, more gear, with supplies always last.
+  - A **"+1 choice"** card sometimes replaces one: commonly to 4 (30% of hands), rarely, and gold, to 5 (7%).
+    The cap is 5.
+  - Boss hands no longer add a card; their gear is rare (flagship) or a tier up (mini-boss).
+- **Re-rolls:** 2 to start, plus 1 for every boss or mini-boss beaten. A button on the reward screen
+  ("Re-roll (N left)") deals a fresh hand (`{ t: "reroll" }`).
+- **Tests:** per-bar stacking, rarer repeats, hand sizes 3→4→5 with the cap, re-rolls (2, then refused),
+  a mini-boss earning one; 156 passing in total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

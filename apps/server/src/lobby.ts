@@ -71,7 +71,7 @@ export class Lobby {
   private survivalState(): SurvivalState {
     const r = this.run;
     return {
-      battle: r?.battle ?? 1, won: r?.won ?? 0, bosses: r?.bosses ?? 0, minis: r?.minis ?? 0, score: r ? score(r) : 0, boss: !!this.enemy?.boss, mini: !!this.enemy?.mini,
+      battle: r?.battle ?? 1, won: r?.won ?? 0, bosses: r?.bosses ?? 0, minis: r?.minis ?? 0, rerolls: r?.rerolls ?? SURVIVAL.rerolls, options: r?.options ?? SURVIVAL.options.start, score: r ? score(r) : 0, boss: !!this.enemy?.boss, mini: !!this.enemy?.mini,
       hazard: this.enemy?.hazard ?? "none", aftermathLeft: Math.max(0, Math.ceil(this.aftermathLeft)), aftermathTotal: this.aftermathTotal || SURVIVAL.aftermath,
       boarders: this.aftermathBoarders, offer: this.offer,
       picks: r?.picks ?? [], rare: r?.rare ?? 0, over: !!r?.over, weapons: this.upgraded,
@@ -115,6 +115,17 @@ export class Lobby {
   /** The human seat (Survival is single player: the other seat is the bot). */
   private humanIdx(): 0 | 1 {
     return this.players.findIndex((p) => !p.bot) === 1 ? 1 : 0;
+  }
+
+  /** Survival: spend a re-roll for a fresh hand. */
+  reroll(c: Client): string | null {
+    if (!this.run || this.phase !== "reward" || !this.offer) return "nothing to re-roll";
+    if (this.players[this.humanIdx()]?.id !== c.id) return "not your run";
+    if ((this.run.rerolls ?? 0) <= 0) return "no re-rolls left";
+    this.run.rerolls = (this.run.rerolls ?? 0) - 1;
+    this.offer = drawCards(this.db, this.run, (Math.random() * 2 ** 31) | 0);
+    this.broadcast();
+    return null;
   }
 
   /** Survival: take one of the cards on offer, then jump to the next battle. */
@@ -648,6 +659,8 @@ export class Lobby {
         this.run.won++;
         if (this.enemy?.boss) this.run.bosses++;
         if (this.enemy?.mini) this.run.minis = (this.run.minis ?? 0) + 1;
+        // Every boss or mini-boss beaten earns a re-roll.
+        if (this.enemy?.boss || this.enemy?.mini) this.run.rerolls = (this.run.rerolls ?? SURVIVAL.rerolls) + 1;
         this.phase = "aftermath";
         // Enemy boarders still on our ship: a longer wait before the jump, to fight them off.
         const ship = m.state.ships[w];

@@ -225,6 +225,8 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
           return c.lobby?.rematch(c);
         case "pick":
           return err(c.lobby ? c.lobby.pick(c, m.card) : "not in a lobby");
+        case "reroll":
+          return err(c.lobby ? c.lobby.reroll(c) : "not in a lobby");
         case "controller":
           c.controller = !!m.on;
           return c.lobby?.setController(c, !!m.on);

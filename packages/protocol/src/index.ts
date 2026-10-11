@@ -18,6 +18,10 @@ export interface SurvivalState {
   bosses: number;
   /** Mini-bosses (player cruisers) beaten. */
   minis: number;
+  /** Re-rolls left (a fresh hand of cards). */
+  rerolls: number;
+  /** Cards on offer after each win (3-5). */
+  options: number;
   score: number;
   boss: boolean;
   /** This battle is a mini-boss (a player cruiser). */
@@ -120,6 +124,8 @@ export type ClientMsg =
   | { t: "rematch" }
   | { t: "pick"; card: number }
   | { t: "controller"; on: boolean }
+  /** Survival: swap the cards on offer for a fresh hand (spends a re-roll). */
+  | { t: "reroll" }
   /** Controller play: crew the player takes from the AI (sent to the teleporter), or hands back. */
   | { t: "controlCrew"; crew: number[]; on: boolean };
 

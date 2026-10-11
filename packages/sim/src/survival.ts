@@ -39,6 +39,10 @@ export const SURVIVAL = {
   platingValue: 12,
   /** How often the system card is instead a (rare) reinforcement for one installed system. */
   reinforceChance: 0.16,
+  /** Reward cards on offer: 3 to start; "+1 choice" cards raise it (the first is common, the second rare). */
+  options: { start: 3, max: 5, plusChance: [0.3, 0.07] },
+  /** Re-rolls (a fresh hand): 2 to start, one more for each boss or mini-boss beaten. */
+  rerolls: 2,
   /** Most missiles one supplies card brings. */
   maxMissiles: 8,
   /** Augments that do something in a fight (FTL's campaign-only ones, like scrap or Rebel-fleet delays, don't). */
@@ -58,6 +62,10 @@ export interface SurvivalRun {
   bosses: number;
   /** Mini-bosses beaten (player cruisers). */
   minis?: number;
+  /** Reward cards on offer after each win (3-5). */
+  options?: number;
+  /** Re-rolls left. */
+  rerolls?: number;
   /** Titles of the cards taken, in order. */
   picks: string[];
   rare: number;
@@ -66,7 +74,7 @@ export interface SurvivalRun {
   over: boolean;
 }
 
-export type CardKind = "weapon" | "upgrade" | "drone" | "augment" | "system" | "reactor" | "crew" | "supplies" | "reinforce";
+export type CardKind = "weapon" | "upgrade" | "drone" | "augment" | "system" | "reactor" | "crew" | "supplies" | "reinforce" | "options";
 
 export interface Card {
   kind: CardKind;
@@ -98,7 +106,7 @@ export function stockLoadout(db: GameDB, ship: string): Loadout {
 }
 
 export function newRun(db: GameDB, ship: string): SurvivalRun {
-  return { battle: 1, won: 0, bosses: 0, picks: [], rare: 0, loadout: stockLoadout(db, ship), over: false };
+  return { battle: 1, won: 0, bosses: 0, picks: [], rare: 0, loadout: stockLoadout(db, ship), over: false, options: SURVIVAL.options.start, rerolls: SURVIVAL.rerolls };
 }
 
 export const isBoss = (n: number) => n > 0 && n % SURVIVAL.bossEvery === 0;
@@ -203,7 +211,8 @@ export function applyToLoadout(db: GameDB, l0: Loadout, c: Card): Loadout {
       l.reactor += 2;
       break;
     case "reinforce":
-      l.reinforced = [...new Set([...(l.reinforced ?? []), c.system!])];
+      // One more stack on that system.
+      l.reinforced = [...(l.reinforced ?? []), c.system!];
       break;
     case "crew":
       l.crew.push({ name: c.name!, race: c.race! });
@@ -318,13 +327,21 @@ function systemCard(db: GameDB, l: Loadout, rng: Rng): Card | null {
     out.push({ kind: "system", system: h.id, title: lv === 0 ? `Install ${bp.title ?? h.id}` : `${bp.title ?? h.id} level ${lv + 1}`, blurb: lv === 0 ? "A new system for your ship" : `Upgrade your ${(bp.title ?? h.id).toLowerCase()}${isSubsystem(h.id) ? "" : " (needs reactor power)"}`, tier: cost >= 80 ? 3 : 2, value: cost });
   }
   const ok = out.filter((c) => installable(db, l, c));
-  // Now and then (rare, gold): reinforce one installed system, 10% more health per bar it has.
-  const solid = hullSystems(db, l.ship).filter((h) => (l.systems[h.id] ?? h.base) > 0 && !(l.reinforced ?? []).includes(h.id));
-  if (solid.length && rng.chance(SURVIVAL.reinforceChance)) {
-    const h = rng.pick(solid);
-    const lv = l.systems[h.id] ?? h.base;
+  // Now and then (rare, gold): reinforce one installed system, every bar 10% tougher. The same system can
+  // be reinforced again, but each extra stack is rarer (weight 1/(stacks+1)²), and so is the card itself
+  // once the ship's systems are well reinforced.
+  const stacks = (id: SystemId) => (l.reinforced ?? []).filter((x) => x === id).length;
+  const solid = hullSystems(db, l.ship).filter((h) => (l.systems[h.id] ?? h.base) > 0);
+  const weights = solid.map((h) => 1 / (stacks(h.id) + 1) ** 2);
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (solid.length && rng.chance(SURVIVAL.reinforceChance * (total / solid.length))) {
+    let r = rng.next() * total;
+    let i = 0;
+    while (i < solid.length - 1 && (r -= weights[i]) > 0) i++;
+    const h = solid[i];
+    const n = stacks(h.id) + 1;
     const name = db.systems[h.id]?.title ?? h.id;
-    return { kind: "reinforce", system: h.id, title: `Reinforced ${name}`, blurb: `+${Math.round(RULES.reinforcePerBar * 100)}% health per bar: takes ${Math.round(RULES.reinforcePerBar * lv * 100)}% more punishment now (more as it's upgraded)`, tier: 4, value: 90 };
+    return { kind: "reinforce", system: h.id, title: `Reinforced ${name}${n > 1 ? ` ${"+".repeat(n - 1)}` : ""}`, blurb: `Every bar takes ${Math.round(RULES.reinforcePerStack * 100)}% more punishment before it breaks${n > 1 ? ` (stack ${n}: ${Math.round(RULES.reinforcePerStack * n * 100)}% in all)` : ""}`, tier: 4, value: 90 };
   }
   // The reactor comes up a third of the time (more power is what most upgrades end up needing).
   const reactor: Card = { kind: "reactor", title: "Reactor +2", blurb: "Two more bars of reactor power", tier: 2, value: RULES.reactorPrice(l.reactor) + RULES.reactorPrice(l.reactor + 1) };
@@ -366,30 +383,34 @@ export function drawCards(db: GameDB, run: SurvivalRun, seed: number): Card[] {
   const d = SURVIVAL.difficulty(run.battle);
   const boss = isBoss(run.battle);
   const mini = isMiniBoss(run.battle);
-  const hand: Card[] = [];
-  // The flagship's hand is rare; a mini-boss's leans a tier up.
+  const n = Math.max(SURVIVAL.options.start, Math.min(SURVIVAL.options.max, run.options ?? SURVIVAL.options.start));
+  // The flagship's gear is rare; a mini-boss's leans a tier up.
   const gear = gearCard(db, l, rng, boss ? 4 : mini ? Math.min(4, rollTier(rng, d) + 1) : rollTier(rng, d));
-  if (gear) hand.push(gear);
-  if (boss || mini) {
-    const more = gearCard(db, l, rng, rollTier(rng, d));
-    if (more && !hand.some((c) => c.id === more.id)) hand.push(more);
+  // In order of priority, as many as the hand holds (supplies always make the last slot): the gear, a system
+  // or reactor upgrade, a weapon upgrade or crew, and more gear.
+  const more = gearCard(db, l, rng, rollTier(rng, d));
+  const picks = [gear, systemCard(db, l, rng), upgradeCard(db, l, rng, seed), more && more.id !== gear?.id ? more : null].filter((c): c is Card => !!c);
+  const hand = picks.slice(0, n - 1);
+  // Now and then, a card that shows one more choice from then on (the first commonly, the second rarely).
+  const plus = n < SURVIVAL.options.max && rng.chance(SURVIVAL.options.plusChance[n - SURVIVAL.options.start] ?? 0);
+  if (plus) {
+    const at = hand.findIndex((c) => c.kind !== "weapon" && c.kind !== "drone" && c.kind !== "augment");
+    const card: Card = { kind: "options", title: "+1 choice", blurb: `One more reward card to choose from after every win (${n + 1} from now on, up to ${SURVIVAL.options.max})`, tier: n + 1 >= SURVIVAL.options.max ? 4 : 2, value: 60 };
+    if (at >= 0) hand[at] = card;
+    else hand.push(card);
   }
-  // Every hand has a system (or reactor) card, and a weapon upgrade (or crew) card beside the gear.
-  const sys = systemCard(db, l, rng);
-  if (sys) hand.push(sys);
-  const up = upgradeCard(db, l, rng, seed);
-  if (up) hand.push(up);
   // Supplies match the best thing on offer, so passing on a gun for repairs and missiles is a fair trade.
   const target = Math.max(30 + 3 * run.battle, ...hand.filter((c) => c.kind === "weapon" || c.kind === "drone" || c.kind === "augment").map((c) => c.value));
   hand.push(suppliesCard(db, l, target));
   // A thin hand (ship full up) still offers a choice: a smaller supplies package.
-  if (hand.length < 3) hand.push(suppliesCard(db, l, Math.round(target * 0.6)));
-  return hand;
+  while (hand.length < Math.min(n, 3)) hand.push(suppliesCard(db, l, Math.round(target * (0.6 - 0.15 * (hand.length - 1)))));
+  return hand.slice(0, n);
 }
 
 /** Take a card: it goes on the ship and into the record. */
 export function applyCard(db: GameDB, run: SurvivalRun, c: Card): void {
-  run.loadout = applyToLoadout(db, run.loadout, c);
+  if (c.kind === "options") run.options = Math.min(SURVIVAL.options.max, (run.options ?? SURVIVAL.options.start) + 1);
+  else run.loadout = applyToLoadout(db, run.loadout, c);
   run.picks.push(c.title);
   if (c.tier === 4) run.rare++;
 }

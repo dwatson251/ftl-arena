@@ -270,6 +270,8 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Wrecking a system | The progress is the system's: boarders working it add together, a fight in the room pauses it, and it's lost only when the last boarder leaves | user |
 | Low crew health beep | Once below 30% health, re-armed above it | user |
 | Repair rate | One bar per 12.5 s for an untrained human (Engi 6.25 s, Mantis 25 s), plus the repair-skill bonus | FTL wiki |
-| Reinforced system (Survival card) | Bars take 1 + 0.1 × level times the punishment (weapons, flares, fire, boarders); fractions carry | user |
+| Reinforced system (Survival card) | Each stack: every bar takes 10% more punishment (1 + 0.1 × stacks; weapons, flares, fire, boarders; fractions carry). Repeat stacks on a system are rarer (1/(stacks+1)²) | user |
+| Card choices (Survival) | 3 per hand; +1 choice cards to 4 (30% of hands) and 5 (7%, rare), cap 5 | user + est |
+| Re-rolls (Survival) | 2 to start, +1 per boss or mini-boss beaten | user |
 | Teleported bombs | Appear 0.3 s after firing, beep about 2.1 s, go off at 2.4 s (damage then) | user + FTL sound length |
 | Unpowered guns | Lose their target, however they lost the power | user (FTL) |

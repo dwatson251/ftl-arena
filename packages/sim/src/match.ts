@@ -140,9 +140,9 @@ export class Match {
     st.rng = this.rng.s;
   }
 
-  /** How much punishment a system's bars take: 1, or for a reinforced one 10% more per bar it has. */
+  /** How much punishment each of a system's bars takes before it breaks: 1, plus 10% per reinforcement stack. */
   toughness(s: SystemState): number {
-    return s.reinforced ? 1 + RULES.reinforcePerBar * s.level : 1;
+    return 1 + RULES.reinforcePerStack * (s.reinforced ?? 0);
   }
 
   /** `n` points of system damage; a reinforced system soaks some, carrying the rest toward the next bar. */

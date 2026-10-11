@@ -112,7 +112,7 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
   skills and losses), system damage, missiles and drone parts carry over, and so do enemy boarders you
   didn't finish off.
 - **After a win:** the ship carries on for 15 s (60 s if enemy boarders are still aboard, dropping to 15 s once they're dead), so the crew can repair, put out fires and deal with
-  boarders while FTL's jump drive charges. Then time stops and you pick one reward card:
+  boarders while FTL's jump drive charges. Then time stops and you pick one of 3 reward cards ("+1 choice" cards raise it to 5; re-rolls, 2 to start and 1 per boss or mini-boss, deal a fresh hand):
   - gear (white, green, blue, or **gold** for rare finds);
   - a weapon upgrade (damage, shots, charge time or power);
   - a system level, reactor or crew;

@@ -18,7 +18,7 @@ export interface Loadout {
   hullNow?: number;
   /** Survival: system damage carried from the last fight. */
   damage?: Partial<Record<SystemId, number>>;
-  /** Survival: systems reinforced by reward cards (10% more health per bar). */
+  /** Survival: systems reinforced by reward cards, once per stack (each stack: 10% more health per bar). */
   reinforced?: SystemId[];
   /** Survival: enemy boarders still aboard after the last fight; they fight on for the next enemy. */
   boarders?: { name: string; race: string; hp: number; tile: string; xp?: Partial<Record<SkillId, number>> }[];
@@ -301,7 +301,7 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     systems[h.id] = {
       id: h.id, room: slot.room, level, power: 0, damage: Math.max(0, Math.min(level, Math.round(l.damage?.[h.id] ?? 0))), repair: 0, ion: 0, ionTimer: 0, station, fireDmg: 0, bonus: 0,
       facing: station ? slot.facing ?? "up" : undefined,
-      ...(l.reinforced?.includes(h.id) ? { reinforced: true } : {}),
+      ...(l.reinforced?.includes(h.id) ? { reinforced: l.reinforced.filter((x) => x === h.id).length } : {}),
       ...(blocked ? { blocked } : {}),
       ...(slot.weapon && db.weapons[slot.weapon] ? { weapon: slot.weapon, charge: 0 } : {}),
     } satisfies SystemState;
