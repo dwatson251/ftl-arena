@@ -266,4 +266,4 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Augments offered | Only the ones the arena simulates (no campaign-only scrap or fleet effects) | — |
 | Score | 100 per win, 500 per flagship, 250 per mini-boss, 10 per card, 25 per rare card | user (arbitrary) |
 | Autonomous ships | A Rules checkbox (no longer a Game mode). Only the hull counts, and builds may launch with no crew. Off in Survival | user |
-
+| Boarding drones on board | Walk at half crew speed | user |

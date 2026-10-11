@@ -63,4 +63,31 @@ describe("crew AI: getting out of trouble", () => {
     expect(out[0].enemy).toBe(true);
     expect(out[0].room).not.toBe(here);
   });
+
+  it("the AI doesn't power a boarding drone into a super shield, and stands a waiting one down", () => {
+    const withDrone = { ...baseLoadout(db, ship), systems: { ...baseLoadout(db, ship).systems, drones: 3 }, drones: ["BOARDER"], droneParts: 5, reactor: 12 };
+    const m = new Match(db, DEFAULT_CONFIG, [withDrone, baseLoadout(db, ship)], ["a", "b"]);
+    const bot = new Bot(1, 3);
+    m.state.ships[1].superShield = 8;
+    const sent: Command[] = [];
+    for (let i = 0; i < 30 * 10; i++) {
+      m.state.ships[1].superShield = 8;
+      const cmds = bot.think(m, 0);
+      sent.push(...cmds);
+      for (const c of cmds) m.push(0, c);
+      m.step();
+    }
+    expect(sent.some((c) => c.c === "dronePower" && c.on)).toBe(false);
+    // The shield drops: now it launches.
+    m.state.ships[1].superShield = 0;
+    let on = false;
+    for (let i = 0; i < 30 * 5 && !on; i++) {
+      const cmds = bot.think(m, 0);
+      on = cmds.some((c) => c.c === "dronePower" && c.on);
+      for (const c of cmds) m.push(0, c);
+      m.step();
+    }
+    expect(on).toBe(true);
+  });
 });
+

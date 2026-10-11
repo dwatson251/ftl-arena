@@ -582,6 +582,18 @@
     game-over tally counts both.
 - Tests updated (146 passing).
 
+## Round 30: playtest nits (drones and super shields, boarding drone pace, bomb blasts)
+- **AI and super shields:** the AI (bot, autopilot and controller assistant) no longer powers a boarding
+  drone into an enemy super shield, which it used to retry on every think. One waiting to launch stands
+  down and frees its power; once the shield is gone it launches as normal. Test in `crew-ai.test.ts`
+  (fails on the old bot).
+- **Boarding drones** (and ion intruders) walk at half speed (`RACES.boarder.speed` 0.5), as the user
+  asked. Their flight over (2.4 s) is unchanged: the blueprint's speed 18 is about half the missiles' and
+  already matches.
+- **Bombs:** the sprite spins until the bomb actually goes off. Its blast frames now play with the
+  explosion (the "hit" event, `bombBurst`) instead of in the last 30% of the flight, so the art no longer
+  explodes ahead of the blast.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

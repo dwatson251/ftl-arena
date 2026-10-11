@@ -359,6 +359,7 @@ export class Battle {
         // Each weapon's own impact (missiles have their own explosions); beams sizzle as they sweep instead.
         const bp = e.weapon ? this.db.weapons[e.weapon] : undefined;
         if (bp?.type === "BEAM") break;
+        if (bp?.type === "BOMB") this.bombBurst(e.ship, e.px, e.py, bp.image);
         this.boom(e.ship, e.px, e.py, e.damage > 0 ? 1 : 0.7);
         play(this.db, bp?.sounds?.hit?.length ? bp.sounds.hit : ["hitHull2", "hitHull3", "smallExplosion"]);
         break;
@@ -517,6 +518,20 @@ export class Battle {
 
   private at(ship: number, x: number, y: number) {
     return this.stage.toLocal(this.rOf(ship).root.toGlobal({ x, y }));
+  }
+
+  /** A bomb going off: the rest of its sprite's frames (after the four spin frames), at the moment it explodes. */
+  private bombBurst(ship: number, x: number, y: number, image: string): void {
+    const a = image ? this.db.anims[image] : undefined;
+    if (!a || a.frames <= 4) return;
+    const p = this.at(ship, x, y);
+    const sp = new Sprite();
+    sp.anchor.set(0.5);
+    sp.position.copyFrom(p);
+    this.addFx(this.fxLayerOf(ship), sp, 0.35, (k) => {
+      const f = animFrame(this.db, image, Math.min(a.frames - 1, 4 + Math.floor(k * (a.frames - 4))));
+      if (f) sp.texture = f;
+    });
   }
 
   private boom(ship: number, x: number, y: number, size: number): void {
@@ -867,11 +882,12 @@ export class Battle {
       }
       const target = this.stage.toLocal(dst.root.toGlobal({ x: tx, y: ty }));
       if (p.kind === "BOMB") {
-        // The bomb materialises in the room: its spin frames (0-3), then its teleport-out frames.
+        // The bomb materialises in the room and spins (frames 0-3) until it goes off; its blast frames play
+        // with the explosion itself (the "hit" event), not before.
         if (k2 >= 0) {
           const a = bp?.image ? this.db.anims[bp.image] : undefined;
           const n = a?.frames ?? 9;
-          const fr = k2 < 0.7 ? Math.floor(this.time * 10) % Math.min(4, n) : Math.min(n - 1, 4 + Math.floor(((k2 - 0.7) / 0.3) * (n - 4)));
+          const fr = Math.floor(this.time * 10) % Math.min(4, n);
           const f = bp?.image ? animFrame(this.db, bp.image, fr) : null;
           const layer = mine ? this.projWin : this.projOwn;
           if (f) {

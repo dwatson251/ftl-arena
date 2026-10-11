@@ -229,6 +229,11 @@ export class Bot {
     });
     const assisting = !!this.assist;
     (ship.drones ?? []).forEach((d, slot) => {
+      // A super shield turns boarding drones away: none powered up into it (one waiting to launch stands
+      // down, freeing its power, until the shield is gone).
+      const blocked = m.db.droneBPs?.[d.bp]?.type === "BOARDER" && (enemy.superShield ?? 0) > 0;
+      if (blocked && d.powered && !d.deployed) out.push({ c: "dronePower", slot, on: false });
+      if (blocked) return;
       if (d.powered || (!d.deployed && (ship.droneParts ?? 0) <= 0) || (d.rebuild ?? 0) > 0) return;
       // Free a reactor bar for the drone if needed: the medbay first (nobody hurt), then the engines.
       const used = Object.values(ship.systems).reduce((a, x) => a + (x && !["pilot", "sensors", "doors"].includes(x.id) ? x.power : 0), 0);

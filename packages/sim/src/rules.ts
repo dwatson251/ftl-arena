@@ -230,8 +230,8 @@ export const RACES: Record<string, RaceTraits> = {
   // Drone units (not hireable): anti-personnel, system repair, boarding (est stats).
   battle: { hp: 150, speed: 1, repair: 0, combat: 1, suffocation: 0, fireImmune: true, drone: true, blurb: "Anti-personnel drone." },
   repair: { hp: 70, speed: 1, repair: 1, combat: 0, suffocation: 0, fireImmune: true, drone: true, blurb: "System repair drone." },
-  boarder: { hp: 150, speed: 1, repair: 0, combat: 1, suffocation: 0, fireImmune: true, drone: true, sabotage: 2, blurb: "Boarding drone." },
-  boarder_ion: { hp: 150, speed: 1, repair: 0, combat: 0.5, suffocation: 0, fireImmune: true, drone: true, sabotage: 1, ionBoarder: true, blurb: "Ion intruder drone." },
+  boarder: { hp: 150, speed: 0.5, repair: 0, combat: 1, suffocation: 0, fireImmune: true, drone: true, sabotage: 2, blurb: "Boarding drone." },
+  boarder_ion: { hp: 150, speed: 0.5, repair: 0, combat: 0.5, suffocation: 0, fireImmune: true, drone: true, sabotage: 1, ionBoarder: true, blurb: "Ion intruder drone." },
 };
 export const raceOf = (r: string): RaceTraits => RACES[r] ?? RACES.human;
 
