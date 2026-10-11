@@ -10,7 +10,7 @@ Nothing from FTL comes with this app: on first start it reads the game's data fr
 2. First start: pick your FTL folder (the one with ftl.dat), e.g.
    C:\Program Files (x86)\Steam\steamapps\common\FTL Faster Than Light
    (in Steam: right-click FTL > Manage > Browse local files).
-3. "Practice vs bot" works straight away.
+3. "Single player → Create a match" works straight away.
 
 Playing with a friend
 ---------------------

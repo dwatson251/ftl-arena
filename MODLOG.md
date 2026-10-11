@@ -819,6 +819,13 @@
     elsewhere, through both the laser path and the beam sweep.
 - 176 tests passing.
 
+## Round 46: Single player tab
+- **Main menu:** a new first tab, **Single player**. Its green **Create a match** opens a practice lobby
+  (Arena against a bot, or Survival), as "Practice vs bot" did.
+- "Practice vs bot" is gone from LAN and Online.
+- Single player is the default tab for new players; a remembered choice still wins.
+- Check: `tools/align/menu-tabs.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

@@ -37,7 +37,7 @@ Open http://localhost:5173 in two browsers:
 2. The other player clicks **Join**.
 3. Both spend scrap and press **Ready**.
 
-**Practice vs bot** gives you a solo opponent. Its **opponent** can be:
+**Single player → Create a match** gives you a solo opponent. Its **opponent** can be:
 - any player cruiser (built with its own scrap);
 - any of the **single-player enemy ships**, such as Rebel Fighter, Mantis Bomber or Zoltan Bomber. These
   fly with their own vertical art, crew and weapon pool, scaled by difficulty. In the lobby, a **difficulty slider (0-100)** sets it:

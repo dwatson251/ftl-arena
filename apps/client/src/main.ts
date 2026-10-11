@@ -573,20 +573,20 @@ function render(): void {
   hangar = null;
   share = null;
   const lan = mode === "lan";
-  const tab = (m: "lan" | "online" | "settings", label: string) => `<button class="tab ${mode === m ? "on" : ""}" data-mode="${m}">${label}</button>`;
+  const tab = (m: typeof mode, label: string) => `<button class="tab ${mode === m ? "on" : ""}" data-mode="${m}">${label}</button>`;
   ui.innerHTML = `<div class="screen"><div class="menu">
     <h1>FTL ARENA</h1>
     <div class="note">1v1 real-time FTL combat${db?.source === "ftl" && !hasArt ? " (no local art found: drawing placeholders)" : ""}.</div>
     <div class="row"><input id="name" placeholder="Captain name" maxlength="24" value="${esc(name)}"></div>
-    <div class="tabs">${tab("lan", "LAN")}${tab("online", "Online")}${tab("settings", "Settings")}</div>
+    <div class="tabs">${tab("single", "Single player")}${tab("lan", "LAN")}${tab("online", "Online")}${tab("settings", "Settings")}</div>
     <div class="tab-body">
-    ${mode === "settings" ? settingsBody() : `${lan
+    ${mode === "settings" ? settingsBody() : mode === "single" ? `<div class="note">Play against the computer on this machine: Arena against a bot (pick its ship and difficulty in the rules), or a Survival run.</div>
+    <div class="row"><button class="primary" id="practice" ${busy ? "disabled" : ""}>Create a match</button></div>` : `${lan
       ? `<div class="note">Same network (home Wi-Fi, LAN party). Create a match and tell your friend the code; they only need the code.</div>`
       : `<label class="note" for="server">Server address</label>
     <div class="row"><input id="server" placeholder="IP:port (blank = host on this computer)" value="${esc(serverAddr)}"></div>
     <div class="note">For a dedicated server, or a friend hosting over the internet. Leave it blank to host here yourself.</div>`}
-    <div class="row"><button class="primary" id="create" ${busy ? "disabled" : ""}>Create match</button>
-      <button id="practice" ${busy ? "disabled" : ""}>Practice vs bot</button></div>
+    <div class="row"><button class="primary" id="create" ${busy ? "disabled" : ""}>Create match</button></div>
     <h2 style="margin-top:14px">Join a match</h2>
     <div class="row"><input id="code" placeholder="CODE" maxlength="4" value="${esc(joinCode)}" style="text-transform:uppercase;max-width:110px"><button class="primary" id="join" ${busy ? "disabled" : ""}>Join</button></div>
     <div class="note">${lan ? "Enter the host's code: the game finds their match on your network." : "Enter the server address above and the match code."}</div>`}
@@ -607,7 +607,7 @@ function render(): void {
   for (const id of ["#name", "#server", "#code"]) ui.querySelector(id)?.addEventListener("input", keep);
   ui.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => {
-      mode = b.dataset.mode as "lan" | "online" | "settings";
+      mode = b.dataset.mode as typeof mode;
       error = "";
       try {
         localStorage.setItem("ftl-arena-mode", mode);
@@ -645,10 +645,10 @@ function settingsBody(): string {
 }
 
 /** LAN: find matches by code on the local network; Online: a typed server address (or host here). */
-let mode: "lan" | "online" | "settings" = "lan";
+let mode: "single" | "lan" | "online" | "settings" = "single";
 try {
   const saved = localStorage.getItem("ftl-arena-mode");
-  mode = saved === "online" ? "online" : saved === "settings" ? "settings" : "lan";
+  mode = saved === "online" || saved === "settings" || saved === "lan" ? saved : "single";
 } catch {}
 let busy = false;
 let busyNote = "";
