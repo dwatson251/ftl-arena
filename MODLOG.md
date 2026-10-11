@@ -736,6 +736,29 @@
 - **Slower:** flak flies at a quarter of its old speed (`RULES.flight.BURST` 4.4 s, was 1.1 s). That's the
   user's guess; FTL's flak blueprints set no speed of their own.
 
+## Round 41: Crystal Lockdown (crew power and bomb), flak speed on screen
+- **Crystal Lockdown.** Sources: the FTL wiki via search (12 s, 50 s recharge, ends "over time, or when
+  attacked", the bomb identical) and FTL's own data (`BOMB_LOCK` `<lockdown>`, the `crystal_1`/`crystal_2`
+  shard sheets, the `lockdown1`/`lockdown2` sounds, the "LOCKDOWN" button text).
+  - **The seal:** every door of the room is sealed for 12 s (`RULES.lockdownTime`), on whichever ship the
+    room is. Nobody gets in or out, the doors can't be opened or closed by hand, and air doesn't pass;
+    airlocks still work.
+  - **Breaking it:** the ship's own crew wait it out. Intruders shoot the crystal, and 6 s of shooting
+    (several add up; `lockdownBreak`, an estimate) shatters it early.
+  - **Crew power:** a LOCKDOWN button beside each Crystal crew box (it fills while CHARGING) seals the room
+    they stand in, at home or boarding. It recharges in 50 s (`lockdownRecharge`) and is ready after a jump.
+  - **The bomb** (Crystal Lockdown Bomb) seals the room it hits.
+  - **Look and sound:** shards line the room's walls, growing in (crystal_1) and shattering at the end
+    (crystal_2), with FTL's lockdown sounds.
+  - **Not done:** the AI doesn't use the crew power yet.
+  - **Tests:** `lockdown.test.ts` (seal, no leaving, doors locked, wears off; recharge; intruders shatter
+    it; the bomb). Check: `tools/align/lockdown.ts`.
+- **Flak speed, for real this time:** the client drew every shot leaving the barrel at a fixed speed, so
+  `RULES.flight` only changed the wait off-screen. The barrel speed now scales with the flight time, so
+  flak at 4.4 s is a quarter of its old speed on screen. The user's test value 80.8 is back to 4.4.
+- **Flak spread circle:** alpha down 20% (0.2 to 0.16).
+- 162 tests passing.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

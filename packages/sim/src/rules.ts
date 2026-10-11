@@ -33,6 +33,11 @@ export const RULES = {
    *  human (FTL wiki), so 6.25 s for an Engi and 25 s for a Mantis. */
   repairRate: 1 / 12.5,
   repairSkillBonus: [0, 0.1, 0.2],
+  /** Crystal Lockdown (crew power and bomb): seconds the room stays sealed, and the crew power's recharge (FTL wiki). */
+  lockdownTime: 12,
+  lockdownRecharge: 50,
+  /** Seconds of intruders shooting the crystal before it shatters ("wears off over time, or when attacked"; est). */
+  lockdownBreak: 6,
   /** Survival's reinforced systems: each stack gives every bar of the system 10% more health. */
   reinforcePerStack: 0.1,
   /** Breach/fire HP removed per second by one crew (est). */

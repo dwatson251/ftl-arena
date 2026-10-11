@@ -164,6 +164,8 @@ export interface CrewState {
   aim?: [number, number];
   /** Mind controlled: by which player, seconds left, the true owner, the damage boost and the max HP before. */
   mind?: { by: 0 | 1; t: number; owner: 0 | 1; boost: number; maxHp: number };
+  /** Crystal crew: seconds until their Lockdown power is ready again. */
+  lockCd?: number;
   /** Survival: a boarder left aboard when its own ship was destroyed. No teleporter can take it home, so it
    *  never retreats; it fights on for the next enemy. */
   stranded?: boolean;
@@ -221,6 +223,8 @@ export interface ShipState {
   doorBash?: number[];
   /** Room whose doors an enemy hacking drone has locked (recomputed every tick). */
   lockedRoom?: number;
+  /** Crystal lockdowns: rooms sealed in crystal, seconds left, and how far intruders have shot the crystal. */
+  lockdowns?: { room: number; t: number; bash: number }[];
   /** Battery: seconds of bonus power left, and lock time after. */
   battery?: { t: number; cd: number };
   /** Mind control recharge (seconds). */
@@ -290,6 +294,8 @@ export type MatchEvent =
   | { e: "hit"; ship: 0 | 1; room: number; damage: number; px: number; py: number; weapon?: string }
   | { e: "beam"; ship: 0 | 1; x1: number; y1: number; x2: number; y2: number; blocked: boolean; weapon?: string }
   | { e: "fireStart" | "breach"; ship: 0 | 1; room: number }
+  /** A Crystal lockdown sealed a room (on) or ended (off; `broken` when intruders shot it down). */
+  | { e: "lockdown"; ship: 0 | 1; room: number; on: boolean; broken?: boolean }
   /** A ship ran out of missiles: its missile guns powered down. */
   | { e: "noMissiles"; ship: 0 | 1 }
   /** A crew member died: who (race and name ride along, as the body may be gone from the next view). */

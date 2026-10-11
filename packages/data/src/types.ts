@@ -20,6 +20,8 @@ export interface WeaponBP {
   sysDamage: number;
   persDamage: number;
   hullBust: boolean;
+  /** Crystal Lockdown Bomb: seals the room it hits, as a Crystal crew member's lockdown does. */
+  lockdown?: boolean;
   /** Seconds to charge. */
   cooldown: number;
   power: number;

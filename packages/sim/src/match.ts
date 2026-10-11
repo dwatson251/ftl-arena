@@ -133,6 +133,7 @@ export class Match {
     this.projectilesTick(order[0].idx);
     for (const s of order) this.crewTick(s);
     for (const s of order) this.environmentTick(s);
+    for (const s of order) this.lockdownTick(s);
     for (const s of order) this.restorePower(s);
     for (const s of order) this.updateDerived(s);
     st.tick++;
@@ -180,6 +181,7 @@ export class Match {
     this.systemsTick(s);
     this.crewTick(s);
     this.environmentTick(s);
+    this.lockdownTick(s);
     this.restorePower(s);
     this.updateDerived(s);
     // Shots already in the air fly on: the beaten ship's last volleys can still land on us; ours carry on
@@ -291,6 +293,19 @@ export class Match {
         return this.mindControl(ship, cmd.room, cmd.enemy);
       case "pause":
         return this.pauseCmd(ship.idx, cmd.on);
+      case "lockdown": {
+        // A Crystal crew member of ours (here, or boarding over there) seals the room they stand in.
+        for (const s of this.state.ships) {
+          const c = s.crew.find((q) => q.id === cmd.crew && q.owner === ship.idx && q.race === "crystal" && !q.dead && q.dying === undefined && !q.beam && !q.mind);
+          if (!c) continue;
+          const room = this.geo(s).tiles.get(c.tile)?.room;
+          if ((c.lockCd ?? 0) > 0 || room === undefined) return false;
+          this.lockdown(s, room);
+          c.lockCd = RULES.lockdownRecharge;
+          return true;
+        }
+        return false;
+      }
       case "artilleryTarget": {
         const T = this.state.ships[1 - ship.idx];
         if (cmd.room !== null && !this.geo(T).roomTiles.has(cmd.room)) return false;
@@ -348,6 +363,8 @@ export class Match {
         if (d && (this.eff(d) <= 0 || d.hacked)) return false;
         if (cmd.c === "door") {
           if (cmd.door < 0 || cmd.door >= ship.doors.length) return false;
+          // Crystal-sealed doors can't be opened or closed by hand.
+          if (this.sealedBy(ship, cmd.door)) return false;
           if (cmd.open && this.doorLocked(ship, cmd.door)) return false;
           ship.doors[cmd.door] = cmd.open;
         } else {
@@ -488,7 +505,36 @@ export class Match {
 
   /** A door is open when set open, or while it's held open (crew passing, broken). */
   doorOpen(ship: ShipState, i: number): boolean {
+    if (this.sealedBy(ship, i)) return false;
     return ship.doors[i] || (ship.doorPass?.[i] ?? 0) > 0;
+  }
+
+  /** The Crystal lockdown sealing door i, if any (airlocks to space stay working). */
+  sealedBy(ship: ShipState, i: number): { room: number; t: number; bash: number } | undefined {
+    if (!ship.lockdowns?.length) return undefined;
+    const d = this.geo(ship).doors[i];
+    if (!d || d.roomA < 0 || d.roomB < 0) return undefined;
+    return ship.lockdowns.find((l) => l.room === d.roomA || l.room === d.roomB);
+  }
+
+  /** Seal a room in crystal (a Crystal crew member's power, or a Lockdown Bomb): nobody in or out for a while. */
+  lockdown(ship: ShipState, room: number): void {
+    const list = (ship.lockdowns ??= []);
+    const l = list.find((x) => x.room === room);
+    if (l) {
+      l.t = RULES.lockdownTime;
+      l.bash = 0;
+    } else list.push({ room, t: RULES.lockdownTime, bash: 0 });
+    this.state.events.push({ e: "lockdown", ship: ship.idx, room, on: true });
+  }
+
+  /** Lockdowns wear off; Crystal crew's power recharges. */
+  private lockdownTick(ship: ShipState): void {
+    for (const c of ship.crew) if (c.lockCd) c.lockCd = Math.max(0, c.lockCd - DT);
+    if (!ship.lockdowns?.length) return;
+    for (const l of ship.lockdowns) l.t -= DT;
+    for (const l of ship.lockdowns.filter((x) => x.t <= 0)) this.state.events.push({ e: "lockdown", ship: ship.idx, room: l.room, on: false });
+    ship.lockdowns = ship.lockdowns.filter((x) => x.t > 0);
   }
 
   /** Doors of the room an enemy hacking drone has locked. */
@@ -1053,6 +1099,8 @@ export class Match {
       if (sd > 0 && !casing) this.hurtSystem(sys, sd);
       if (bp.ion > 0 && !this.ionNegated(T)) this.addIon(sys, bp.ion);
     }
+    // The Crystal Lockdown Bomb seals the room it hits.
+    if (bp.lockdown) this.lockdown(T, room);
     const pers = (dmg + bp.persDamage) * RULES.crewDamagePerPoint;
     const roomTiles = new Set(g.roomTiles.get(room));
     for (const c of T.crew) {
@@ -1192,6 +1240,25 @@ export class Match {
         this.endAttack(c);
         const edge = g.adj.get(c.tile)?.find((e) => e.to === c.path[0]);
         const door = edge && edge.door >= 0 ? edge.door : -1;
+        const seal = door >= 0 ? this.sealedBy(ship, door) : undefined;
+        if (seal) {
+          // Sealed in crystal: the ship's own crew wait it out; intruders shoot the crystal until it shatters.
+          if (c.owner === ship.idx) {
+            c.task = "idle";
+            continue;
+          }
+          seal.bash += DT * Math.max(0.5, tr.combat);
+          const dd = g.doors[door];
+          c.task = "fight";
+          c.aim = [dd.px / TILE - 0.5, dd.py / TILE - 0.5];
+          c.punch = false;
+          c.face = bestFit(c.aim[0] - c.x, c.aim[1] - c.y);
+          if (seal.bash >= RULES.lockdownBreak) {
+            ship.lockdowns = (ship.lockdowns ?? []).filter((x) => x !== seal);
+            st.events.push({ e: "lockdown", ship: ship.idx, room: seal.room, on: false, broken: true });
+          }
+          continue;
+        }
         if (door >= 0 && !this.doorOpen(ship, door)) {
           const locked = this.doorLocked(ship, door);
           // Whose way is barred: the hacker's crew walk through locked doors; a doors-system pulse turns

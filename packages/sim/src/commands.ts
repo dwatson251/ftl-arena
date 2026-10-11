@@ -28,4 +28,6 @@ export type Command =
   /** Point the artillery at an enemy room (null: random rooms). */
   | { c: "artilleryTarget"; room: number | null }
   /** Pause clock: pause everyone (on) or resume your own pause (off). In a tactical timeout, off = ready. */
-  | { c: "pause"; on: boolean };
+  | { c: "pause"; on: boolean }
+  /** A Crystal crew member's Lockdown power: seals the room they're standing in (on either ship). */
+  | { c: "lockdown"; crew: number };

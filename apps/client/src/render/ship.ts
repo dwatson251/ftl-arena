@@ -403,6 +403,7 @@ export class ShipRenderer {
     const dsys = v.systems.doors;
     const working = dsys ? usable(dsys) : 0;
     const level = Math.max(1, Math.min(4, working > 0 ? working + (dsys?.manBonus ?? 0) : 1));
+    this.drawLockdowns(v, o.clock ?? time);
     // Doors under siege: the moment an enemy crew member's shot lands on one, it flashes dark red.
     const struck = new Set<number>();
     for (const cd of crew) {
@@ -555,6 +556,56 @@ export class ShipRenderer {
     // The room walls stay visible over the fog (black, as in FTL), so the layout reads with sensors out.
     for (const r of L.rooms) if (!visible(r.id)) fg.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).stroke({ color: WALL, width: 3 });
     d.end();
+  }
+
+  /** When each sealed room's crystal formed, and when crystal that's gone started to shatter. */
+  private lockSeen = new Map<number, number>();
+  private lockGone = new Map<number, number>();
+
+  /**
+   * Crystal Lockdown: shards along the sealed room's walls, growing in (FTL's crystal_1, 6 frames, 0.5 s) and
+   * held; when it ends they shatter (crystal_2, 5 frames).
+   */
+  private drawLockdowns(v: ShipView, now: number): void {
+    const on = new Set((v.lockdowns ?? []).map((l) => l.room));
+    for (const r of on) if (!this.lockSeen.has(r)) this.lockSeen.set(r, now);
+    for (const [r] of this.lockSeen) {
+      if (on.has(r)) continue;
+      this.lockSeen.delete(r);
+      this.lockGone.set(r, now);
+    }
+    const draw = (room: number, anim: string, fr: number) => {
+      const r = this.layout.rooms.find((q) => q.id === room);
+      const f = animFrame(this.db, anim, fr);
+      if (!r) return;
+      const x0 = r.x * TILE, y0 = r.y * TILE, x1 = (r.x + r.w) * TILE, y1 = (r.y + r.h) * TILE;
+      const edges: [number, number, number, number, number][] = [
+        [x0, y0, x1, y0, Math.PI], [x0, y1, x1, y1, 0], [x0, y0, x0, y1, Math.PI / 2], [x1, y0, x1, y1, -Math.PI / 2],
+      ];
+      edges.forEach(([ax, ay, bx, by, rot], e) => {
+        const len = Math.hypot(bx - ax, by - ay);
+        const n = Math.max(1, Math.round(len / 17));
+        for (let i = 0; i < n; i++) {
+          const k = (i + 0.5) / n;
+          const px = ax + (bx - ax) * k;
+          const py = ay + (by - ay) * k;
+          // Shards sit on the wall, pointing into the room.
+          const ix = px + (rot === Math.PI / 2 ? 7 : rot === -Math.PI / 2 ? -7 : 0);
+          const iy = py + (rot === Math.PI ? 7 : rot === 0 ? -7 : 0);
+          if (f) this.dyn.sprite(`lk${room}_${e}_${i}`, f, ix, iy, { anchor: 0.5, rotation: rot + Math.PI });
+          else this.dyn.gfx(`lkg${room}_${e}_${i}`).poly([ix - 5, iy + 4, ix, iy - 6, ix + 5, iy + 4]).fill({ color: 0x9fe8ff, alpha: 0.9 });
+        }
+      });
+    };
+    for (const [r, at] of this.lockSeen) draw(r, "crystal_1", Math.min(5, Math.floor(((now - at) / 0.5) * 6)));
+    for (const [r, at] of this.lockGone) {
+      const k = (now - at) / 0.45;
+      if (k >= 1) {
+        this.lockGone.delete(r);
+        continue;
+      }
+      draw(r, "crystal_2", Math.min(4, Math.floor(k * 5)));
+    }
   }
 
   private stripe(r: { id: number; x: number; y: number; w: number; h: number }, on: boolean): void {

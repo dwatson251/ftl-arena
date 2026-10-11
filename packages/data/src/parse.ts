@@ -51,6 +51,7 @@ export function parseWeapon(n: XNode, text: Record<string, string>): WeaponBP | 
     sysDamage: num(n, "sysDamage"),
     persDamage: num(n, "persDamage"),
     hullBust: num(n, "hullBust") > 0,
+    lockdown: num(n, "lockdown") > 0,
     cooldown: num(n, "cooldown", 10),
     power: num(n, "power", 1),
     cost: num(n, "cost"),

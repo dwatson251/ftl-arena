@@ -476,6 +476,10 @@ export class Battle {
         play(this.db, this.deathSound(e.race ?? c?.race ?? "human", e.name ?? c?.name ?? ""), e.ship === v.you ? 1 : 0.5);
         break;
       }
+      case "lockdown":
+        // FTL's crystal sounds as a room is sealed, and as the crystal goes.
+        play(this.db, [e.on ? "lockdown1" : "lockdown2"], e.ship === v.you ? 1 : 0.7);
+        break;
       case "noMissiles":
         // FTL's warning as the last missile goes: the launchers power down.
         if (e.ship === v.you) {
@@ -784,7 +788,7 @@ export class Battle {
   private spreadCircle(g: Graphics, bpId: string, cx: number, cy: number): void {
     const bp = this.db.weapons[bpId];
     if (bp?.type !== "BURST") return;
-    g.circle(cx, cy, bp.radius || 40).fill({ color: 0xff3030, alpha: 0.2 });
+    g.circle(cx, cy, bp.radius || 40).fill({ color: 0xff3030, alpha: 0.16 });
   }
 
   private drawTargets(own: ShipView): void {
@@ -947,8 +951,10 @@ export class Battle {
         play(this.db, this.db.weapons[p.weapon]?.sounds?.launch, mine ? 1 : 0.6);
       }
       // Out of the barrel at a steady FTL-like speed, straight along the weapon's facing (right for
-      // rotated mounts, up for upright ones), until it leaves this view.
-      const speed = p.kind === "MISSILES" ? 520 : p.kind === "BURST" ? 680 : 760;
+      // rotated mounts, up for upright ones), until it leaves this view. The speed follows the weapon's flight
+      // time (RULES.flight): a slower weapon (flak) is slower on screen too, not just longer off it.
+      const base = p.kind === "MISSILES" ? [520, 1.5] : p.kind === "BURST" ? [680, 1.1] : [760, 1.0];
+      const speed = base[0] * (base[1] / Math.max(0.1, F));
       if (t * speed < 1100 && k2 < 0) {
         const slotBp = v.ships[p.from].weapons[p.slot]?.bp ?? p.weapon;
         // Weapons leave their mount's barrel; the flagship's artillery its own guns; anything else the ship's middle.
@@ -1748,9 +1754,13 @@ export class Battle {
   }
 
   /** Crew boxes as in FTL: portrait, name, health bar; green when selected. */
+  /** Crystal crew's LOCKDOWN buttons (this frame's boxes). */
+  private lockBtns: { id: number; ready: boolean; box: Box }[] = [];
+
   private crewList(s: ShipView, crew: ShipView["crew"]): void {
     const h = this.hud;
     this.crewHit = [];
+    this.lockBtns = [];
     const g = h.gfx("crewBoxes");
     let y = 155;
     const away = new Set(crew.filter((c) => !s.crew.includes(c)).map((c) => c.id));
@@ -1778,6 +1788,16 @@ export class Battle {
       // Boarders: a small teleport mark on the box.
       if (away.has(c.id)) g.poly([84, y + 3, 92, y + 3, 92, y + 11]).fill({ color: 0xffd040 });
       this.crewHit.push({ id: c.id, box: { x: 10, y, w: 86, h: 26 } });
+      // Crystal crew: FTL's LOCKDOWN power beside their box, filling as it recharges.
+      if (c.race === "crystal" && c.owner === this.view?.you && !c.mind) {
+        const k = 1 - Math.min(1, (c.lockCd ?? 0) / RULES.lockdownRecharge);
+        const ready = k >= 1;
+        const bx = 99;
+        g.rect(bx, y + 3, 62, 20).fill({ color: 0x1a1f22, alpha: 0.95 }).stroke({ color: ready ? 0x9fe8ff : 0x5a6468, width: 2 });
+        if (!ready) g.rect(bx + 2, y + 5, 58 * k, 16).fill({ color: 0x3a6a7a, alpha: 0.8 });
+        h.text(`lk${c.id}`, ready ? "LOCKDOWN" : "CHARGING", bx + 31, y + 13, fstyle("JustinFont8", ready ? 0xdff8ff : 0x9aa3b2), [0.5, 0.5]);
+        this.lockBtns.push({ id: c.id, ready, box: { x: bx, y: y + 3, w: 62, h: 20 } });
+      }
       y += 30;
     }
     this.crewListBottom = y + 50;
@@ -2923,6 +2943,12 @@ export class Battle {
         play(this.db, ["powerUpSystem"]);
         this.say("Crew returning to saved positions");
       }
+      return;
+    }
+    for (const b of this.lockBtns) {
+      if (!inBox(p, b.box)) continue;
+      if (!b.ready) return this.fail("Not ready: lockdown power charging");
+      this.send({ c: "lockdown", crew: b.id });
       return;
     }
     for (const c of this.crewHit) {

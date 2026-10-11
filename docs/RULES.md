@@ -276,3 +276,4 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Teleported bombs | Appear 0.3 s after firing, beep about 2.1 s, go off at 2.4 s (damage then) | user + FTL sound length |
 | Unpowered guns | Lose their target, however they lost the power | user (FTL) |
 | Flak (BURST) flight | 4.4 s (a quarter of the old 1.1 s) | user (guess) |
+| Crystal Lockdown | Seals a room's doors 12 s (crew power: the crystal's room, 50 s recharge, ready after a jump; bomb: the room hit). Own crew wait; intruders shatter it with 6 s of shooting (est). Airlocks unaffected | FTL wiki + est |

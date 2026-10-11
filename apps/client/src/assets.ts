@@ -193,6 +193,9 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   // Survival jumps to a new beacon each battle: FTL's other backdrops and planets.
   for (const b of BACKDROPS) files.add(`stars/${b}.png`);
   files.add("effects/glowing_star.png");
+  // Crystal Lockdown's shards (forming and shattering).
+  files.add("people/crystal_1.png");
+  files.add("people/crystal_2.png");
   files.add("warnings/backglow_warning_red.png");
   for (const d of ["star", "pulsar", "asteroids", "nebula", "storm", "pds"]) files.add(`warnings/danger_${d}.png`);
   for (const pl of PLANETS) files.add(`stars/${pl}.png`);
