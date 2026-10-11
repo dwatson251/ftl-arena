@@ -1,0 +1,21 @@
+/** Low-air stripes are a light red and the room borders show on top of them (breach rooms, wait, close-up). */
+import { chromium } from "playwright";
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })).newPage();
+await p.goto(process.env.ARENA_URL ?? "http://localhost:5173");
+await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
+await p.click("#practice");
+await p.waitForSelector(".hg-step");
+await p.waitForTimeout(400);
+await p.locator(".hg-step", { hasText: "Launch" }).click();
+await p.click('button[data-ready="1"]');
+const force = await p.waitForSelector('button[data-force="1"]', { timeout: 1500 }).catch(() => null);
+if (force) await force.click();
+await p.waitForFunction(() => !document.querySelector(".hg-step"), null, { timeout: 20000 });
+await p.waitForTimeout(1000);
+await p.click('#debug [data-op="god"]');
+for (let i = 0; i < 6; i++) await p.click('#debug [data-op="breach"][data-who="me"]');
+await p.click('#debug [data-speed="4"]').catch(() => {});
+await p.waitForTimeout(9000);
+await p.screenshot({ path: "traces/controller/8-o2-stripes.png", clip: { x: 100, y: 200, width: 500, height: 300 } });
+await b.close();

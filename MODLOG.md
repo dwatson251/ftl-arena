@@ -699,6 +699,35 @@
 - New one-off table `SHIELD_NUDGE` in `render/ship.ts`; it moves this one down 16 px. Measured from a 2x
   close-up (`tools/align/flagship-guns.ts CIRCLE_BOMBER`): the bubble is now centred on the hull.
 
+## Round 39: hazard stack, shield centring, door hits, stripes, death cries, borders, missiles
+- **Hazard stack:**
+  - The danger icon, "DANGER!" and the imminent warning ("SOLAR FLARE / ION PULSE IMMINENT!", "ASB
+    TARGET LOCKED!") now form one stack, below the heading lines.
+  - It sits just left of the hostiles window, or at the screen's right edge once the window clears.
+  - The imminent text sits under "DANGER!"; it used to be a separate box over our ship.
+- **Shields on enemy hulls:**
+  - Each bubble is centred on the hull art's solid pixels (alpha > 200, so the glow art's halo doesn't
+    count), measured from the picture once.
+  - Measurements: FTL's bubble art and these hull images are already centred on their canvases (within
+    1-2 px), yet the bubbles read about 9-10 px high by eye.
+  - So `SHIELD_NUDGE` lowers the reported ones by 10 px: the Engi Bomber (`CIRCLE_BOMBER`) and the Energy
+    Fighter (`ZOLTAN_FIGHTER`).
+- **Doors under siege:** a door flashes dark red the moment an enemy crew member's shot lands on it.
+- **Low-air stripes:** lighter (alpha 0.45, was 0.7). They read dark over the low-air tint.
+- **Room borders** draw on top of the stripes (a walls layer above them).
+- **Death cries:**
+  - Each race's own sound now plays (Engi, Mantis, Rock, Crystal, Zoltan, Lanius; humans by name).
+  - Before, the death event only carried an id, and the body was usually gone from the view by the time
+    it was looked up, so the race fell back to human. The event now carries race and name.
+  - All these sounds are in the one-time extraction, which copies all of FTL's audio.
+- **Missiles:**
+  - Firing the last missile powers down every gun that needs missiles: they drop their target and don't
+    come back by themselves. FTL's "NO MISSILES" warning shows (`noMissiles` event).
+  - Trying to power one up says "NO MISSILES" (mouse, keys, controller).
+  - Test in `round20.test.ts`, which fails on the old code; 158 passing in total.
+- **Checks:** `tools/align/flagship-escape.ts` (hazard stack, both window states) and
+  `tools/align/o2-stripes.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

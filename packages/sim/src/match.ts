@@ -839,6 +839,22 @@ export class Match {
     }
   }
 
+  /** Out of missiles: every gun that needs them powers down (FTL's "NO MISSILES"), and stays down. */
+  private missilesOut(ship: ShipState): void {
+    const ws = ship.systems.weapons;
+    let any = false;
+    for (const w of ship.weapons) {
+      const bp = this.wbp(w.bp);
+      if (!w.powered || bp.missiles <= 0 || bp.missiles <= ship.missiles) continue;
+      w.powered = false;
+      w.want = false;
+      w.target = null;
+      if (ws) ws.power = Math.max(0, ws.power - bp.power);
+      any = true;
+    }
+    if (any) this.state.events.push({ e: "noMissiles", ship: ship.idx });
+  }
+
   private fire(ship: ShipState, slot: number): void {
     const st = this.state;
     const w = ship.weapons[slot];
@@ -849,6 +865,7 @@ export class Match {
     // Explosive Replicator: missile weapons have a chance not to use a missile.
     if (!(bp.missiles > 0 && augCount(ship, "EXPLOSIVE_REPLICATOR") && this.rng.chance(this.db.augments?.EXPLOSIVE_REPLICATOR?.value ?? 0.5))) ship.missiles -= bp.missiles;
     const shots = this.launch(ship, bp, target, w.volleys, slot, bp.boost?.type === "damage" ? bp.boost.amount * w.boost : 0);
+    if (bp.missiles > 0) this.missilesOut(ship);
     this.gainXp(this.mannedBy(ship, "weapons"), "weapons");
     if (bp.boost) w.boost = Math.min(bp.boost.count, w.boost + 1);
     w.volleys = 0;
@@ -1092,7 +1109,7 @@ export class Match {
             c.clone = 0;
             c.diedAt = st.tick;
           }
-          st.events.push({ e: "death", ship: ship.idx, crew: c.id });
+          st.events.push({ e: "death", ship: ship.idx, crew: c.id, race: c.race, name: c.name });
           if (c.drone !== undefined || c.owner !== ship.idx) leaving.push(c);
         }
         continue;

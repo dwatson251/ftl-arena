@@ -88,3 +88,29 @@ describe("playtest round 20: guns without power drop their target", () => {
     expect(me.weapons[slot].target).toBeNull();
   });
 });
+
+describe("playtest round 20: running out of missiles", () => {
+  it("the last missile fired powers every missile gun down, with a NO MISSILES warning; they can't be powered again", () => {
+    const tdb = placeholderDb();
+    const launcher = Object.values(tdb.weapons).find((w) => w.missiles > 0);
+    if (!launcher) return; // (the placeholder set has no missile weapon to test with)
+    const lo = { ...baseLoadout(tdb, "PH_SKIFF"), weapons: [launcher.id], missiles: 1 };
+    const m = new Match(tdb, DEFAULT_CONFIG, [lo, baseLoadout(tdb, "PH_SKIFF")], ["a", "b"]);
+    const me = m.state.ships[0];
+    m.push(0, { c: "weaponPower", slot: 0, on: true });
+    m.push(0, { c: "target", slot: 0, target: { kind: "room", room: 0 } });
+    m.push(0, { c: "autofire", slot: 0, on: true });
+    let warned = false;
+    for (let i = 0; i < 30 * 30 && me.missiles > 0; i++) {
+      m.step();
+      warned ||= m.state.events.some((e) => e.e === "noMissiles" && e.ship === 0);
+    }
+    expect(me.missiles).toBe(0);
+    expect(me.weapons[0].powered).toBe(false);
+    expect(me.weapons[0].target).toBeNull();
+    expect(warned).toBe(true);
+    m.push(0, { c: "weaponPower", slot: 0, on: true });
+    m.step();
+    expect(me.weapons[0].powered).toBe(false);
+  });
+});

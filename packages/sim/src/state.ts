@@ -290,7 +290,10 @@ export type MatchEvent =
   | { e: "hit"; ship: 0 | 1; room: number; damage: number; px: number; py: number; weapon?: string }
   | { e: "beam"; ship: 0 | 1; x1: number; y1: number; x2: number; y2: number; blocked: boolean; weapon?: string }
   | { e: "fireStart" | "breach"; ship: 0 | 1; room: number }
-  | { e: "death"; ship: 0 | 1; crew: number }
+  /** A ship ran out of missiles: its missile guns powered down. */
+  | { e: "noMissiles"; ship: 0 | 1 }
+  /** A crew member died: who (race and name ride along, as the body may be gone from the next view). */
+  | { e: "death"; ship: 0 | 1; crew: number; race?: string; name?: string }
   | { e: "clone"; ship: 0 | 1; crew: number }
   /** A defense drone shot down a projectile (ship = the defender) / an anti-drone killed a drone. */
   | { e: "intercept"; ship: 0 | 1; projectile: number; drone: number }

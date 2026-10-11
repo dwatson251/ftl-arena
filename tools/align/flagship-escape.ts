@@ -35,4 +35,7 @@ await p.screenshot({ path: `${out}/1-hazard-warning.png` });
 await p.evaluate(() => { const el = document.querySelector<HTMLButtonElement>('#debug [data-op="hull"][data-who="them"][data-delta="-5"]'); for (let i = 0; i < 14; i++) el?.click(); });
 const t0 = Date.now();
 for (let i = 0; Date.now() - t0 < 5500; i++) await p.screenshot({ path: `${out}/2-escape${String(i).padStart(2, "0")}-${Date.now() - t0}ms.jpg`, type: "jpeg", quality: 60, clip: { x: 640, y: 120, width: 310, height: 410 } });
+// After the escape the hostiles window clears; the hazard icon moves to the screen's right edge.
+await p.waitForTimeout(3000);
+await p.screenshot({ path: `${out}/3-cleared.png` });
 await b.close();

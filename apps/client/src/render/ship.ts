@@ -43,11 +43,52 @@ export function attackPhase(c: CrewState, time: number): number | null {
 /** Share of health below which a crew member's box turns red and the low-health warning beeps. */
 export const LOW_HP = 0.25;
 
-/** Shield bubble offsets (ship pixels) for hulls whose art isn't centred on the hull (measured by eye). */
+/**
+ * Extra shield bubble offsets (ship pixels), on top of centring on the solid art, where it still reads high
+ * by eye (the hull's visual weight sits below its outline). Playtest-reported, tuned from 2x close-ups.
+ */
 const SHIELD_NUDGE: Record<string, { x?: number; y?: number }> = {
-  // The Engi Bomber's art has more empty canvas below the hull than above: the bubble sat high.
-  CIRCLE_BOMBER: { y: 16 },
+  CIRCLE_BOMBER: { y: 10 }, // Engi Bomber
+  ZOLTAN_FIGHTER: { y: 10 }, // Energy Fighter
 };
+
+/** The centre of a picture's solid pixels, in its own pixels; once per picture. (Solid: FTL's "glow" hull art
+ *  has a faint halo round the ship, which mustn't count.) */
+const opaqueCache = new Map<string, { x: number; y: number } | null>();
+function opaqueCentre(tex: Texture): { x: number; y: number } | null {
+  const key = String(tex.source.uid);
+  if (opaqueCache.has(key)) return opaqueCache.get(key)!;
+  let out: { x: number; y: number } | null = null;
+  try {
+    const res = tex.source.resource as CanvasImageSource | undefined;
+    const w = tex.source.pixelWidth;
+    const h = tex.source.pixelHeight;
+    if (res && w > 0 && h > 0) {
+      const cv = document.createElement("canvas");
+      cv.width = w;
+      cv.height = h;
+      const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+      ctx.drawImage(res, 0, 0);
+      const px = ctx.getImageData(0, 0, w, h).data;
+      let x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++)
+          if (px[(y * w + x) * 4 + 3] > 200) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+      // (Texture pixels to art pixels: the source may be at a different resolution.)
+      const k = tex.frame.width / w;
+      if (x1 >= 0) out = { x: ((x0 + x1 + 1) / 2) * k, y: ((y0 + y1 + 1) / 2) * k };
+    }
+  } catch {
+    out = null;
+  }
+  opaqueCache.set(key, out);
+  return out;
+}
 
 export interface ShipDrawOpts {
   hover: { room: number; door: number };
@@ -105,6 +146,8 @@ export class ShipRenderer {
   private doorAnim: { open: boolean; t: number }[] = [];
   private stripes = new Map<number, TilingSprite>();
   private stripeRoot = new Container();
+  /** The room walls again, over the low-air stripes (so borders always show). */
+  private wallsG = new Graphics();
 
   constructor(public db: GameDB, public shipId: string, public enemy: boolean, public upright = 0) {
     const bp = db.ships[shipId];
@@ -115,7 +158,7 @@ export class ShipRenderer {
     this.marks = new Imm(this.marksRoot);
     this.thrusters = new Imm(this.thrusterRoot);
     this.weaponsImm = new Imm(this.weaponRoot);
-    this.root.addChild(this.shieldG, this.thrusterRoot, this.weaponRoot, this.hull, this.floorG, this.interior, this.stripeRoot, this.fog, this.dynRoot, this.overlay, this.marksRoot, this.gibRoot);
+    this.root.addChild(this.shieldG, this.thrusterRoot, this.weaponRoot, this.hull, this.floorG, this.interior, this.stripeRoot, this.wallsG, this.fog, this.dynRoot, this.overlay, this.marksRoot, this.gibRoot);
   }
 
   /** img/<dir>/<img>_<suffix>.png for this hull (player hulls in ship/, enemy hulls in ships_glow/). */
@@ -183,6 +226,8 @@ export class ShipRenderer {
       g.stroke({ color: GRID, width: 1 });
     }
     for (const r of L.rooms) g.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).stroke({ color: WALL, width: 3 });
+    const wg = this.wallsG.clear();
+    for (const r of L.rooms) wg.rect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE).stroke({ color: WALL, width: 3 });
     // Interiors for the systems actually installed (a bought clone bay replaces the medbay art).
     for (const s of bp.systems) {
       const installed = v ? !!v.systems[s.id] : s.start;
@@ -213,10 +258,16 @@ export class ShipRenderer {
       this.shieldArt = new Sprite(sh);
       this.shieldArt.anchor.set(0.5);
       this.shieldArt.position.set(c.x + L.ellipse.x, c.y + L.ellipse.y);
-      // Enemy layouts' ellipse offsets are for FTL's own window placement; centre on the hull instead.
-      if (bp.enemy) this.shieldArt.position.set(L.img.x + L.img.w / 2, L.img.y + L.img.h / 2);
-      // The flagship's art is so big that its canvas centre sits above the hull: centre on its rooms instead.
-      if (/^BOSS_/.test(this.shipId)) this.shieldArt.position.set(c.x, c.y);
+      // Enemy layouts' ellipse offsets are for FTL's own window placement; centre on the hull instead: on the
+      // visible part of its art (hull images often have uneven empty canvas round them, which would put the
+      // bubble off-centre), measured from the picture itself.
+      if (bp.enemy) {
+        const base = texNow(this.art("base"));
+        const vis = base ? opaqueCentre(base) : null;
+        if (vis) this.shieldArt.position.set(L.img.x + vis.x, L.img.y + vis.y);
+        else if (/^BOSS_/.test(this.shipId)) this.shieldArt.position.set(c.x, c.y);
+        else this.shieldArt.position.set(L.img.x + L.img.w / 2, L.img.y + L.img.h / 2);
+      }
       // One-off nudges where a hull's art canvas has uneven empty space, so its centre isn't the hull's.
       const nudge = SHIELD_NUDGE[this.shipId];
       if (nudge) this.shieldArt.position.set(this.shieldArt.position.x + (nudge.x ?? 0), this.shieldArt.position.y + (nudge.y ?? 0));
@@ -255,9 +306,9 @@ export class ShipRenderer {
     const up = this.upright;
     const d = this.dyn;
     const exploded = o.exploded ?? null;
-    for (const n of [this.hull, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.weaponRoot, this.thrusterRoot]) n.visible = exploded === null;
+    for (const n of [this.hull, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.wallsG, this.weaponRoot, this.thrusterRoot]) n.visible = exploded === null;
     // Dying: the exterior sprite only (FTL hides the rooms as a ship goes up).
-    if (o.exterior && exploded === null) for (const n of [this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot]) n.visible = false;
+    if (o.exterior && exploded === null) for (const n of [this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.wallsG]) n.visible = false;
     // Cloaking: fade toward FTL's half-there look (eased so it doesn't pop).
     const want = o.cloaked ? 0.4 : 1;
     this.root.alpha += (want - this.root.alpha) * 0.15;
@@ -352,6 +403,16 @@ export class ShipRenderer {
     const dsys = v.systems.doors;
     const working = dsys ? usable(dsys) : 0;
     const level = Math.max(1, Math.min(4, working > 0 ? working + (dsys?.manBonus ?? 0) : 1));
+    // Doors under siege: the moment an enemy crew member's shot lands on one, it flashes dark red.
+    const struck = new Set<number>();
+    for (const cd of crew) {
+      const c = cd.c;
+      if (c.owner === v.idx || c.task !== "fight" || !c.aim || c.punch) continue;
+      const ph = attackPhase(c, time);
+      if (ph === null || ph < SHOT_AT + 0.18 || ph > SHOT_AT + 0.4) continue;
+      const di = this.geo.doors.findIndex((dr) => Math.abs(dr.px / TILE - 0.5 - c.aim![0]) < 0.05 && Math.abs(dr.py / TILE - 0.5 - c.aim![1]) < 0.05);
+      if (di >= 0) struck.add(di);
+    }
     this.geo.doors.forEach((dr, i) => {
       // Open when set open, or held open for a moment (crew walking through, a broken door).
       const open = v.doors[i] || (v.doorPass?.[i] ?? 0) > 0;
@@ -368,11 +429,11 @@ export class ShipRenderer {
       const hot = o.hover.door === i;
       if (doorTex) {
         d.sprite(`door${i}`, frame(doorTex, f * 35, (level - 1) * 35, 35, 35), dr.px, dr.py, {
-          anchor: 0.5, rotation: dr.vertical ? 0 : Math.PI / 2, tint: hot ? 0xfff2a0 : 0xffffff,
+          anchor: 0.5, rotation: dr.vertical ? 0 : Math.PI / 2, tint: struck.has(i) ? 0x8a1a14 : hot ? 0xfff2a0 : 0xffffff,
         });
       } else {
         const gg = d.gfx(`doorg${i}`);
-        const col = hot ? 0xffe28a : 0xe08a2c;
+        const col = struck.has(i) ? 0x8a1a14 : hot ? 0xffe28a : 0xe08a2c;
         if (dr.vertical) gg.rect(dr.px - 3, dr.py - 15 + f * 3, 6, 30 - f * 6).fill({ color: col });
         else gg.rect(dr.px - 15 + f * 3, dr.py - 3, 30 - f * 6, 6).fill({ color: col });
       }
@@ -512,7 +573,8 @@ export class ShipRenderer {
       this.stripeRoot.addChild(s);
     }
     s.visible = true;
-    s.alpha = 0.7;
+    // A light red: FTL's stripes over the low-air tint read too dark at full strength.
+    s.alpha = 0.45;
   }
 
   private tileAnim(key: string, k: string, t: Texture | null, fallback: number, alpha: number): void {

@@ -471,10 +471,18 @@ export class Battle {
         if (e.ship === v.you) this.say("Drone destroyed", 0xff8a70);
         break;
       case "death": {
+        // Each race's own death cry: the event says who it was (the body may already be gone from the view).
         const c = v.ships.flatMap((s) => s.crew).find((q) => q.id === e.crew);
-        play(this.db, this.deathSound(c?.race ?? "human", c?.name ?? ""), e.ship === v.you ? 1 : 0.5);
+        play(this.db, this.deathSound(e.race ?? c?.race ?? "human", e.name ?? c?.name ?? ""), e.ship === v.you ? 1 : 0.5);
         break;
       }
+      case "noMissiles":
+        // FTL's warning as the last missile goes: the launchers power down.
+        if (e.ship === v.you) {
+          play(this.db, ["powerDownSystem"]);
+          this.say("NO MISSILES", 0xff5a50);
+        }
+        break;
       case "clone":
         play(this.db, ["cloneArrive"], e.ship === v.you ? 1 : 0.5);
         break;
@@ -1177,14 +1185,23 @@ export class Battle {
     this.hud.text("hzT", txt, 640, 44, fstyle("JustinFont10", soon ? 0xff9060 : 0xd8c8a8, { stroke: 0x101010 }), [0.5, 0]);
     // FTL's environmental danger icon for this beacon (img/warnings/danger_*), "DANGER!" pulsing beneath it.
     const icon = { sun: "danger_star", pulsar: "danger_pulsar", asteroids: "danger_asteroids", nebula: "danger_nebula", storm: "danger_storm", asb: "danger_pds", none: "" }[hz.kind];
-    const ix = 350;
+    // As far right as there's room, below the heading lines: just left of the hostiles window, or at the
+    // screen's right edge once it has cleared. The imminent warning sits right under "DANGER!".
+    const ix = (this.windowCleared ? W : WIN.x) - 70;
+    const iy = 62;
     const it = texNow(`warnings/${icon}.png`);
-    if (it) this.hud.sprite("hzI", it, ix, 4, { anchor: [0.5, 0] });
-    const dt = this.hud.text("hzD", "DANGER!", ix, 62, fstyle("JustinFont10", 0xff5a4a, { stroke: 0x200808 }), [0.5, 0]);
+    if (it) this.hud.sprite("hzI", it, ix, iy, { anchor: [0.5, 0] });
+    const dt = this.hud.text("hzD", "DANGER!", ix, iy + 60, fstyle("JustinFont10", 0xff5a4a, { stroke: 0x200808 }), [0.5, 0]);
     dt.alpha = 0.6 + 0.4 * Math.sin(this.time * 5);
     // Just before it strikes, FTL's red warning: a flare or pulse coming, or the batteries locked on us.
     const ours = hz.kind !== "asb" || hz.asbTarget === v.you;
-    if (soon && ours) this.warning("hzW", hz.kind === "sun" ? ["SOLAR FLARE", "IMMINENT!"] : hz.kind === "pulsar" ? ["ION PULSE", "IMMINENT!"] : ["ASB TARGET", "LOCKED!"], 0);
+    if (soon && ours) {
+      const [l1, l2] = hz.kind === "sun" ? ["SOLAR FLARE", "IMMINENT!"] : hz.kind === "pulsar" ? ["ION PULSE", "IMMINENT!"] : ["ASB TARGET", "LOCKED!"];
+      const a = Math.min(1, 0.85 + 0.35 * Math.sin(this.time * 6));
+      const st = fstyle("JustinFont12Bold", 0xff5a4a, { stroke: 0x200808, strokeWidth: 3 });
+      this.hud.text("hzW1", l1, ix, iy + 80, st, [0.5, 0]).alpha = a;
+      this.hud.text("hzW2", l2, ix, iy + 98, st, [0.5, 0]).alpha = a;
+    }
   }
 
   /** One of FTL's red warnings over our ship (red glow, two pulsing lines); `slot` stacks them downward. */
@@ -1263,10 +1280,7 @@ export class Battle {
     const own = v.ships[v.you];
     // (Not while jumping: the ship is fading out of the picture.)
     if (this.jumpAt !== null || !own.crew.some((c) => c.owner !== v.you && !c.dead && c.dying === undefined)) return;
-    // Below a hazard's warning when both are up.
-    const hz = v.hazard;
-    const hzUp = !!hz && (hz.kind === "sun" || hz.kind === "pulsar" || (hz.kind === "asb" && hz.asbTarget === v.you)) && hz.next <= 5;
-    this.warning("in", ["INTRUDERS", "DETECTED"], hzUp ? 1 : 0);
+    this.warning("in", ["INTRUDERS", "DETECTED"], 0);
   }
 
   /** This battle's beacon (Survival): backdrop, maybe a planet and where it sits (0..1 of the screen). */
@@ -2728,6 +2742,7 @@ export class Battle {
       if (!it) return this.padTap(b, v);
       const room = (it.value as { room: number }).room;
       const bp = this.db.weapons[w.bp];
+      if (!w.powered && (bp?.missiles ?? 0) > own.missiles) return this.fail("NO MISSILES");
       if (!w.powered) this.send({ c: "weaponPower", slot, on: true });
       const target: WeaponTarget = bp?.type === "BEAM" ? { kind: "beam", ...this.beamThrough(room, bp.length) } : { kind: "room", room };
       // A wheel pick always autofires.
@@ -3153,7 +3168,7 @@ export class Battle {
     if (!w.powered) {
       const ws = own.systems.weapons;
       if (ws && ws.ion > 0) return this.fail("Weapons are locked by ion damage");
-      if ((bp?.missiles ?? 0) > own.missiles) return this.fail("No missiles left for this weapon");
+      if ((bp?.missiles ?? 0) > own.missiles) return this.fail("NO MISSILES");
       const load = own.weapons.filter((q) => q.powered).reduce((a, q) => a + (this.db.weapons[q.bp]?.power ?? 1), 0);
       const need = load + (bp?.power ?? 1);
       const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
