@@ -1202,6 +1202,12 @@ export class Hangar {
 
   private onChange(e: Event): void {
     const t = e.target as HTMLInputElement | HTMLSelectElement;
+    // A picked option is final: let go of the dropdown so the page repaints at once (the focus guard holds
+    // renders back only for fields still being typed in).
+    if (t instanceof HTMLSelectElement) setTimeout(() => {
+      t.blur();
+      this.render();
+    }, 0);
     if ("auto" in t.dataset) {
       // Autonomous ships: only the hull counts, and builds may go without crew.
       this.hooks.setConfig({ winCondition: (t as HTMLInputElement).checked ? "auto" : "hull" });

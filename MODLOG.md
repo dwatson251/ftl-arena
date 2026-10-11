@@ -459,6 +459,15 @@
 - Tests: `survival.test.ts` (12) and `autonomous.test.ts` (3); 133 in total. Playwright:
   `tools/align/survival.ts`.
 
+## Round 24: dropdowns repaint at once
+- **Bug:** picking a dropdown option (Pausing, Game mode, Ships, Hazard, the bot's opponent, battle music)
+  didn't repaint the page until another click. The hangar's focus guard holds renders back while a form
+  field has focus, so typing isn't interrupted, and a picked dropdown kept focus.
+- **Fix:** a changed `<select>` lets go of focus straight away and the page repaints. The value goes to the
+  server as before, and its lobby update repaints again with nothing in the way.
+- **Check:** `tools/align/dropdowns.ts` picks options with the select focused, as a mouse pick leaves it.
+  It failed on the old build (no timeout fields, tabs still open) and passes now.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
