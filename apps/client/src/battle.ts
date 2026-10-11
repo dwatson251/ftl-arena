@@ -451,10 +451,8 @@ export class Battle {
         this.say(`Tactical timeout in ${e.in} s`, 0x9fd8ff);
         break;
       case "pause":
-        // Time stopping: a cloak's whoosh as the music winds down to a slow, low drone; the decloak as it
-        // spins back up.
+        // Time stopping: the music winds down to a slow, low drone (like a record slowing), and spins back up.
         timeStop(e.on);
-        play(this.db, [e.on ? "cloak" : "decloak"], 1);
         if (e.on) stopLoops();
         if (!e.on) this.say(e.kind === "tactical" ? "Timeout over" : "Resumed", 0x9fd8ff);
         break;
@@ -2549,6 +2547,8 @@ export class Battle {
   private wheelBtn: number | null = null;
   private pausedByWheel = false;
   private padSeen = false;
+  /** Open or close the match menu (main.ts: Escape, or the controller's Back/View button). */
+  onMenu: () => void = () => {};
   /** Tell the server which crew the player takes from the AI (teleport picks) or hands back (main.ts sends it). */
   onControlCrew: (crew: number[], on: boolean) => void = () => {};
 
@@ -3155,7 +3155,13 @@ export class Battle {
       e.preventDefault();
       this.togglePause();
     } else if (/^[1-4]$/.test(e.key)) this.clickWeapon(Number(e.key) - 1, false);
-    else if (e.key === "Escape") this.disarm();
+    // Escape: first lets go of whatever is being aimed; with nothing in hand it opens the match menu.
+    else if (e.key === "Escape") {
+      if (this.armed !== null || this.beamStart || this.teleMode) {
+        this.disarm();
+        this.teleMode = null;
+      } else this.onMenu();
+    }
     else if (e.key.toLowerCase() === "a" && this.armed !== null) this.send({ c: "autofire", slot: this.armed, on: !own.weapons[this.armed].autofire });
     // (M used to switch sound effects off, saved for good: one stray press and they were gone with nothing
     // on screen to say why. Off for now; setSound() is still there if a visible toggle comes back.)

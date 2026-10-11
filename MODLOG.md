@@ -601,6 +601,23 @@
 - **Check:** `tools/align/resize.ts`. On the old build, one resize to 900x560 left the 1280x720 layout
   spilling past the canvas; now it fits at once.
 
+## Round 32: reward sounds, the Escape menu, a quieter pause
+- **Survival cards:**
+  - FTL's crew level-up jingle (`levelup`, bp_SFX_LevelUp) plays once as the hand comes up.
+  - The menu hover beep plays as the pointer or the controller ring lands on a card.
+  - The store's buy sound (`buy`) plays when a card is taken.
+- **Escape menu** (any mode; also Back/View on a controller, where B closes it): Resume or Quit match.
+  - **Escape** still lets go of an aimed weapon or teleport/hack/mind first.
+  - **Pausing:** the menu pauses only when the match allows it (a pause clock with time left; practice's is
+    unlimited). The clock then counts down as usual, and the menu says how much is left. Otherwise it sits
+    over the battle while it runs on. Closing it un-pauses only a pause it made.
+  - **Quitting** goes to the main menu (in a versus match the menu says it forfeits).
+  - **Fix found on the way:** the forfeit's last snapshot used to re-open the battle after quitting. It's
+    now ignored until a new battle starts.
+- **Pause sound:** pausing no longer plays the cloak/decloak sounds. The music winding down is enough.
+- **Check:** `tools/align/escmenu.ts` (pauses in practice, runs on with pausing off, Quit reaches the main
+  menu).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

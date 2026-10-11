@@ -158,6 +158,7 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 | Doors | click a door; `Z`/`X` open/close all. Opening again when every inner door is open opens the airlocks and vents the ship |
 | Stations | the two buttons under the crew list save positions and return crew to them |
 | Music on/off | `N` |
+| Match menu (resume / quit) | `Escape` |
 | Reorder weapons | drag a weapon box onto another slot (the guns swap mounts) |
 | Autofire | the AUTOFIRE button sets the default for new targets (yellow reticle); Shift-click a target to do the opposite |
 | Weapons system | click its icon to power the next weapon, right-click to unpower the last |

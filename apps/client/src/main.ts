@@ -12,7 +12,7 @@ void presets.init();
 import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar, hangarAfterBattle } from "./hangar.ts";
 import { Net } from "./net.ts";
-import { controllerEnabled, onPad, pad, setControllerEnabled, startPad } from "./controller.ts";
+import { BTN, controllerEnabled, onPad, pad, setControllerEnabled, startPad } from "./controller.ts";
 import { menuNav } from "./menunav.ts";
 
 const ui = document.getElementById("ui")!;
@@ -126,6 +126,7 @@ function onMsg(m: ServerMsg): void {
       break;
     }
     case "start":
+      quitMatch = false;
       if (battle) endBattle(); // debug restart, or Survival's next battle
       startBattle(m.you);
       if (battle && lobby?.survival) {
@@ -138,8 +139,12 @@ function onMsg(m: ServerMsg): void {
       break;
     case "snap": {
       const wasOver = lastView?.winner != null;
+      // The match menu says whether the game is paused: redraw it when that changes.
+      if (escMenu && !!lastView?.pause !== !!m.view.pause) setTimeout(render, 0);
       lastView = m.view;
       debugInfo = m.debug ?? null;
+      // Quit out of a battle: its last snapshots (the forfeit) mustn't bring it back.
+      if (!battle && quitMatch) return;
       if (!battle) startBattle(m.view.you);
       battle!.onSnapshot(m.view);
       if (debugInfo) {
@@ -187,6 +192,62 @@ function arrive(): void {
   });
 }
 
+/** Which Survival hand has had its fanfare. */
+let rewardJingleFor = -1;
+
+/** The match menu (Escape, or the controller's Back/View): resume or quit to the main menu. */
+let escMenu = false;
+/** The menu paused the game (and so un-pauses it when it closes). */
+let menuPaused = false;
+/** We quit the battle from the menu: ignore its snapshots until a new one starts. */
+let quitMatch = false;
+
+function openMenu(): void {
+  if (!battle || escMenu) return;
+  escMenu = true;
+  const v = lastView;
+  // Pause only if this match lets us (a pause clock with time left; practice's is unlimited). Otherwise the
+  // menu sits over the battle while it carries on.
+  if (v && v.winner === null && !v.pause && v.config.pause === "clock" && (v.pauseBank?.[v.you] ?? 0) !== 0) {
+    net.send({ t: "cmd", cmd: { c: "pause", on: true } });
+    menuPaused = true;
+  }
+  play(db!, ["hoverBeep"], 0.8);
+  render();
+}
+
+function closeMenu(): void {
+  if (!escMenu) return;
+  escMenu = false;
+  if (menuPaused && lastView?.pause?.by === lastView?.you && lastView) net.send({ t: "cmd", cmd: { c: "pause", on: false } });
+  menuPaused = false;
+  render();
+}
+
+function menuOverlay(): HTMLDivElement {
+  const o = document.createElement("div");
+  o.className = "overlay esc-menu";
+  const v = lastView;
+  const versus = !!lobby && !lobby.practice && v?.winner === null;
+  const bank = v?.pauseBank?.[v.you];
+  const status = v?.pause || menuPaused
+    ? bank !== undefined && bank >= 0 && v?.pause?.by === v?.you ? `Paused: your pause clock is running (${Math.ceil(bank)} s left).` : "Paused."
+    : "The battle carries on behind this menu (this match doesn't allow pausing now).";
+  o.innerHTML = `<div class="menu"><h1>MENU</h1>
+    <p class="note">${esc(status)}</p>
+    <div class="row" style="justify-content:center"><button class="primary" id="resume">Resume</button><button id="quit">Quit match</button></div>
+    <p class="note">${versus ? "Quitting now forfeits the battle." : "Quitting goes back to the main menu."} Escape closes this menu.</p></div>`;
+  o.querySelector("#resume")!.addEventListener("click", closeMenu);
+  o.querySelector("#quit")!.addEventListener("click", () => {
+    escMenu = menuPaused = false;
+    quitMatch = true;
+    net.send({ t: "leave" });
+    endBattle();
+    render();
+  });
+  return o;
+}
+
 /** The reward cards after a Survival win (the sim is paused until one is picked). */
 function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement {
   const o = document.createElement("div");
@@ -200,14 +261,19 @@ function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement 
     <p class="note">Choose one. Your ship jumps to the next fight as soon as you do.</p>
     <div class="rcards">${cards}</div>
     <p class="note">Score ${sv.score} · ${sv.won} won${sv.bosses ? ` · ${sv.bosses} boss${sv.bosses > 1 ? "es" : ""}` : ""}</p></div>`;
-  o.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) =>
+  o.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) => {
+    // FTL's menu hover beep as the pointer (or the controller's ring) lands on a card; the store's buy sound
+    // when one is taken.
+    const hover = () => !b.disabled && play(db!, ["hoverBeep"], 0.7);
+    b.addEventListener("mouseenter", hover);
+    b.addEventListener("focus", hover);
     b.addEventListener("click", () => {
       o.querySelectorAll("button").forEach((x) => (x.disabled = true));
       b.classList.add("picked");
-      play(db!, ["acceptUpgrades"], 1);
+      play(db!, ["buy"], 1);
       net.send({ t: "pick", card: Number(b.dataset.pick) });
-    }),
-  );
+    });
+  });
   return o;
 }
 
@@ -251,6 +317,7 @@ function startBattle(you: 0 | 1): void {
   hangarAfterBattle();
   battle = new Battle(app, db, (cmd) => net.send({ t: "cmd", cmd }), you);
   battle.onEndReady = () => render();
+  battle.onMenu = () => (escMenu ? closeMenu() : openMenu());
   battle.onControlCrew = (crew, on) => net.send({ t: "controlCrew", crew, on });
   app.stage.addChild(battle.stage);
   layoutBattle();
@@ -272,6 +339,7 @@ function endLocally(reason: string): void {
 
 function endBattle(): void {
   localEnd = false;
+  escMenu = menuPaused = false;
   lostAt = oppGoneAt = null;
   if (!battle) return;
   app.stage.removeChild(battle.stage);
@@ -414,7 +482,14 @@ function render(): void {
     for (const n of [...ui.children]) if (n.id !== "debug") n.remove();
     const v = lastView;
     const sv = lobby?.survival;
-    if (sv && lobby?.phase === "reward" && sv.offer) ui.appendChild(rewardOverlay(sv));
+    if (sv && lobby?.phase === "reward" && sv.offer) {
+      ui.appendChild(rewardOverlay(sv));
+      // A short fanfare as the cards come up (FTL's crew level-up jingle), once per hand.
+      if (rewardJingleFor !== sv.battle) {
+        rewardJingleFor = sv.battle;
+        play(db!, ["levelup"], 1);
+      }
+    }
     if (sv && sv.over && v && v.winner !== null && battle.endReady()) {
       const o = gameOverOverlay(sv);
       ui.appendChild(o);
@@ -443,6 +518,7 @@ function render(): void {
         render();
       });
     }
+    if (escMenu) ui.appendChild(menuOverlay());
     if (error) ui.insertAdjacentHTML("beforeend", `<div class="toast">${esc(error)}</div>`);
     const left = (at: number, of: number) => Math.max(0, Math.ceil(of - (performance.now() - at) / 1000));
     if (lostAt !== null) ui.insertAdjacentHTML("beforeend", `<div class="toast">Lost the connection to the host. Reconnecting… (${left(lostAt, LOST_FORFEIT_S)} s)</div>`);
@@ -554,7 +630,7 @@ function settingsBody(): string {
       <div><b>RB</b> teleport: hold to send a crew member to the pad, tap to beam over</div>
       <div><b>LT</b> hold to bring a boarder back · <b>RT</b> hacking: hold to aim the drone, tap to pulse</div>
       <div><b>D-pad ↑</b> mind control (hold) · <b>←</b> cloak · <b>→</b> battery</div>
-      <div><b>LB</b> + a button: power that system or gun down · <b>Start</b> pause</div>
+      <div><b>LB</b> + a button: power that system or gun down · <b>Start</b> pause · <b>Back/View</b> match menu</div>
       <div>Menus: <b>D-pad</b> moves, <b>A</b> selects (and edits numbers/lists: D-pad to change, A to submit), <b>B</b> backs out</div>
     </div>` : ""}`;
 }
@@ -703,6 +779,12 @@ onPad((p) => {
   if (p.connected !== padSeen) {
     padSeen = p.connected;
     if (!battle && !lobby && mode === "settings") render();
+  }
+  // Back/View opens (or closes) the match menu; B closes it too.
+  if (battle && (p.down(BTN.BACK) || (escMenu && p.down(BTN.B)))) {
+    if (escMenu) closeMenu();
+    else if (p.down(BTN.BACK)) openMenu();
+    return;
   }
   if (!battle || ui.querySelector(".overlay")) menuNav(p, ui);
 });
