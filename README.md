@@ -103,6 +103,17 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
 - **Where they live:** this computer only: the desktop app's data folder (`presets.json`), or the
   browser's storage.
 
+## Scrap costs (Arena)
+- **None:** the stock hull is free; only what you add costs scrap.
+- **Ship expenses:** hulls cost scrap. The price is their stock crew, weapons and systems, plus a premium
+  for how late FTL unlocks them (Kestrel A 725).
+- **Tournament:** hull prices, plus weapons and augments priced by FTL rarity, and only items a normal run
+  can give you (stock fits excepted).
+- **Allowance:** switching to either raises the allowance to 1500.
+- **Unobtainable items:** a separate rule, "Allow unobtainable crew, weapons and augments", gives the same
+  ban in any Arena match.
+- **Tuning:** all the numbers are in `packages/sim/src/pricing.ts`.
+
 ## Survival (single player)
 - **Starting a run:** in a practice lobby, set **Game mode** to *Survival* on the Rules step. Pick a ship
   on the Ship step and you go straight to Launch. You fly its stock FTL loadout: no building and no

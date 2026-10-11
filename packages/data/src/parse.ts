@@ -127,7 +127,7 @@ function systemText(s: SystemBP, n: XNode, text: Record<string, string>): Partia
 export function parseCrew(n: XNode, text: Record<string, string>): CrewBP {
   const c = kid(kids(kid(n, "colorList"), "layer")[0], "color");
   const shirt = c ? ((+c.attrs.r & 255) << 16) | ((+c.attrs.g & 255) << 8) | (+c.attrs.b & 255) : undefined;
-  return { id: n.attrs.name, title: title(n, "title", text) || n.attrs.name, cost: num(n, "cost", 50), shirt };
+  return { id: n.attrs.name, title: title(n, "title", text) || n.attrs.name, cost: num(n, "cost", 50), shirt, rarity: num(n, "rarity", 1) };
 }
 
 const MANNED = new Set(["pilot", "shields", "weapons", "engines", "sensors", "doors"]);

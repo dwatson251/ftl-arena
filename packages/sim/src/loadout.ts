@@ -3,6 +3,7 @@ import { baseSystemId, SUBSYSTEMS, V1_SYSTEMS, type GameDB, type SystemId } from
 import { geometry, key } from "./geometry.ts";
 import { raceOf, RACES, RULES, SKILLS, type SkillId } from "./rules.ts";
 import type { CrewState, ShipState, SystemState } from "./state.ts";
+import { itemPrice, obtainable, shipPrice, type PriceRules } from "./pricing.ts";
 
 export interface Loadout {
   ship: string;
@@ -154,14 +155,31 @@ export function buyableWeapons(db: GameDB): string[] {
     .map((w) => w.id);
 }
 
-/** `crewless`: autonomous ships are on, so a build may start with no crew at all. */
-export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string[] = [], unlimited = false, crewless = false): Priced {
+/**
+ * `crewless`: autonomous ships are on, so a build may start with no crew at all. `rules`: the Scrap costs
+ * mode (a price for the hull, Tournament's rarity prices) and whether unobtainable items are allowed.
+ */
+export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string[] = [], unlimited = false, crewless = false, rules: PriceRules = {}): Priced {
   const errors: string[] = [];
   const lines: PriceLine[] = [];
   const ship = db.ships[l.ship];
   if (!ship) return { ok: false, total: 0, lines, errors: [`unknown ship ${l.ship}`] };
   if (!db.hangar.includes(l.ship) || (pool.length && !pool.includes(l.ship))) errors.push(`${l.ship} is not allowed`);
   const base = baseLoadout(db, l.ship);
+  const costs = rules.costs ?? "none";
+  // Ship Expenses / Tournament: the hull itself costs scrap.
+  if (costs !== "none") lines.push({ item: `Ship: ${ship.title}`, scrap: shipPrice(db, l.ship, base) });
+  // Unobtainable items off: nothing a normal run can't give you beyond what the hull came with.
+  if (rules.unobtainable === false) {
+    const count = (xs: string[]) => xs.reduce((m, x) => m.set(x, (m.get(x) ?? 0) + 1), new Map<string, number>());
+    const check = (kind: "weapons" | "augments" | "crew", have: string[], stock: string[], name: (id: string) => string) => {
+      const had = count(stock);
+      for (const [id, n] of count(have)) if (n > (had.get(id) ?? 0) && !obtainable(db, kind, id)) errors.push(`${name(id)} can't be had in a normal run (stock fits only)`);
+    };
+    check("weapons", l.weapons, base.weapons, (id) => db.weapons[id]?.title ?? id);
+    check("augments", l.augments ?? [], base.augments ?? [], (id) => db.augments?.[id]?.title ?? id);
+    check("crew", l.crew.map((c) => c.race), base.crew.map((c) => c.race), (id) => db.crew[id]?.title ?? id);
+  }
   for (const h of hullSystems(db, l.ship, unlimited)) {
     const want = l.systems[h.id] ?? h.base;
     // Swapping the medbay for a clone bay (or back; same room) is the one allowed removal.
@@ -209,11 +227,11 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
       errors.push(`weapon ${w} is not for sale`);
       continue;
     }
-    lines.push({ item: `buy ${bp.title}`, scrap: bp.cost });
+    lines.push({ item: `buy ${bp.title}`, scrap: itemPrice(db, "weapon", w, costs) });
   }
   for (const w of left) {
     const bp = db.weapons[w];
-    if (bp) lines.push({ item: `sell ${bp.title}`, scrap: -Math.floor(bp.cost * RULES.sellRefund) });
+    if (bp) lines.push({ item: `sell ${bp.title}`, scrap: -Math.floor(itemPrice(db, "weapon", w, costs) * RULES.sellRefund) });
   }
   const minCrew = crewless ? 0 : 1;
   if (!Array.isArray(l.crew) || l.crew.length < minCrew || l.crew.length > RULES.maxCrew) errors.push(`crew must be ${minCrew}-${RULES.maxCrew}`);
@@ -269,7 +287,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     if (!bp.stackable && augs.filter((x) => x === a).length > 1) errors.push(`${bp.title} doesn't stack`);
     const i = freeAugs.indexOf(a);
     if (i >= 0) freeAugs.splice(i, 1);
-    else lines.push({ item: `augment ${bp.title}`, scrap: bp.cost });
+    else lines.push({ item: `augment ${bp.title}`, scrap: itemPrice(db, "augment", a, costs) });
   }
   const total = lines.reduce((a, b) => a + b.scrap, 0);
   if (total > scrap) errors.push(`costs ${total} scrap, budget is ${scrap}`);

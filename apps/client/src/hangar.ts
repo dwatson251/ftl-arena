@@ -12,7 +12,7 @@ import { HangarBay } from "./bay.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buildShip, buyableDrones, reactorUsed, usable, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
-  type MatchConfig, stockLoadout, SURVIVAL,
+  type MatchConfig, stockLoadout, SURVIVAL, itemPrice, obtainable, shipPrice,
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -29,6 +29,8 @@ const SUBSYSTEM_IDS: SystemId[] = SUBSYSTEMS;
  */
 /** A small gamepad beside players on a controller (so opponents know). */
 const PAD_ICON = `<svg class="pad-icon" viewBox="0 0 24 16" width="20" height="13" aria-label="Playing with a controller"><title>Playing with a controller</title><path fill="currentColor" d="M6 1h12a5 5 0 0 1 5 5v1.5a6.5 6.5 0 0 1-11.3 4.4h-1.4A6.5 6.5 0 0 1 1 7.5V6a5 5 0 0 1 5-5Zm0 3.5v2H4v1.5h2v2h1.5v-2h2V6.5h-2v-2H6Zm11 1a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm-2.5 2.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/></svg>`;
+
+const BANNED = "Not obtainable in a normal run (stock fits only)";
 
 const SFX = { spend: "upgradeSystem", refund: "undoUpgrades", pick: "acceptUpgrades", nav: "hoverBeep" };
 
@@ -254,7 +256,7 @@ export class Hangar {
     this.pendingRender = false;
     const db = this.db;
     const cfg = lobby.config;
-    const priced = priceLoadout(db, l, this.budget(), cfg.shipPool, cfg.unlimited, cfg.winCondition === "auto");
+    const priced = priceLoadout(db, l, this.budget(), cfg.shipPool, cfg.unlimited, cfg.winCondition === "auto", this.priceRules());
     const me = lobby.players.find((p) => p.id === this.me());
     const scrollTop = this.el.querySelector(".hg-main")?.scrollTop ?? 0;
     if (this.step === "Presets" && !this.ftlAsked) {
@@ -316,7 +318,9 @@ export class Hangar {
       return `<div class="rules-summary">${lines.map((x) => `<div>${h(x)}</div>`).join("")}${link && host && this.step !== "Rules" ? `<button class="small link" data-step="Rules">Change rules</button>` : ""}</div>`;
     }
     const lines = [
-      cfg.winCondition === "auto" ? "Destroy the ship · autonomous ships" : "Destroy the ship (or its crew)",
+      cfg.winCondition === "auto" ? "Arena · autonomous ships" : "Arena (destroy the ship or its crew)",
+      ...(cfg.costs === "ships" ? ["Ship expenses: hulls cost scrap"] : cfg.costs === "tournament" ? ["Tournament: hull and rarity prices, normal-run items only"] : []),
+      ...(cfg.unobtainable === false && cfg.costs !== "tournament" ? ["No unobtainable items"] : []),
       cfg.ftlOnly ? "Bring your own ship (FTL saves only)" : `${cfg.scrap} scrap${cfg.unlimited ? " · unrestricted systems" : ""}`,
       cfg.timeLimit ? `${cfg.timeLimit}s time limit` : "No time limit",
       `Hazard: ${hazard[cfg.hazard ?? "none"] ?? cfg.hazard}`,
@@ -339,8 +343,8 @@ export class Hangar {
       <div class="note">You're the host: set the match up, then everyone builds a ship. Changing a rule unreadies both captains.</div>
       <div class="rules-form">
       <div class="kv"><span>Game mode</span><select data-cfg="winCondition">
-        <option value="hull" ${cfg.survival ? "" : "selected"}>Destroy the ship</option>
-        ${pc ? `<option value="survival" ${cfg.survival ? "selected" : ""}>Survival (single player)</option>` : ""}</select></div>
+        <option value="hull" ${cfg.survival ? "" : "selected"}>Arena</option>
+        ${pc ? `<option value="survival" ${cfg.survival ? "selected" : ""}>Survival</option>` : ""}</select></div>
       ${cfg.survival ? this.survivalRules(lobby) : `
       <div class="kv"><span>Scrap${cfg.ftlOnly ? ` <span class="note">(not used: FTL saves)</span>` : ""}</span><input data-cfg="scrap" type="number" min="0" max="10000" step="50" value="${cfg.scrap}" ${cfg.ftlOnly ? "disabled" : ""} style="width:90px"></div>
       <div class="kv"><span>Time limit (s)</span><input data-cfg="timeLimit" type="number" min="0" max="3600" step="30" value="${cfg.timeLimit}" style="width:90px"></div>
@@ -372,6 +376,13 @@ export class Hangar {
     const botShip = lobby.players.find((p) => p.bot)?.loadout?.ship;
     const pool = cfg.shipPool.length ? cfg.shipPool : this.db.hangar;
     return `
+      <div class="kv"><span>Scrap costs</span><select data-cfg="costs">
+        <option value="none" ${(cfg.costs ?? "none") === "none" ? "selected" : ""}>None</option>
+        <option value="ships" ${cfg.costs === "ships" ? "selected" : ""}>Ship expenses</option>
+        <option value="tournament" ${cfg.costs === "tournament" ? "selected" : ""}>Tournament</option></select></div>
+      <div class="note">${cfg.costs === "ships" ? "Hulls cost scrap: their stock crew, weapons and systems, plus a premium for how late FTL unlocks them." : cfg.costs === "tournament" ? "Hulls cost scrap, weapons and augments are priced by their FTL rarity, and only what a normal run can give you is allowed (stock fits excepted)." : "Hulls are free; only what you add costs scrap."}</div>
+      <label class="kv"><span>Allow unobtainable crew, weapons and augments</span><input type="checkbox" data-cfg="unobtainable" ${cfg.unobtainable !== false ? "checked" : ""} ${cfg.costs === "tournament" ? "disabled" : ""}></label>
+      ${cfg.costs === "tournament" ? `<div class="note">Tournament: normal-run items only.</div>` : ""}
       <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""}></label>
       <div class="kv"><span>Ships</span><select data-cfg="ftlOnly">
         <option value="" ${cfg.ftlOnly ? "" : "selected"}>Build in the hangar</option>
@@ -504,6 +515,19 @@ export class Hangar {
     return `<div class="hg-nav">${back ? `<button data-step="${back}">← ${back}</button>` : "<span></span>"}${next ? `<button class="primary" data-step="${next}">${next} →</button>` : ""}</div>`;
   }
 
+  /** The pricing rules in force (Scrap costs, unobtainable items), as the server prices. */
+  private priceRules() {
+    const cfg = this.lobby?.config;
+    return { costs: cfg?.costs ?? "none", unobtainable: cfg?.unobtainable !== false } as const;
+  }
+
+  /** Off-limits to buy now: unobtainable items are off, a normal run can't give you this, and the fit already
+   *  has as many as the hull came with (stock ones can always be put back). */
+  private banned(kind: "weapons" | "augments" | "crew", id: string, have: string[], stock: string[]): boolean {
+    if (this.priceRules().unobtainable || obtainable(this.db, kind, id)) return false;
+    return have.filter((x) => x === id).length >= stock.filter((x) => x === id).length;
+  }
+
   /** "Bring your own ship" has no scrap allowance. */
   private budget(): number {
     return this.lobby?.config.ftlOnly || this.lobby?.config.survival ? Number.MAX_SAFE_INTEGER : (this.lobby?.config.scrap ?? 0);
@@ -557,7 +581,7 @@ export class Hangar {
         // "Bring your own ship": only presets saved unchanged from an FTL import fly.
         const notSave = !!cfg.ftlOnly && p.loadout.origin !== "ftl";
         const allowed = !!ship && pool.includes(p.loadout.ship) && !notSave;
-        const priced = ship ? priceLoadout(db, p.loadout, this.budget(), cfg.shipPool, cfg.unlimited, cfg.winCondition === "auto") : null;
+        const priced = ship ? priceLoadout(db, p.loadout, this.budget(), cfg.shipPool, cfg.unlimited, cfg.winCondition === "auto", this.priceRules()) : null;
         const over = !cfg.ftlOnly && !!priced && priced.total > cfg.scrap;
         const other = priced?.errors.find((e) => !/budget/.test(e));
         const warn = notSave ? "Not from an FTL save: this lobby flies saves only" : !allowed ? (ship ? "Not allowed in this lobby" : "Ship not found in your game data") : over ? `Costs ${priced!.total} (allowance ${cfg.scrap})` : other ?? "";
@@ -691,7 +715,8 @@ export class Hangar {
           ${this.miniship(s.img)}
           <b>${h(s.title)}</b><span class="note">${h(s.className || "")}</span>
           <span class="note">${s.weapons.map((w) => h(db.weapons[w]?.title ?? w)).join(", ") || "no weapons"}</span>
-          <span class="note">${s.crewRaces.length} crew (${h(races)}) · reactor ${s.maxPower}</span></button>`;
+          <span class="note">${s.crewRaces.length} crew (${h(races)}) · reactor ${s.maxPower}</span>
+          ${(this.lobby!.config.costs ?? "none") !== "none" ? `<span class="ship-price">${this.scrapIcon()}${shipPrice(db, id, baseLoadout(db, id))}</span>` : ""}</button>`;
       })
       .join("");
     return `<h2>${this.num("Ship")} · Choose a hull</h2><div class="note">Switching hulls resets your purchases.</div><div class="ship-grid">${cards}</div>${this.nav("Presets", "Systems")}`;
@@ -801,8 +826,9 @@ export class Hangar {
       .map(([t, ids]) => `<h3>${label[t] ?? t}</h3><div class="wgrid">${ids
         .map((id) => {
           const w = db.weapons[id];
-          return `<div class="wcard" draggable="true" data-drag="buy:${id}">${this.weaponArt(id, 1)}<div class="wcard-body"><b>${h(w.title)}</b><div class="note">${this.stats(id)}</div></div>
-            <button class="small buy" data-buy="${id}" ${full ? "disabled" : ""}>${this.scrapIcon()}${w.cost}</button></div>`;
+          const ban = this.banned("weapons", id, l.weapons, baseLoadout(db, l.ship).weapons);
+          return `<div class="wcard ${ban ? "banned" : ""}" ${ban ? `title="${BANNED}"` : `draggable="true" data-drag="buy:${id}"`}>${this.weaponArt(id, 1)}<div class="wcard-body"><b>${h(w.title)}</b><div class="note">${this.stats(id)}</div></div>
+            <button class="small buy" data-buy="${id}" ${full || ban ? "disabled" : ""} ${ban ? `title="${BANNED}"` : ""}>${this.scrapIcon()}${itemPrice(db, "weapon", id, this.priceRules().costs)}</button></div>`;
         })
         .join("")}</div>`)
       .join("");
@@ -851,7 +877,7 @@ export class Hangar {
       .map((r) => {
         const t = RACES[r];
         return `<div class="race-card">${this.portrait(r, 1.8)}<div><b>${h(db.crew[r].title)}</b> <span class="note">${t.hp} HP${t.speed !== 1 ? ` · speed ×${t.speed}` : ""}${t.repair !== 1 ? ` · repair ×${t.repair}` : ""}</span>
-          <div class="note">${h(t.blurb)}</div></div><button class="small" data-hire="${r}" ${full ? "disabled" : ""}>${db.crew[r].cost}</button></div>`;
+          <div class="note">${h(t.blurb)}</div></div><button class="small" data-hire="${r}" ${full || this.banned("crew", r, l.crew.map((c) => c.race), baseLoadout(db, l.ship).crew.map((c) => c.race)) ? `disabled title="${BANNED}"` : ""}>${db.crew[r].cost}</button></div>`;
       })
       .join("");
     return `<h2>${this.num("Crew")} · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
@@ -929,9 +955,10 @@ export class Hangar {
     const cards = all
       .map((a) => {
         const has = augs.includes(a.id);
-        return `<div class="wcard aug"><div class="wcard-body"><b>${h(a.title)}</b>${a.stackable ? ` <span class="note">stacks</span>` : ""}
+        const ban = this.banned("augments", a.id, augs, base);
+        return `<div class="wcard aug ${ban ? "banned" : ""}" ${ban ? `title="${BANNED}"` : ""}><div class="wcard-body"><b>${h(a.title)}</b>${a.stackable ? ` <span class="note">stacks</span>` : ""}
           <div class="note">${h(a.desc)}</div></div>
-          <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) ? "disabled" : ""}>${this.scrapIcon()}${a.cost}</button></div>`;
+          <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) || ban ? "disabled" : ""}>${this.scrapIcon()}${itemPrice(db, "augment", a.id, this.priceRules().costs)}</button></div>`;
       })
       .join("");
     return `<h2>${this.num("Augments")} · Augments (${augs.length}/${MAX_AUGMENTS})</h2>
@@ -1227,9 +1254,9 @@ export class Hangar {
         t.blur();
         return this.render();
       }
-      // Survival rides on the Game mode box but is a rule of its own (each battle plays as "Destroy the ship").
+      // Survival rides on the Game mode box but is a rule of its own (each battle plays as Arena's).
       if (k === "winCondition") return this.hooks.setConfig(t.value === "survival" ? { survival: true, winCondition: "hull" } : { survival: false });
-      const v = k === "pause" || k === "hazard" ? t.value : k === "unlimited" ? (t as HTMLInputElement).checked : k === "ftlOnly" ? t.value === "1" : Number(t.value);
+      const v = k === "pause" || k === "hazard" || k === "costs" ? t.value : k === "unlimited" || k === "unobtainable" ? (t as HTMLInputElement).checked : k === "ftlOnly" ? t.value === "1" : Number(t.value);
       this.hooks.setConfig({ [k]: v } as Partial<MatchConfig>);
     } else if (t.dataset.prac) {
       const k = t.dataset.prac as keyof PracticeConfig;

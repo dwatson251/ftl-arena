@@ -759,6 +759,31 @@
 - **Flak spread circle:** alpha down 20% (0.2 to 0.16).
 - 162 tests passing.
 
+## Round 42: Arena and Survival; Scrap costs (Ship Expenses, Tournament); unobtainable items rule
+- **Game mode names:** Arena (was "Destroy the ship") and Survival.
+- **Scrap costs** (Arena only; numbers in `packages/sim/src/pricing.ts`, `PRICING`):
+  - **None:** as before.
+  - **Ship expenses:** the hull costs scrap. That's its stock fit's value (crew, weapons, systems with
+    their installs and upgrades, drones, augments) × `componentRate` (1), plus a layout premium (A 0, B 40,
+    C 70) and a family premium for how late FTL unlocks it (Kestrel 0 … Crystal 70). The Kestrel A is 725
+    and the Red-Tail 832.
+  - **Tournament:** hull prices as above. Bought weapons and augments cost FTL's price × a rarity
+    multiplier (1: 0.9, 2: 1, 3: 1.1, 4: 1.25, 5: 1.5), with refunds at half. Unobtainable items are off.
+  - **Allowance:** switching to either raises the scrap to 1500 if it's lower (`shipsBudget`). The
+    practice bot pays the same prices.
+- **"Allow unobtainable crew, weapons and augments"** (a Rules checkbox, Arena only; Tournament forces it
+  off and locks it):
+  - With it off, anything a normal run can't give you is refused beyond the hull's stock fit. That means
+    store rarity 0: boss and artillery guns, racial and ship augments (Rock Plating, Zoltan Shield, Slug
+    Repair Gel…).
+  - Stock items can always be removed and put back, but never more copies than the hull came with.
+  - Slug, Crystal and Lanius crew are rarity 0 in stores but join through events, so they stay allowed
+    (`PRICING.obtainable`; `PRICING.unobtainable` adds bans).
+  - The hangar greys these out with a tooltip.
+- **Tests:** `pricing.test.ts` (none unchanged, hull prices, rarity prices, the ban with and without
+  Tournament, stock re-adds and no extra copies, the lobby's 1500 and Survival's none); 167 in total.
+  Check: `tools/align/costs.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

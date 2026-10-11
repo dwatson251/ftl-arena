@@ -1,0 +1,27 @@
+/** Scrap costs: the Rules step (Arena/Survival, Scrap costs, the unobtainable checkbox), hull prices, Tournament's banned items. */
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+const URL = process.env.ARENA_URL ?? "http://localhost:5173";
+mkdirSync("traces/costs", { recursive: true });
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+p.on("pageerror", (e) => console.log("pageerror:", e.message));
+await p.goto(URL);
+await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
+await p.click("#practice");
+await p.waitForSelector(".hg-step");
+await p.waitForTimeout(500);
+console.log("game modes:", await p.$$eval('select[data-cfg="winCondition"] option', (o) => o.map((x) => x.textContent).join(" | ")));
+await p.selectOption('select[data-cfg="costs"]', "tournament");
+await p.waitForTimeout(700);
+console.log("scrap:", await p.$eval('input[data-cfg="scrap"]', (e) => (e as HTMLInputElement).value), "| unobtainable box:", await p.$eval('input[data-cfg="unobtainable"]', (e) => `checked=${(e as HTMLInputElement).checked} disabled=${(e as HTMLInputElement).disabled}`));
+await p.screenshot({ path: "traces/costs/1-rules.png" });
+await p.click('button[data-step="Ship"]');
+await p.waitForTimeout(400);
+console.log("hull prices:", await p.$$eval(".ship-card .ship-price", (e) => e.slice(0, 4).map((x) => x.textContent).join(", ")));
+await p.screenshot({ path: "traces/costs/2-ships.png" });
+await p.click('button[data-step="Augments"]');
+await p.waitForTimeout(400);
+console.log("banned augments:", await p.$$eval(".wcard.aug.banned b", (e) => e.map((x) => x.textContent).join(", ")));
+await p.screenshot({ path: "traces/costs/3-augments.png" });
+await b.close();

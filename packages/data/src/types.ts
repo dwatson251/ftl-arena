@@ -130,6 +130,8 @@ export interface CrewBP {
   id: string;
   title: string;
   cost: number;
+  /** Store rarity (0: never sold in stores). */
+  rarity?: number;
   /** Shirt colour (first colour of layer 1), 0xRRGGBB. */
   shirt?: number;
 }

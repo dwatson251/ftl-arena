@@ -7,7 +7,7 @@ import {
 import {
   applyCard, baseLoadout, Bot, type Assist, botLoadout, carryOver, DEFAULT_CONFIG, difficultyToBot, drawCards, enemyLoadout, Match, newRun, nextEnemy,
   priceLoadout, registerWeapons, RULES, score, stockLoadout, SURVIVAL, TICK_HZ, viewFor, type Card, type Command, type Loadout, type MatchConfig,
-  type MatchEvent, type SurvivalEnemy, type SurvivalRun,
+  type MatchEvent, type SurvivalEnemy, type SurvivalRun, PRICING,
 } from "@ftl/sim";
 
 export interface Client {
@@ -206,8 +206,8 @@ export class Lobby {
     } else {
       const ship = pc.botShip && pool.includes(pc.botShip) ? pc.botShip : pool[seed % pool.length];
       const scrap = Math.round(this.config.scrap * (1 + scrapBonus));
-      p.loadout = botLoadout(this.db, ship, scrap, level, this.config.seed);
-      p.priced = priceLoadout(this.db, p.loadout, scrap);
+      p.loadout = botLoadout(this.db, ship, scrap, level, this.config.seed, this.rules());
+      p.priced = priceLoadout(this.db, p.loadout, scrap, [], false, false, this.rules());
     }
     p.name = `Bot (${pc.difficulty})`;
   }
@@ -423,14 +423,22 @@ export class Lobby {
 
   /** Price a build under the rules ("Bring your own ship" has no scrap allowance). */
   private price(l: Loadout) {
-    return priceLoadout(this.db, l, this.config.ftlOnly || this.config.survival ? Number.MAX_SAFE_INTEGER : this.config.scrap, this.config.shipPool, this.config.unlimited, this.config.winCondition === "auto");
+    return priceLoadout(this.db, l, this.config.ftlOnly || this.config.survival ? Number.MAX_SAFE_INTEGER : this.config.scrap, this.config.shipPool, this.config.unlimited, this.config.winCondition === "auto", this.rules());
+  }
+
+  /** The pricing rules in force (Scrap costs, unobtainable items). */
+  private rules() {
+    return { costs: this.config.costs ?? "none", unobtainable: this.config.unobtainable !== false };
   }
 
   setConfig(c: Client, cfg: Partial<MatchConfig>): string | null {
     if (c.id !== this.host) return "only the host can change the rules";
     if (this.phase !== "lobby") return "rules are locked once the countdown starts";
     const wasFtl = !!this.config.ftlOnly;
+    const wasCosts = this.config.costs ?? "none";
     this.config = sanitizeConfig(this.db, { ...this.config, ...cfg, seed: this.config.seed }, this.practice);
+    // Hulls costing scrap: start the allowance where a ship and some upgrades fit.
+    if (wasCosts === "none" && this.config.costs !== "none" && this.config.scrap < PRICING.shipsBudget) this.config = { ...this.config, scrap: PRICING.shipsBudget };
     for (const p of this.players) {
       if (p.bot) continue;
       if (p.loadout && this.config.shipPool.length && !this.config.shipPool.includes(p.loadout.ship))
@@ -736,6 +744,9 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
     unlimited: !!c.unlimited && !(practice && c.survival),
     ftlOnly: !!c.ftlOnly && !(practice && c.survival),
     survival: practice && !!c.survival,
+    // Scrap costs are Arena's (none in Survival); a Tournament allows only what a normal run can give you.
+    costs: practice && c.survival ? "none" : c.costs === "ships" || c.costs === "tournament" ? c.costs : "none",
+    unobtainable: practice && c.survival ? true : c.costs === "tournament" ? false : c.unobtainable !== false,
   };
 }
 

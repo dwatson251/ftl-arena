@@ -17,6 +17,7 @@ import type { GameDB, SystemId } from "@ftl/data";
 import type { Command } from "./commands.ts";
 import { findPath, geometry, roomCentre, type Geometry } from "./geometry.ts";
 import { baseLoadout, buyableWeapons, hullSystems, priceLoadout, randomCrewName, usable, type Loadout } from "./loadout.ts";
+import type { PriceRules } from "./pricing.ts";
 import type { Match } from "./match.ts";
 import { Rng } from "./rng.ts";
 import { DT, RACES } from "./rules.ts";
@@ -576,7 +577,7 @@ const MAN_PRIORITY: [SystemId, number][] = [["pilot", 64], ["shields", 65], ["we
  * layers, good weapons, weapon bars to power them, engines, more shields) and buys reactor bars whenever
  * its systems would draw more than the reactor gives, so extra scrap turns into usable strength.
  */
-export function botLoadout(db: GameDB, shipId: string, scrap: number, level: number, seed = 1): Loadout {
+export function botLoadout(db: GameDB, shipId: string, scrap: number, level: number, seed = 1, rules: PriceRules = {}): Loadout {
   const rng = new Rng(seed);
   const l = baseLoadout(db, shipId);
   const ship = db.ships[shipId];
@@ -585,7 +586,7 @@ export function botLoadout(db: GameDB, shipId: string, scrap: number, level: num
   const tryApply = (f: (x: Loadout) => boolean | void) => {
     const c = structuredClone(l);
     if (f(c) === false) return false;
-    const ok = priceLoadout(db, c, scrap).ok;
+    const ok = priceLoadout(db, c, scrap, [], false, false, rules).ok;
     if (ok) Object.assign(l, c);
     return ok;
   };

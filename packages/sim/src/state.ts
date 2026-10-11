@@ -25,6 +25,10 @@ export interface MatchConfig {
    * saved from one, unchanged). The hangar's building steps are off and the scrap allowance doesn't apply.
    */
   ftlOnly?: boolean;
+  /** Arena's Scrap costs: "ships" (hulls cost scrap), "tournament" (and rarity prices, normal-run items only). */
+  costs?: "none" | "ships" | "tournament";
+  /** Unobtainable crew, weapons and augments allowed beyond the stock fit (off in a Tournament). */
+  unobtainable?: boolean;
   /**
    * Survival (practice only): one stock ship, battle after random battle; the ship carries over and each win
    * offers reward cards (survival.ts). Each battle itself plays as "hull".

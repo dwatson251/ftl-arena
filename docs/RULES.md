@@ -277,3 +277,5 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Unpowered guns | Lose their target, however they lost the power | user (FTL) |
 | Flak (BURST) flight | 4.4 s (a quarter of the old 1.1 s) | user (guess) |
 | Crystal Lockdown | Seals a room's doors 12 s (crew power: the crystal's room, 50 s recharge, ready after a jump; bomb: the room hit). Own crew wait; intruders shatter it with 6 s of shooting (est). Airlocks unaffected | FTL wiki + est |
+| Scrap costs (Arena) | None; Ship expenses: hull = stock fit value × 1 + layout premium (A 0/B 40/C 70) + family premium (0-70); Tournament: hull prices + weapons/augments × rarity (0.9/1/1.1/1.25/1.5), unobtainable items off. Switching raises scrap to 1500. All in `PRICING` | user + est |
+| Unobtainable items (Arena checkbox) | Off: store-rarity-0 crew, weapons and augments only as the hull's stock fit (Slug, Crystal, Lanius crew allowed: events) | user |
