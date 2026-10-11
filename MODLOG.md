@@ -488,6 +488,56 @@
 - Tests: `survival.test.ts` gained 2 tests (boarders carried over, the clock dropping); 135 passing in
   total.
 
+## Round 27: playtest batch (Survival, crew AI, flagship, warnings)
+- **Survival:**
+  - **Orders in the aftermath:** you can give orders after the enemy is destroyed. The battle screen used to
+    ignore input once there was a winner. Pause and crew sounds follow the same rule (`Battle.live()`).
+  - **Stranded boarders** (`CrewState.stranded`), left aboard when their ship died, never retreat: no
+    teleporter can take them home, and the AI doesn't try.
+  - **Crew positions and weapon order carry over:** each crew member's tile (or where they were walking
+    to), and the weapon order as swapped in battle.
+  - **Countdown text:** "Providing reward in: N s" ("Boarders aboard · …" while they're alive).
+  - **FTL charge widget:** no "FTL" label; the bars are centred in the button and pulse when full. It's now
+    drawn under the pause tint and PAUSED banner, and the countdown line hides while paused.
+  - **Cards:** every hand now has a system-or-reactor card (reactor about a third of the time) and a
+    separate weapon-upgrade-or-crew card, so hands are 4 cards (5 after a boss). Upgraded guns are named
+    with "+" (Burst Laser II++).
+- **Jump:**
+  - The ship fades out under a soft gradient, tail to nose (left to right), while FTL's star flare
+    (`effects/glowing_star.png` over a radial glow) swells at the rear. Then the screen fades to black, with
+    no white flash.
+  - The arrival just fades in.
+- **Rebel flagship stages 1-2:** after the blasts, half the gibs break off and fly away. The rest escapes
+  with the same fade, bottom to top, and the flare at its tail. Stage 3 still blows up.
+- **Hostiles window:** once the beaten enemy has gone (wreck burned out, or the flagship's escape done),
+  the whole window clears and your ship snaps to the centre of the screen.
+- **Warnings (FTL's art and text):**
+  - "INTRUDERS DETECTED" on the red warning glow whenever enemy crew are aboard.
+  - The hazard's danger icon (`warnings/danger_*`) with "DANGER!", plus "SOLAR FLARE / ION PULSE IMMINENT!"
+    or "ASB TARGET LOCKED!" just before it hits.
+  - Warnings stack when several are up.
+- **Super shield:**
+  - Bug: a shot that dodged the super-shield check rolled evasion a second time and could hit the normal
+    shields while the super shield was up.
+  - Now there's one evasion roll per shot, then the super shield, then the shield layers. Tested: no layer
+    lost while a super shield holds.
+- **Reticles:** they clear when the enemy is beaten; the armed weapon and any teleport, hack or mind-control
+  targeting are dropped.
+- **Crew AI (bot and autopilot):**
+  - Crew get out of rooms with critical air (under 20%). Badly hurt crew (under half health) leave fights and
+    fires, going to the medbay if it's safe, otherwise the nearest safe room.
+  - Until healed to 90% they aren't sent into burning rooms, rooms with critical air, or rooms with foes.
+  - Boarders get the same rules on the enemy ship, including stranded ones whose ship has no teleporter.
+- **Ion:** crew manning an ionised system freeze at the console.
+- **Flagship art:**
+  - Artillery sits on the mounts after the weapon system's slots (4-7), matching the shadows in the art;
+    the muzzle points use the same mounts.
+  - The shield is centred on the rooms, since the huge art canvas put it too high.
+- **Deaths:** a dying ship shows only its exterior (rooms, crew and shields hidden) from the first blast.
+- **Debug:** an "add boarder" button (practice) puts an enemy crew member aboard your ship.
+- **Tests:** super-shield order, stranded boarders, crew AI (4), crew positions, weapon order and hands; 142
+  passing in total. Playwright: `tools/align/survival2.ts`, `flagship-escape.ts`, `flagship-guns.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

@@ -237,9 +237,9 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .preset-card.off { filter: grayscale(1); }
 
 /* Survival: reward cards (tier colours: white, green, blue, gold for rare), the game-over tally, the jump veil. */
-.reward .reward-menu { max-width: 860px; }
+.reward .reward-menu { max-width: 1080px; }
 .rcards { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 14px 0; }
-.rcard { display: flex; flex-direction: column; gap: 6px; width: 190px; min-height: 150px; padding: 12px; text-align: left; border: 2px solid var(--edge); background: #222833; cursor: pointer; transition: transform 0.08s, border-color 0.08s; }
+.rcard { display: flex; flex-direction: column; gap: 6px; width: 180px; min-height: 150px; padding: 12px; text-align: left; border: 2px solid var(--edge); background: #222833; cursor: pointer; transition: transform 0.08s, border-color 0.08s; }
 .rcard:hover:not(:disabled) { transform: translateY(-3px); border-color: #fff; }
 .rcard .rkind { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
 .rcard .rtitle { font-size: 16px; font-weight: 700; color: var(--text); }
@@ -253,8 +253,7 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .rcard:disabled:not(.picked) { opacity: 0.45; }
 .score-rows { margin: 12px auto; max-width: 300px; text-align: left; }
 .score-rows .score-total { font-size: 20px; color: var(--accent); border-top: 1px solid var(--edge); margin-top: 6px; padding-top: 6px; }
-.jump-veil { position: fixed; inset: 0; pointer-events: none; background: #fff; opacity: 0; z-index: 50; transition: opacity 0.25s ease-in, background-color 0.5s; }
-.jump-veil.flash { opacity: 1; }
-.jump-veil.black { opacity: 1; background: #000; }
+.jump-veil { position: fixed; inset: 0; pointer-events: none; background: #000; opacity: 0; z-index: 50; transition: opacity 0.6s ease-in; }
+.jump-veil.black { opacity: 1; }
 .jump-veil.black.out { opacity: 0; transition: opacity 1.2s ease-out; }
 @media (max-width: 700px) { .rcard { width: 100%; min-height: 0; } }

@@ -51,6 +51,10 @@ export interface ShipDrawOpts {
   shieldFlash?: number;
   /** Seconds since the hull broke apart, or null. */
   exploded?: number | null;
+  /** A dying ship: only its outside shows (hull art and guns), the rooms and crew hidden, the shields down. */
+  exterior?: boolean;
+  /** Seconds since some pieces broke off a ship that stays whole otherwise (the flagship before it escapes). */
+  shed?: number | null;
   /** Show green destination tiles for walking crew (own ship). */
   destinations?: boolean;
   /** Recently ordered destination tiles: tile key -> seconds left. */
@@ -71,7 +75,8 @@ export class ShipRenderer {
   private dynRoot = new Container();
   private dyn: Imm;
   private fog = new Graphics();
-  private gibRoot = new Container();
+  /** Public so an escaping ship's broken-off pieces can fly free of its fade (battle.ts re-parents them). */
+  gibRoot = new Container();
   private gibs: Imm;
   overlay = new Graphics();
   /** Sprite layer above everything for targeting reticles. */
@@ -204,6 +209,8 @@ export class ShipRenderer {
       this.shieldArt.position.set(c.x + L.ellipse.x, c.y + L.ellipse.y);
       // Enemy layouts' ellipse offsets are for FTL's own window placement; centre on the hull instead.
       if (bp.enemy) this.shieldArt.position.set(L.img.x + L.img.w / 2, L.img.y + L.img.h / 2);
+      // The flagship's art is so big that its canvas centre sits above the hull: centre on its rooms instead.
+      if (/^BOSS_/.test(this.shipId)) this.shieldArt.position.set(c.x, c.y);
       if (bp.enemy && L.ellipse.a > 0) {
         this.shieldArt.width = L.ellipse.a * 2;
         this.shieldArt.height = L.ellipse.b * 2;
@@ -240,15 +247,18 @@ export class ShipRenderer {
     const d = this.dyn;
     const exploded = o.exploded ?? null;
     for (const n of [this.hull, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.weaponRoot, this.thrusterRoot]) n.visible = exploded === null;
+    // Dying: the exterior sprite only (FTL hides the rooms as a ship goes up).
+    if (o.exterior && exploded === null) for (const n of [this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot]) n.visible = false;
     // Cloaking: fade toward FTL's half-there look (eased so it doesn't pop).
     const want = o.cloaked ? 0.4 : 1;
     this.root.alpha += (want - this.root.alpha) * 0.15;
-    if (this.shieldArt) this.shieldArt.visible = exploded === null;
+    if (this.shieldArt) this.shieldArt.visible = exploded === null && !o.exterior;
     if (exploded !== null) {
       this.drawGibs(exploded);
       return;
     }
     this.gibRoot.visible = false;
+    if (o.shed !== undefined && o.shed !== null) this.drawGibs(o.shed, true);
     d.begin();
     // A room is seen when the server listed it (boarders, no-sensor rooms with own crew), else by sensors.
     const visible = (room: number) => (v.visibleRooms ? v.visibleRooms.includes(room) : v.interior);
@@ -361,8 +371,10 @@ export class ShipRenderer {
     });
     const facing = new Map<string, string>();
     for (const s of Object.values(v.systems)) if (s?.station && s.facing) facing.set(s.station, s.facing);
+    // Stations whose system is ionised: whoever mans one freezes at the console until the ion wears off.
+    const ionised = new Set(Object.values(v.systems).filter((s) => s?.station && s.ion > 0).map((s) => s!.station));
     const medRoom = v.systems.medbay && (v.systems.medbay.power + (v.systems.medbay.bonus ?? 0)) > 0 ? v.systems.medbay.room : -1;
-    for (const cd of crew) this.drawCrew(cd, time, facing, medRoom);
+    for (const cd of crew) this.drawCrew(cd, time, facing, medRoom, ionised);
     // Weapons on the hull; the battle decides the frame (charge lights, firing). Unpowered weapons slide
     // back into the hull along their mount's slide direction, like FTL.
     const dt = Math.min(0.1, Math.max(0, time - this.lastTime));
@@ -419,7 +431,7 @@ export class ShipRenderer {
         const s = v.systems[id as keyof typeof v.systems]!;
         const bp = this.db.weapons[s.weapon!];
         const anim = bp && this.db.weaponAnims[bp.weaponArt];
-        const m = L.mounts[i];
+        const m = this.artilleryMount(i);
         this.lastArtillery[i] = s.weapon!;
         if (!m || !bp || !anim) return;
         const since = time - (this.artilleryFired[i] ?? -9);
@@ -454,7 +466,7 @@ export class ShipRenderer {
     const c = this.gridCentre();
     const layers = v.shieldLayers;
     if (this.superArt) {
-      this.superArt.visible = exploded === null;
+      this.superArt.visible = exploded === null && !o.exterior;
       const want = (v.superShield ?? 0) > 0 ? 0.55 + 0.08 * Math.sin(time * 3) : 0;
       this.superArt.alpha += (want - this.superArt.alpha) * 0.2;
     }
@@ -500,7 +512,7 @@ export class ShipRenderer {
     else this.dyn.gfx(key).rect(x * TILE + 4, y * TILE + 4, TILE - 8, TILE - 8).fill({ color: fallback, alpha });
   }
 
-  private drawCrew(cd: CrewDraw, time: number, facing: Map<string, string>, medRoom: number): void {
+  private drawCrew(cd: CrewDraw, time: number, facing: Map<string, string>, medRoom: number, ionised: Set<string> = new Set()): void {
     const { c } = cd;
     if (c.dead) return;
     const d = this.dyn;
@@ -569,7 +581,7 @@ export class ShipRenderer {
     } else if (c.task === "man") {
       // Face the station's computer (the blueprint's slot <direction>).
       anim = `${race}_type_${facing.get(c.tile) ?? "up"}`;
-      fr = Math.floor(time * 6);
+      fr = ionised.has(c.tile) ? 0 : Math.floor(time * 6);
     }
     // A drone unit whose drone lost power slumps into its power-down pose until it's switched back on.
     if (c.drone !== undefined && cd.offline) {
@@ -667,7 +679,8 @@ export class ShipRenderer {
     return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
   }
 
-  private drawGibs(t: number): void {
+  /** The hull's gibs flying apart `t` s after it broke; `some`: only the first half of them (pieces shed). */
+  private drawGibs(t: number, some = false): void {
     const bp = this.db.ships[this.shipId];
     const L = this.layout;
     this.gibRoot.visible = true;
@@ -678,6 +691,7 @@ export class ShipRenderer {
     const fade = Math.max(0, Math.min(1, 1 - (t - 4) / 2));
     if (L.gibs.length && this.hasArt()) {
       for (const gb of L.gibs) {
+        if (some && gb.n > Math.max(1, Math.floor(L.gibs.length / 2))) continue;
         const tex = texNow(this.art(`gib${gb.n}`));
         if (!tex) continue;
         // FTL units (read from the layout): velocity ≈ px/frame, direction in degrees (0 = right,
@@ -705,13 +719,20 @@ export class ShipRenderer {
    * The Rebel flagship's guns are artillery systems: artillery N stands on weapon mount N and draws its weapon's
    * art there (charging frames, then the fire frames when it shoots).
    */
+  /** Artillery gun i's mount: after the weapon system's slots (the flagship's guns sit on mounts 4-7). */
+  private artilleryMount(i: number) {
+    const L = this.layout;
+    const slots = this.db.ships[this.shipId]?.weaponSlots ?? 4;
+    return L.mounts[slots + i] ?? L.mounts[i];
+  }
+
   private artilleryIds(v: ShipView): string[] {
     return ["artillery", "artillery2", "artillery3", "artillery4"].filter((id) => v.systems[id as keyof typeof v.systems]?.weapon);
   }
 
   artilleryMuzzle(i: number): { x: number; y: number } {
     const L = this.layout;
-    const m = L.mounts[i];
+    const m = this.artilleryMount(i);
     if (!m || !this.hasArt()) return this.gridCentre();
     const id = this.lastArtillery[i];
     const anim = id ? this.db.weaponAnims[this.db.weapons[id]?.weaponArt ?? ""] : undefined;

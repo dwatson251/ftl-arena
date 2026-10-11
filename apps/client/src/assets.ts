@@ -192,6 +192,9 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   files.add("stars/bg_darknebula.png");
   // Survival jumps to a new beacon each battle: FTL's other backdrops and planets.
   for (const b of BACKDROPS) files.add(`stars/${b}.png`);
+  files.add("effects/glowing_star.png");
+  files.add("warnings/backglow_warning_red.png");
+  for (const d of ["star", "pulsar", "asteroids", "nebula", "storm", "pds"]) files.add(`warnings/danger_${d}.png`);
   for (const pl of PLANETS) files.add(`stars/${pl}.png`);
   const probe = `ship/${db.ships[db.hangar[0]]?.img}_base.png`;
   // The extras (fonts, sounds) go first so slow ones run alongside the textures, not after them.

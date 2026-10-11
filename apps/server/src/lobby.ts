@@ -283,6 +283,23 @@ export class Lobby {
       case "restart":
         if (this.loadouts) this.start();
         break;
+      case "boarder":
+        if (m) {
+          // One of the other side's crew (or a human) beamed into a random room of this ship.
+          const s = m.state.ships[d.ship];
+          const from = m.state.ships[1 - d.ship];
+          const g = m.geo(s);
+          const tiles = [...g.tiles.keys()];
+          const tile = tiles[(Math.random() * tiles.length) | 0];
+          const [x, y] = tile.split(",").map(Number);
+          const proto = from.crew.find((c) => c.owner === from.idx && c.drone === undefined);
+          const id = 700 + s.crew.length;
+          s.crew.push({
+            ...(proto ? structuredClone(proto) : structuredClone(s.crew[0])), id, owner: (1 - d.ship) as 0 | 1, tile, home: tile, x, y, path: [], task: "idle",
+            dead: false, dying: undefined, stun: 0, hp: 100, maxHp: 100, mind: undefined,
+          });
+        }
+        break;
       case "skipAftermath":
         if (this.phase === "aftermath") this.aftermathLeft = 0;
         break;

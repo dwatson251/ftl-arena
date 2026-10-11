@@ -94,6 +94,7 @@ export class Bot {
     // hacking drone goes on the shields.
     this.reserved = new Set();
     this.boarding(m, ship, out);
+    this.boarders(m, ship, out);
     this.cloakAndHack(m, ship, enemy, out);
     this.crew(m, ship, out);
     return out;
@@ -304,17 +305,12 @@ export class Bot {
     const ready = m.teleReady(ship);
     // Wounded boarders come home.
     // FTL's AI calls boarders back once they're hurt.
-    const hurt = away.find((c) => c.hp < c.maxHp * 0.5);
+    // (Stranded boarders, left over from a ship that's gone, have no way home: they fight to the end.)
+    const hurt = away.find((c) => c.hp < c.maxHp * 0.5 && !c.stranded);
     if (hurt && ready) {
       out.push({ c: "retrieve", room: eg.tiles.get(hurt.tile)!.room });
       this.note(m, "retrieve boarders");
       return;
-    }
-    // Boarders with nothing left to wreck move on to another system.
-    for (const c of away) {
-      if (c.path.length || c.task === "fight" || c.task === "sabotage") continue;
-      const next = Object.values(enemy.systems).find((s) => s && s.level > 0 && s.damage < s.level);
-      if (next) out.push({ c: "moveCrew", crew: [c.id], room: next.room, enemy: true });
     }
     if (away.length || ship.crew.some((c) => c.owner !== ship.idx && !c.dead)) return;
     // The party, once sent, is the only one: if they all died, the AI stops boarding.
@@ -351,6 +347,76 @@ export class Bot {
       out.push({ c: "moveCrew", crew: [c.id], room: tp.room });
     }
     onPad.forEach((c) => busy.add(c.id));
+  }
+
+  /**
+   * Our boarders on the enemy ship (sent by our teleporter, or stranded there from a ship that's gone). Those
+   * in peril (the air nearly gone, or badly hurt in a fight or a fire) get out to the nearest safe room and
+   * wait there to be pulled home; the rest, once a system is wrecked, move on to the next one, keeping out of
+   * deadly rooms while hurt.
+   */
+  private boarders(m: Match, ship: ShipState, out: Command[]): void {
+    const enemy = m.state.ships[1 - ship.idx];
+    const away = enemy.crew.filter((c) => c.owner === ship.idx && !c.dead && c.dying === undefined && c.drone === undefined && !c.beam && !c.mind);
+    if (!away.length) return;
+    const eg = geometry(m.db.layouts[enemy.layout]);
+    const foes = (room: number) => enemy.crew.some((q) => q.owner !== ship.idx && !q.dead && q.dying === undefined && eg.tiles.get(q.tile)?.room === room);
+    for (const c of away) {
+      const here = eg.tiles.get(c.home)?.room ?? -1;
+      if (this.inPeril(c, enemy, here, foes(here))) {
+        const safe = this.safeRoom(eg, enemy, c, (r) => foes(r));
+        if (safe !== null && safe !== here) {
+          out.push({ c: "moveCrew", crew: [c.id], room: safe, enemy: true });
+          this.note(m, `${c.name} (boarding) → retreat`);
+        }
+        continue;
+      }
+      if (c.path.length || c.task === "fight" || c.task === "sabotage") continue;
+      const next = Object.values(enemy.systems).find((s) => s && s.level > 0 && s.damage < s.level && !(this.recovering.has(c.id) && this.deadly(enemy, s.room, foes(s.room))));
+      if (next) out.push({ c: "moveCrew", crew: [c.id], room: next.room, enemy: true });
+    }
+  }
+
+  /** Crew who were hurt badly and haven't healed back up yet (they keep out of deadly rooms). */
+  private recovering = new Set<number>();
+
+  /** Below half health a crew member is recovering, until healed to 90%. */
+  private trackRecovery(c: CrewState): boolean {
+    if (c.hp < c.maxHp * 0.5) this.recovering.add(c.id);
+    else if (c.hp >= c.maxHp * 0.9) this.recovering.delete(c.id);
+    return this.recovering.has(c.id);
+  }
+
+  /** A room that would kill a hurt crew member: the air nearly gone, a fire, or foes in it. */
+  private deadly(ship: ShipState, room: number, foes: boolean): boolean {
+    const rs = ship.rooms.find((r) => r.id === room);
+    return !!rs && (rs.o2 < CRITICAL_O2 || Object.keys(rs.fires).length > 0 || foes);
+  }
+
+  /** Get out now: the air is nearly gone, or badly hurt in a fight or a fire. */
+  private inPeril(c: CrewState, ship: ShipState, room: number, foes: boolean): boolean {
+    const rs = ship.rooms.find((r) => r.id === room);
+    if (!rs) return false;
+    if (rs.o2 < CRITICAL_O2) return true;
+    return this.trackRecovery(c) && (foes || Object.keys(rs.fires).length > 0);
+  }
+
+  /** The nearest room with air, no fire and no foes (null if there's none to reach). */
+  private safeRoom(g: Geometry, ship: ShipState, c: CrewState, foes: (room: number) => boolean, prefer?: number): number | null {
+    const ok = (room: number) => !this.deadly(ship, room, foes(room)) && (ship.rooms.find((r) => r.id === room)?.o2 ?? 0) >= 40;
+    if (prefer !== undefined && ok(prefer)) return prefer;
+    let best: number | null = null;
+    let bestD = Infinity;
+    for (const rs of ship.rooms) {
+      if (!ok(rs.id)) continue;
+      const t = g.roomTiles.get(rs.id)?.[0];
+      const p = t ? findPath(g, c.tile, t) : null;
+      if (p && p.length < bestD) {
+        bestD = p.length;
+        best = rs.id;
+      }
+    }
+    return best;
   }
 
   // ---------------------------------------------------------------- crew
@@ -440,8 +506,20 @@ export class Bot {
       const c = alive.find((q) => q.id === id)!;
       send(c, med!.room, "medbay");
     }
+    // In peril (the air nearly gone, or badly hurt in a fight or a fire): out to the medbay if it's safe,
+    // else the nearest safe room. While they recover they're kept out of deadly rooms.
+    const foesIn = (room: number) => intruders.some((q) => g.tiles.get(q.tile)?.room === room);
+    for (const c of alive) {
+      const here = roomOf(c);
+      if (!free.has(c.id) && !patients.has(c.id)) continue;
+      if (!this.inPeril(c, ship, here, foesIn(here))) continue;
+      const safe = this.safeRoom(g, ship, c, foesIn, medOk ? med!.room : undefined);
+      free.delete(c.id);
+      patients.delete(c.id);
+      if (safe !== null) send(c, safe, "get out (hurt / no air)");
+    }
     for (const t of tasks) {
-      const cands = alive.filter((c) => free.has(c.id) && !(t.kind === "fight" && weak(c) && !allWeak) && !(t.kind === "fight" && c.hp < c.maxHp * 0.35));
+      const cands = alive.filter((c) => free.has(c.id) && !(t.kind === "fight" && weak(c) && !allWeak) && !(t.kind === "fight" && c.hp < c.maxHp * 0.35) && !(this.recovering.has(c.id) && this.deadly(ship, t.room, foesIn(t.room))));
       if (!cands.length) continue;
       const c = cands.reduce((a, b) => (dist(b, t.room) < dist(a, t.room) ? b : a));
       if (dist(c, t.room) >= 1e9) continue;
@@ -450,6 +528,9 @@ export class Bot {
     }
   }
 }
+
+/** Room oxygen (%) the crew AI treats as critical: get out before suffocating. */
+const CRITICAL_O2 = 20;
 
 /** FTL's system priority for crew tasks (CrewAI::PrioritizeSystem). */
 const SYS_PRIORITY: Partial<Record<SystemId, number>> = {

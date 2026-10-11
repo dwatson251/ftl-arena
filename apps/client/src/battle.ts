@@ -6,7 +6,7 @@
  * Shots: a shot flies straight out of its weapon and off its own ship's view, vanishes, and a moment later
  * enters the other view from a varying angle and flies to the target.
  */
-import { Application, Container, FederatedPointerEvent, Graphics, Sprite } from "pixi.js";
+import { Application, Container, FederatedPointerEvent, Graphics, Sprite, Texture } from "pixi.js";
 import type { GameDB, SystemId } from "@ftl/data";
 import { baseSystemId, SUBSYSTEMS } from "@ftl/data";
 import { RULES, SNAP_HZ, SURVIVAL, usable, type Command, type MatchView, type ShipView, type WeaponTarget } from "./simlite.ts";
@@ -83,6 +83,9 @@ export class Battle {
   private hudRoot = new Container();
   /** A cold blue wash over the battle while time is stopped. */
   private pauseTint = new Graphics().rect(0, 0, W, H).fill({ color: 0x1a3060 });
+  /** HUD that sits under the pause tint and banner (Survival's FTL charge and reward countdown). */
+  private underRoot = new Container();
+  private under = new Imm(this.underRoot);
   /** Animation clock: stands still while the match is paused, so fires, crew and drones freeze too. */
   private animTime = 0;
   private hud: Imm;
@@ -121,13 +124,13 @@ export class Battle {
 
   constructor(private app: Application, private db: GameDB, private send: (c: Command) => void, public you: 0 | 1) {
     this.hud = new Imm(this.hudRoot);
-    const ownClip = new Graphics().rect(0, 0, OWN.clipX, H).fill({ color: 0xffffff });
+    const ownClip = (this.ownClip = new Graphics().rect(0, 0, OWN.clipX, H).fill({ color: 0xffffff }));
     const ownProj = new Container();
     ownProj.addChild(this.projOwn, this.fxOwn);
     ownProj.mask = ownClip;
     this.winLayer.addChild(this.enemyBox, this.projWin, this.fxWin);
     this.world.addChild(this.ownBox, ownClip, ownProj, this.winLayer);
-    this.stage.addChild(this.bgLayer, this.world, this.pauseTint, this.flash, this.hudRoot);
+    this.stage.addChild(this.bgLayer, this.world, this.underRoot, this.pauseTint, this.flash, this.hudRoot);
     this.flash.alpha = 0;
     this.stage.eventMode = "static";
     this.stage.hitArea = { contains: () => true };
@@ -177,10 +180,11 @@ export class Battle {
       const f = new Sprite(frameTex);
       f.position.set(WIN.x, WIN.y);
       f.tint = 0xffb4b4; // FTL tints the window red for a hostile ship
-      this.world.addChildAt(f, at);
+      this.winFrame = f;
     } else {
-      this.world.addChildAt(new Graphics().roundRect(WIN.x + 10, WIN.y + 25, WIN.w - 20, WIN.h - 30, 8).fill({ color: 0x4a2a2e, alpha: 0.85 }).stroke({ color: 0xf0c8c8, width: 3 }), at);
+      this.winFrame = new Graphics().roundRect(WIN.x + 10, WIN.y + 25, WIN.w - 20, WIN.h - 30, 8).fill({ color: 0x4a2a2e, alpha: 0.85 }).stroke({ color: 0xf0c8c8, width: 3 });
     }
+    this.world.addChildAt(this.winFrame, at);
     // The inside of box_hostiles_mask as a polygon (Pixi sprite masks read red×alpha; the art is black).
     const X = WIN.x;
     const Y = WIN.y;
@@ -227,6 +231,38 @@ export class Battle {
   private flash = new Graphics().rect(0, 0, W, H).fill({ color: 0xffffff });
   private flashAt = -9;
   private flashColor = 0xffffff;
+
+  /** The hostiles window's frame and our side's clip (the window goes, and the clip widens, once the enemy is gone). */
+  private winFrame: Container | null = null;
+  private ownClip: Graphics | null = null;
+  /** Our ship's centre and the right edge of our side (the whole screen once the hostiles window is cleared). */
+  private ownCx = OWN.cx;
+  private clipX = OWN.clipX;
+  private windowCleared = false;
+
+  /** When the beaten enemy has finished going: its wreck burned out, or the flagship's jump-out done. */
+  private enemyGoneBy(): number | null {
+    const i = 1 - this.you;
+    if (this.explodedAt.has(i)) return this.explodedAt.get(i)! + 6.2;
+    if (this.shedAt.has(i)) return this.shedAt.get(i)! + 3.2;
+    return null;
+  }
+
+  /**
+   * The enemy is gone and its wreck has cooled: the hostiles window goes completely (frame, header, the
+   * empty view) and our ship snaps to the middle of the whole screen, no transition.
+   */
+  private clearWindow(): void {
+    if (this.windowCleared) return;
+    this.windowCleared = true;
+    this.winLayer.visible = false;
+    if (this.winFrame) this.winFrame.visible = false;
+    this.ownClip?.clear().rect(0, 0, W, H).fill({ color: 0xffffff });
+    const dx = W / 2 - OWN.cx;
+    this.own.root.x += dx;
+    this.ownCx += dx;
+    this.clipX = W;
+  }
 
   private fit(enemyNative: boolean): void {
     const o = this.own.bounds();
@@ -288,7 +324,7 @@ export class Battle {
   }
 
   debugState() {
-    return { time: this.time, endReadyAt: this.endReadyAt, exploded: [...this.explodedAt] };
+    return { time: this.time, endReadyAt: this.endReadyAt, exploded: [...this.explodedAt], selected: [...this.selected], crewHit: this.crewHit.map((c) => ({ id: c.id, ...c.box })) };
   }
 
   endReady(): boolean {
@@ -433,8 +469,11 @@ export class Battle {
       case "end": {
         const loser = e.winner === -1 ? -1 : 1 - e.winner;
         const destroyed = /destroyed/.test(e.reason) ? (loser === -1 ? [0, 1] : [loser]) : [];
-        // Every hull blows apart the same way, the Rebel flagship's stages included (each has its own gibs).
-        for (const i of destroyed) this.explode(i);
+        // Hulls blow apart; the Rebel flagship's first two stages lose some pieces and escape (FTL's jump-out).
+        for (const i of destroyed) {
+          if (/^BOSS_[12](_HARD)?$/.test(this.view!.ships[i].bp)) this.escape(i);
+          else this.explode(i);
+        }
         // (frame() calls onEndReady when the battle clock gets there: a timer could fire while slow frames
         // still have the clock short, and the end screen would never come.)
         this.endReadyAt = this.time + (destroyed.length ? 4.2 + EXPLODE_PRE : 1.2);
@@ -552,6 +591,41 @@ export class Battle {
    * A ship's death as in FTL: blasts ripple across the still-whole hull for EXPLODE_PRE seconds, then a last
    * big one and it breaks apart (the gibs; `explodedAt` is when the break-up starts).
    */
+  /** Ships going down (blowing up or escaping): only their exterior shows from the first blast. */
+  private escaping = new Set<number>();
+  private dying = (i: number) => this.explodedAt.has(i) || this.escaping.has(i);
+
+  /** When pieces broke off a ship that's escaping (the flagship between stages). */
+  private shedAt = new Map<number, number>();
+
+  /**
+   * The flagship's stage end: blasts ripple across the hull as in a death, then some of it breaks away (those
+   * gibs fly off and burn out) and the rest jumps away: the flare at its tail, the bottom-to-top fade.
+   */
+  private escape(ship: number): void {
+    this.escaping.add(ship);
+    const b = this.rOf(ship).bounds();
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      setTimeout(() => {
+        if (!this.view) return;
+        this.boom(ship, b.x + b.w * (0.15 + 0.7 * hash01(i * 3 + ship)), b.y + b.h * (0.2 + 0.6 * hash01(i * 7 + ship)), 1.2 + hash01(i) * 1.0);
+        if (i % 3 === 0) play(this.db, ["explosion1", "explosion2", "explosion3", "explosion4"]);
+      }, (i * EXPLODE_PRE * 1000) / n);
+    }
+    setTimeout(() => {
+      if (!this.view) return;
+      this.shedAt.set(ship, this.time);
+      this.boom(ship, b.x + b.w * 0.5, b.y + b.h * 0.3, 2.4);
+      play(this.db, ["explosion1", "explosion2", "explosion3", "explosion4"]);
+    }, EXPLODE_PRE * 1000);
+    setTimeout(() => {
+      if (!this.view) return;
+      play(this.db, ["jumpLeave"], ship === this.view.you ? 1 : 0.8);
+      this.startWipe(this.rOf(ship), ship === this.you ? this.ownBox : this.enemyBox, ship === this.you ? "right" : "up", this.time);
+    }, (EXPLODE_PRE + 0.5) * 1000);
+  }
+
   private explode(ship: number): void {
     this.explodedAt.set(ship, this.time + EXPLODE_PRE);
     const b = this.rOf(ship).bounds();
@@ -606,11 +680,11 @@ export class Battle {
     };
     this.own.update(ownV, this.crewDraw(ownV, this.prev?.ships[v.you], k, true), this.animTime, {
       hover: this.hoverOwn, weaponFrame: (s) => this.weaponFrameFor(ownV, v.you, s), shieldFlash: this.time - this.shieldHitAt[v.you],
-      exploded: ex(v.you), destinations: true, flashTiles: this.flashTiles, engines: this.jumpAt !== null || this.arriveAt !== null ? 8 : eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0, clock: this.time,
+      exploded: ex(v.you), exterior: this.dying(v.you), shed: this.shedAt.has(v.you) ? this.time - this.shedAt.get(v.you)! : null, destinations: true, flashTiles: this.flashTiles, engines: this.jumpAt !== null || this.arriveAt !== null ? 8 : eng(ownV), cloaked: (ownV.cloak?.t ?? 0) > 0, clock: this.time,
     });
     this.enemy.update(enV, this.crewDraw(enV, this.prev?.ships[1 - v.you], k, false), this.animTime, {
       hover: this.armed !== null ? this.hoverEnemy : { room: -1, door: -1 }, weaponFrame: (s) => this.weaponFrameFor(enV, (1 - v.you) as 0 | 1, s),
-      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), engines: enV.thrust ?? (enV.systemsKnown ? eng(enV) : 1), cloaked: (enV.cloak?.t ?? 0) > 0,
+      shieldFlash: this.time - this.shieldHitAt[1 - v.you], exploded: ex(1 - v.you), exterior: this.dying(1 - v.you), shed: this.shedAt.has(1 - v.you) ? this.time - this.shedAt.get(1 - v.you)! : null, engines: enV.thrust ?? (enV.systemsKnown ? eng(enV) : 1), cloaked: (enV.cloak?.t ?? 0) > 0,
       destinations: true, flashTiles: this.flashTilesEnemy, clock: this.time,
     });
     this.crewSounds(v);
@@ -676,6 +750,13 @@ export class Battle {
     const g = this.enemy.overlay.clear();
     const mk = this.enemy.marks;
     mk.begin();
+    // The enemy is beaten (or the match is over): no reticles, nothing left to aim at.
+    if (this.view?.winner !== null && this.view?.winner !== undefined) {
+      if (this.armed !== null || this.beamStart) this.disarm();
+      this.teleMode = null;
+      mk.end();
+      return;
+    }
     own.weapons.forEach((w, i) => {
       if (!w.target) return;
       // FTL: yellow reticle = autofire, red = fire once.
@@ -1002,7 +1083,7 @@ export class Battle {
     const own = v.ships[v.you];
     const en = v.ships[1 - v.you];
     this.topLeft(own);
-    this.target(en, v);
+    if (!this.windowCleared) this.target(en, v);
     this.computeLayout(own);
     this.crewList(own, this.myCrew(v));
     this.systemsBar(own);
@@ -1024,8 +1105,11 @@ export class Battle {
     }
     this.pauseHud(v);
     this.hazardHud(v);
+    this.intruderWarning(v);
     this.survivalHud();
     this.jumpFrame();
+    const gone = this.enemyGoneBy();
+    if (gone !== null && this.time >= gone) this.clearWindow();
     this.tooltip(v);
     // The selection box, in screen space above everything (both ships and the hostiles window).
     if (this.drag) {
@@ -1052,9 +1136,40 @@ export class Battle {
     const soon = timed && hz.next <= 5;
     const txt = timed ? `${name}  ·  ${Math.ceil(hz.next)} s` : name;
     this.hud.text("hzT", txt, 640, 44, fstyle("JustinFont10", soon ? 0xff9060 : 0xd8c8a8, { stroke: 0x101010 }), [0.5, 0]);
+    // FTL's environmental danger icon for this beacon (img/warnings/danger_*), "DANGER!" pulsing beneath it.
+    const icon = { sun: "danger_star", pulsar: "danger_pulsar", asteroids: "danger_asteroids", nebula: "danger_nebula", storm: "danger_storm", asb: "danger_pds", none: "" }[hz.kind];
+    const ix = 350;
+    const it = texNow(`warnings/${icon}.png`);
+    if (it) this.hud.sprite("hzI", it, ix, 4, { anchor: [0.5, 0] });
+    const dt = this.hud.text("hzD", "DANGER!", ix, 62, fstyle("JustinFont10", 0xff5a4a, { stroke: 0x200808 }), [0.5, 0]);
+    dt.alpha = 0.6 + 0.4 * Math.sin(this.time * 5);
+    // Just before it strikes, FTL's red warning: a flare or pulse coming, or the batteries locked on us.
+    const ours = hz.kind !== "asb" || hz.asbTarget === v.you;
+    if (soon && ours) this.warning("hzW", hz.kind === "sun" ? ["SOLAR FLARE", "IMMINENT!"] : hz.kind === "pulsar" ? ["ION PULSE", "IMMINENT!"] : ["ASB TARGET", "LOCKED!"], 0);
+  }
+
+  /** One of FTL's red warnings over our ship (red glow, two pulsing lines); `slot` stacks them downward. */
+  private warning(key: string, lines: [string, string], slot: number): void {
+    const h = this.hud;
+    const a = 0.65 + 0.35 * Math.sin(this.time * 6);
+    const x = this.ownCx;
+    const y = 196 + slot * 78;
+    const glow = texNow("warnings/backglow_warning_red.png");
+    if (glow) {
+      const g = h.sprite(`${key}G`, glow, x, y, { anchor: 0.5, scale: 0.75 });
+      if (g) g.alpha = a;
+    }
+    const st = fstyle("JustinFont12Bold", 0xff5a4a, { stroke: 0x200808, strokeWidth: 3 });
+    h.text(`${key}1`, lines[0], x, y - 10, st, [0.5, 0.5]).alpha = Math.min(1, a + 0.2);
+    h.text(`${key}2`, lines[1], x, y + 10, st, [0.5, 0.5]).alpha = Math.min(1, a + 0.2);
   }
 
   private pauseBox: Box | null = null;
+
+  /** Is the player's ship still in play? Until the match ends, and in Survival's aftermath after a win. */
+  private live(v: MatchView): boolean {
+    return v.winner === null || (this.survival?.phase === "aftermath" && this.jumpAt === null);
+  }
 
   /** Survival: the run and the lobby phase (main.ts sets them on every lobby update). */
   survival: { s: SurvivalState; phase: string; at: number } | null = null;
@@ -1064,9 +1179,16 @@ export class Battle {
    * aftermath (the crew's time to patch the ship up), reading JUMP once it's full.
    */
   private survivalHud(): void {
+    this.under.begin();
+    this.survivalUnder();
+    this.under.end();
+  }
+
+  private survivalUnder(): void {
     const sv = this.survival;
     if (!sv) return;
-    const h = this.hud;
+    // Under the pause tint and the PAUSED banner, not over them.
+    const h = this.under;
     const s = sv.s;
     const line = `SURVIVAL  ·  BATTLE ${s.battle}  ·  SCORE ${s.score}${s.boss ? "  ·  BOSS" : ""}`;
     h.text("svL", line, 640, 8, fstyle("JustinFont10", s.boss ? 0xff9a80 : 0xd8e8d0, { stroke: 0x101010 }), [0.5, 0]);
@@ -1082,11 +1204,27 @@ export class Battle {
     else h.gfx("svB").roundRect(x, y, 98, 55, 8).fill({ color: 0x4a6470 }).stroke({ color: 0xcfe8e8, width: 2 });
     const bars = texNow("buttons/FTL/FTL_loadingbars.png");
     const off = texNow("buttons/FTL/FTL_loadingbars_off.png");
-    if (off) h.sprite("svO", off, x + 12, y + 20);
-    if (bars && k > 0) h.sprite("svF", frame(bars, 0, 0, Math.max(1, Math.round(74 * k)), 29), x + 12, y + 20);
-    h.text("svT", full ? "JUMP" : "FTL", 640, y + 4, fstyle("JustinFont12Bold", full ? 0x9cff9c : 0xe8ece8, { stroke: 0x101010 }), [0.5, 0]);
-    const msg = sv.phase === "aftermath" ? `Enemy destroyed${s.boarders ? "  ·  BOARDERS ABOARD" : ""}  ·  ${s.boarders ? "fight them off" : "repairs"} before the jump: ${Math.ceil(left)} s` : sv.phase === "reward" ? "Choose a reward" : "Jumping…";
-    h.text("svM", msg, 640, y + 60, fstyle("JustinFont10", 0xdfe8ff, { stroke: 0x101010 }), [0.5, 0]);
+    // The charge bars sit centred in the button (98×55 around 74×29); full, they pulse.
+    if (off) h.sprite("svO", off, x + 12, y + 13);
+    const fill = bars && k > 0 ? h.sprite("svF", frame(bars, 0, 0, Math.max(1, Math.round(74 * k)), 29), x + 12, y + 13) : null;
+    if (fill) fill.alpha = full ? 0.7 + 0.3 * Math.sin(this.time * 8) : 1;
+    const msg = sv.phase === "aftermath" ? `${s.boarders ? "Boarders aboard  ·  " : ""}Providing reward in: ${Math.ceil(left)} s` : sv.phase === "reward" ? "Choose a reward" : "Jumping…";
+    // (Hidden while paused: the clock is stopped, and the pause line takes that spot.)
+    if (!this.view?.pause) h.text("svM", msg, 640, y + 60, fstyle("JustinFont10", 0xdfe8ff, { stroke: 0x101010 }), [0.5, 0]);
+  }
+
+  /**
+   * FTL's "INTRUDERS DETECTED" (text_misc's warning_intruders) on its red warning glow, pulsing over our
+   * ship whenever enemy crew are aboard, during the fight and after it.
+   */
+  private intruderWarning(v: MatchView): void {
+    const own = v.ships[v.you];
+    // (Not while jumping: the ship is fading out of the picture.)
+    if (this.jumpAt !== null || !own.crew.some((c) => c.owner !== v.you && !c.dead && c.dying === undefined)) return;
+    // Below a hazard's warning when both are up.
+    const hz = v.hazard;
+    const hzUp = !!hz && (hz.kind === "sun" || hz.kind === "pulsar" || (hz.kind === "asb" && hz.asbTarget === v.you)) && hz.next <= 5;
+    this.warning("in", ["INTRUDERS", "DETECTED"], hzUp ? 1 : 0);
   }
 
   /** This battle's beacon (Survival): backdrop, maybe a planet and where it sits (0..1 of the screen). */
@@ -1102,20 +1240,114 @@ export class Battle {
   private jumpAt: number | null = null;
 
   /**
-   * The FTL jump. The ship doesn't move or stretch (FTL's doesn't): the drive spools up with the engines
-   * flaring and FTL's jump sound, then main.ts whites the screen out and fades to black. Out the other side the
-   * new beacon fades in with the ship already in place.
+   * FTL's jump-out, for any ship: it doesn't move. A star-flare light swells at the rear while the drive spools,
+   * then the ship fades out in a soft gradient: "right" sweeps from the tail (left) to the nose for our ship;
+   * "up" sweeps from the bottom up, for the enemy window's vertical flagship. The flare peaks as the last of
+   * it goes. `at` is when it starts (the wipe begins 0.7 s later).
+   */
+  private wipes: { r: ShipRenderer; box: Container; dir: "right" | "up"; at: number; mask: Sprite; flare: Container }[] = [];
+
+  private startWipe(r: ShipRenderer, box: Container, dir: "right" | "up", at: number): void {
+    const b = r.bounds();
+    // The mask: clear on one side, a soft edge, opaque on the other (white, so either mask channel works).
+    const c = document.createElement("canvas");
+    const horiz = dir === "right";
+    c.width = horiz ? 256 : 4;
+    c.height = horiz ? 4 : 256;
+    const ctx = c.getContext("2d")!;
+    const gr = horiz ? ctx.createLinearGradient(0, 0, 256, 0) : ctx.createLinearGradient(0, 0, 0, 256);
+    // right: clear on the left (where it starts); up: clear at the bottom.
+    const stops: [number, string][] = horiz
+      ? [[0, "rgba(0,0,0,0)"], [0.32, "rgba(0,0,0,0)"], [0.5, "rgba(255,255,255,1)"], [1, "rgba(255,255,255,1)"]]
+      : [[0, "rgba(255,255,255,1)"], [0.5, "rgba(255,255,255,1)"], [0.68, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]];
+    for (const [k, col] of stops) gr.addColorStop(k, col);
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, c.width, c.height);
+    const m = new Sprite(Texture.from(c));
+    if (horiz) {
+      m.width = b.w * 2.6;
+      m.height = b.h + 600;
+      m.position.set(b.x - b.w * 1.4, b.y - 300);
+    } else {
+      m.width = b.w + 600;
+      m.height = b.h * 2.6;
+      m.position.set(b.x - 300, b.y - b.h * 0.2);
+    }
+    r.root.addChild(m);
+    r.root.mask = m;
+    // Pieces already flying off (the flagship's) stay out of the fade: they move to the box, following the hull.
+    box.addChild(r.gibRoot);
+    // The flare at the tail, outside the mask so it outlives the ship: a soft radial glow (no banding)
+    // behind FTL's star flare.
+    const f = new Container();
+    const gc = document.createElement("canvas");
+    gc.width = gc.height = 128;
+    const gx = gc.getContext("2d")!;
+    const rg = gx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    rg.addColorStop(0, "rgba(255,250,230,0.9)");
+    rg.addColorStop(0.25, "rgba(255,240,200,0.45)");
+    rg.addColorStop(1, "rgba(255,230,180,0)");
+    gx.fillStyle = rg;
+    gx.fillRect(0, 0, 128, 128);
+    const halo = new Sprite(Texture.from(gc));
+    halo.anchor.set(0.5);
+    halo.scale.set(1.3);
+    halo.blendMode = "add";
+    f.addChild(halo);
+    const star = texNow("effects/glowing_star.png");
+    if (star) {
+      const st = new Sprite(star);
+      st.anchor.set(0.5);
+      st.blendMode = "add";
+      f.addChild(st);
+    }
+    f.scale.set(0);
+    box.addChild(f);
+    this.wipes.push({ r, box, dir, at, mask: m, flare: f });
+  }
+
+  /**
+   * Our ship's FTL jump (Survival, after the reward pick), with FTL's jump sound; main.ts then fades to black.
    */
   jumpOut(): void {
-    if (this.jumpAt !== null) return;
+    if (this.jumpAt !== null || !this.own) return;
     this.jumpAt = this.time;
     play(this.db, ["jumpLeave"], 1);
+    this.startWipe(this.own, this.ownBox, "right", this.time);
   }
 
   private jumpFrame(): void {
-    // The engines flare through the spool-up and for a moment after arriving; nothing moves.
     if (this.arriveAt !== null && this.time - this.arriveAt > 1.5) this.arriveAt = null;
+    for (const w of this.wipes) {
+      const t = this.time - w.at;
+      if (t < 0) continue;
+      const b = w.r.bounds();
+      const root = w.r.root;
+      // The broken-off pieces follow the hull's placement in the box.
+      const gib = w.r.gibRoot;
+      gib.position.copyFrom(root.position);
+      gib.scale.copyFrom(root.scale);
+      gib.pivot.copyFrom(root.pivot);
+      gib.rotation = root.rotation;
+      // 0-0.7 s the drive spools; 0.7-1.9 s the wipe sweeps across, easing in.
+      const k = Math.max(0, Math.min(1, (t - 0.7) / 1.2));
+      const e = k * k;
+      if (w.dir === "right") w.mask.x = b.x - b.w * 1.4 + b.w * 1.6 * e;
+      else w.mask.y = b.y - b.h * 0.2 - b.h * 1.7 * e;
+      // The flare sits at the tail: our ship's left end, the flagship's bottom.
+      const tail = w.dir === "right" ? { x: b.x + b.w * 0.06, y: b.y + b.h / 2 } : { x: b.x + b.w / 2, y: b.y + b.h * 0.94 };
+      const p = w.box.toLocal(root.toGlobal(tail));
+      w.flare.position.set(p.x, p.y);
+      // Swells through the spool and the wipe, peaks as the last of the ship goes, then dies away.
+      const up = Math.min(1, t / 1.8);
+      const down = Math.max(0, (t - 1.9) / 0.6);
+      w.flare.scale.set((0.6 + 3.4 * up * up) * Math.max(0, 1 - down));
+      w.flare.rotation = t * 0.6;
+      w.flare.alpha = Math.min(1, 0.4 + up) * Math.max(0, 1 - down);
+    }
   }
+
+
 
 
   /**
@@ -1154,7 +1386,7 @@ export class Battle {
   /** Space: pause from your clock, resume your own pause, or say you're ready in a tactical timeout. */
   private togglePause(): void {
     const v = this.view;
-    if (!v || v.winner !== null) return;
+    if (!v || !this.live(v)) return;
     const mode = v.config.pause ?? "off";
     const p = v.pause;
     if (p?.kind === "tactical") return this.send({ c: "pause", on: false });
@@ -1174,7 +1406,7 @@ export class Battle {
    * system, for everyone we can see; FTL's brawling loop while anyone punches. The enemy ship is quieter.
    */
   private crewSounds(v: MatchView): void {
-    if (v.pause || v.winner !== null) return;
+    if (v.pause || !this.live(v)) return;
     let punching = false;
     for (const s of v.ships) {
       const r = s.idx === v.you ? this.own : this.enemy;
@@ -1230,8 +1462,8 @@ export class Battle {
     const alive = own.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === v.you);
     const roomOf = (c: { tile: string }) => g.tiles.get(c.tile)?.room;
     // While time is stopped the world falls silent but for a low hum (nothing burns, leaks or gets fixed).
-    const over = v.winner !== null || !!v.pause;
-    loop(this.db, "nebula", !!v.pause && v.winner === null, 0.35);
+    const over = !this.live(v) || !!v.pause;
+    loop(this.db, "nebula", !!v.pause && this.live(v), 0.35);
     // The last seconds before a tactical timeout tick down.
     if (v.nextTactical !== undefined && !v.pause) {
       const left = Math.ceil((v.nextTactical - v.tick) / 30);
@@ -2289,7 +2521,7 @@ export class Battle {
 
   private onDown(e: FederatedPointerEvent): void {
     const v = this.view;
-    if (!v || v.winner !== null) return;
+    if (!v || !this.live(v)) return;
     const p = this.stage.toLocal(e.global);
     const right = e.button === 2;
     const own = v.ships[v.you];
@@ -2554,7 +2786,7 @@ export class Battle {
     if (v) {
       for (const c of this.crewHit) if (inBox(p, c.box)) this.hoverCrew = { id: c.id, mine: true };
       const near = (s: ShipView, lx: number, ly: number) => s.crew.find((c) => !c.dead && !c.blip && Math.hypot(c.x + 0.5 - lx / 35, c.y + 0.5 - ly / 35) < 0.42);
-      const mineHit = !this.hoverCrew && p.x < OWN.clipX ? near(v.ships[v.you], op.x, op.y) : undefined;
+      const mineHit = !this.hoverCrew && p.x < this.clipX ? near(v.ships[v.you], op.x, op.y) : undefined;
       if (mineHit) this.hoverCrew = { id: mineHit.id, mine: true };
       const theirs = !this.hoverCrew && inBox(p, WIN) ? near(v.ships[1 - v.you], ep.x, ep.y) : undefined;
       if (theirs) this.hoverCrew = { id: theirs.id, mine: false };

@@ -79,6 +79,26 @@ describe("combat rules", () => {
     expect(hits + misses).toBeGreaterThan(1000);
     expect(Math.abs(misses / (hits + misses) - ev)).toBeLessThan(0.03);
   });
+  it("a super shield takes every hit before the ordinary shields do (one evasion roll per shot)", () => {
+    const tdb = placeholderDb();
+    tdb.weapons.TEST = { ...tdb.weapons.PH_PULSE, id: "TEST", damage: 1, fireChance: 0, breachChance: 0, shots: 3, cooldown: 1, sp: 0 };
+    const lo = { ...baseLoadout(tdb, "PH_SKIFF"), weapons: ["TEST"] };
+    const m = new Match(tdb, { ...DEFAULT_CONFIG, seed: 5 }, [lo, lo], ["a", "b"]);
+    m.push(0, { c: "weaponPower", slot: 0, on: true });
+    m.push(0, { c: "autofire", slot: 0, on: true });
+    m.push(0, { c: "target", slot: 0, target: { kind: "room", room: 3 } });
+    const T = m.state.ships[1];
+    for (let t = 0; t < TICK_HZ * 3; t++) m.step(); // shields up
+    let lost = 0;
+    for (let t = 0; t < TICK_HZ * 120; t++) {
+      T.superShield = 99;
+      const before = T.shieldLayers;
+      m.step();
+      if (T.shieldLayers < before) lost++;
+    }
+    expect(m.state.ships[0].stats.blocked).toBeGreaterThan(50);
+    expect(lost).toBe(0);
+  });
   it("one shield layer per two shield bars, recharging", () => {
     const m = mk();
     for (let i = 0; i < TICK_HZ * 3; i++) m.step();

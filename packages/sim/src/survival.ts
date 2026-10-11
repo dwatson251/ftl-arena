@@ -128,12 +128,13 @@ export function upgradedWeapon(db: GameDB, id: string): WeaponBP | null {
   const b = db.weapons[base];
   if (!b) return null;
   if (!modCount(mods)) return b;
-  const stars = "★".repeat(modCount(mods));
+  // A "+" for each upgrade on it: Burst Laser II++.
+  const plus = "+".repeat(modCount(mods));
   return {
     ...b,
     id,
-    title: `${b.title} ${stars}`,
-    short: b.short ? `${b.short}${stars}` : undefined,
+    title: `${b.title}${plus}`,
+    short: b.short ? `${b.short}${plus}` : undefined,
     damage: b.damage + mods.d,
     shots: b.shots + mods.s,
     cooldown: Math.round(b.cooldown * 0.8 ** mods.c * 10) / 10,
@@ -267,9 +268,9 @@ function weaponBlurb(w: WeaponBP): string {
   return bits.join(" · ");
 }
 
-function shipCard(db: GameDB, l: Loadout, rng: Rng, seed: number): Card | null {
+/** Weapon upgrades for guns that can take more, or a new crew member. */
+function upgradeCard(db: GameDB, l: Loadout, rng: Rng, seed: number): Card | null {
   const out: Card[] = [];
-  // Weapon upgrades for guns that can take more.
   l.weapons.forEach((id, slot) => {
     const { base, mods } = parseUpgraded(id);
     if (modCount(mods) >= SURVIVAL.maxUpgrades) return;
@@ -279,7 +280,24 @@ function shipCard(db: GameDB, l: Loadout, rng: Rng, seed: number): Card | null {
       out.push({ kind: "upgrade", slot, id: upgradedId(base, next), title: `${bp?.title ?? base}: ${o.label}`, blurb: `Upgrade for your ${bp?.title ?? base} (up to ${SURVIVAL.maxUpgrades})`, tier: 2, value: SURVIVAL.upgradeValue });
     }
   });
-  // A level on an installed system, or a new system the hull has room for.
+  const races = hireableRaces(db);
+  if (races.length) {
+    const race = races[Math.abs(seed) % races.length];
+    const name = randomCrewName(db, l.crew.map((c) => c.name), seed * 13 + l.crew.length);
+    // A crew card weighs as much as a whole gun's worth of upgrades, so it isn't drowned out by them.
+    const crew: Card = { kind: "crew", race, name, title: `Crew: ${name}`, blurb: `A ${db.crew[race]?.title ?? race} joins your crew`, tier: 2, value: db.crew[race]?.cost ?? 45 };
+    if (installable(db, l, crew)) {
+      const ups = out.filter((c) => installable(db, l, c));
+      return ups.length && !rng.chance(0.25) ? rng.pick(ups) : crew;
+    }
+  }
+  const ok = out.filter((c) => installable(db, l, c));
+  return ok.length ? rng.pick(ok) : null;
+}
+
+/** A level on an installed system, a new system the hull has room for, or more reactor. */
+function systemCard(db: GameDB, l: Loadout, rng: Rng): Card | null {
+  const out: Card[] = [];
   for (const h of hullSystems(db, l.ship)) {
     const lv = l.systems[h.id] ?? h.base;
     const bp = db.systems[h.id];
@@ -287,14 +305,11 @@ function shipCard(db: GameDB, l: Loadout, rng: Rng, seed: number): Card | null {
     const cost = lv === 0 ? bp.cost : bp.upgradeCost[lv - 1] ?? 60;
     out.push({ kind: "system", system: h.id, title: lv === 0 ? `Install ${bp.title ?? h.id}` : `${bp.title ?? h.id} level ${lv + 1}`, blurb: lv === 0 ? "A new system for your ship" : `Upgrade your ${(bp.title ?? h.id).toLowerCase()}${isSubsystem(h.id) ? "" : " (needs reactor power)"}`, tier: cost >= 80 ? 3 : 2, value: cost });
   }
-  if (l.reactor + 2 <= reactorCap(db, l.ship)) out.push({ kind: "reactor", title: "Reactor +2", blurb: "Two more bars of reactor power", tier: 2, value: RULES.reactorPrice(l.reactor) + RULES.reactorPrice(l.reactor + 1) });
-  const races = hireableRaces(db);
-  if (races.length) {
-    const race = races[Math.abs(seed) % races.length];
-    const name = randomCrewName(db, l.crew.map((c) => c.name), seed * 13 + l.crew.length);
-    out.push({ kind: "crew", race, name, title: `Crew: ${name}`, blurb: `A ${db.crew[race]?.title ?? race} joins your crew`, tier: 2, value: db.crew[race]?.cost ?? 45 });
-  }
   const ok = out.filter((c) => installable(db, l, c));
+  // The reactor comes up a third of the time (more power is what most upgrades end up needing).
+  const reactor: Card = { kind: "reactor", title: "Reactor +2", blurb: "Two more bars of reactor power", tier: 2, value: RULES.reactorPrice(l.reactor) + RULES.reactorPrice(l.reactor + 1) };
+  const canReactor = l.reactor + 2 <= reactorCap(db, l.ship) && installable(db, l, reactor);
+  if (canReactor && (!ok.length || rng.chance(0.33))) return reactor;
   return ok.length ? rng.pick(ok) : null;
 }
 
@@ -322,8 +337,8 @@ export function suppliesCard(db: GameDB, l: Loadout, value: number): Card {
 }
 
 /**
- * The hand after winning battle `run.battle`: gear (tiered), a ship improvement, and supplies worth about as
- * much as the gear. After a boss there's a fourth card and the gear is rare.
+ * The hand after winning battle `run.battle`: gear (tiered), a system or reactor upgrade, a weapon upgrade or
+ * crew, and supplies worth about as much as the gear. After a boss there's an extra gear card and it's rare.
  */
 export function drawCards(db: GameDB, run: SurvivalRun, seed: number): Card[] {
   const rng = new Rng(seed);
@@ -337,8 +352,11 @@ export function drawCards(db: GameDB, run: SurvivalRun, seed: number): Card[] {
     const more = gearCard(db, l, rng, rollTier(rng, d));
     if (more && !hand.some((c) => c.id === more.id)) hand.push(more);
   }
-  const ship = shipCard(db, l, rng, seed);
-  if (ship) hand.push(ship);
+  // Every hand has a system (or reactor) card, and a weapon upgrade (or crew) card beside the gear.
+  const sys = systemCard(db, l, rng);
+  if (sys) hand.push(sys);
+  const up = upgradeCard(db, l, rng, seed);
+  if (up) hand.push(up);
   // Supplies match the best thing on offer, so passing on a gun for repairs and missiles is a fair trade.
   const target = Math.max(30 + 3 * run.battle, ...hand.filter((c) => c.kind === "weapon" || c.kind === "drone" || c.kind === "augment").map((c) => c.value));
   hand.push(suppliesCard(db, l, target));
@@ -398,9 +416,12 @@ export function carryOver(run: SurvivalRun, ship: ShipState): void {
   l.hullNow = Math.max(1, ship.hull);
   l.missiles = ship.missiles;
   l.droneParts = ship.droneParts ?? 0;
+  // The weapons in the order the player left them (they can be swapped around in battle).
+  l.weapons = ship.weapons.map((w) => w.bp);
   l.crew = ship.crew
     .filter((c) => c.owner === ship.idx && !c.dead && c.dying === undefined && c.drone === undefined)
-    .map((c) => ({ name: c.name, race: c.race, xp: { ...c.xp }, hp: Math.max(1, Math.round(c.hp)) }));
+    // Where each one stood, or was walking to, is where they'll be after the jump.
+    .map((c) => ({ name: c.name, race: c.race, xp: { ...c.xp }, hp: Math.max(1, Math.round(c.hp)), tile: c.home || c.tile }));
   l.damage = {};
   for (const s of Object.values(ship.systems)) if (s && s.damage > 0) l.damage[s.id] = s.damage;
   // Enemy boarders still alive aboard come along (boarding drones don't: their ship is gone).

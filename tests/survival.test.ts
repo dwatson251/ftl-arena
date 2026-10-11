@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
 import {
-  applyCard, buildShip, carryOver, drawCards, installable, isBoss, Match, newRun, nextEnemy, parseUpgraded, registerWeapons, score,
+  applyCard, baseLoadout, buildShip, carryOver, drawCards, installable, isBoss, Match, newRun, nextEnemy, parseUpgraded, registerWeapons, score,
   suppliesCard, SURVIVAL, tierOf, upgradedId, upgradedWeapon, DEFAULT_CONFIG, type Card,
 } from "@ftl/sim";
 import { Lobby, sanitizeConfig, type Client } from "../apps/server/src/lobby.ts";
@@ -29,7 +29,7 @@ describe("survival: rewards", () => {
     expect(up.shots).toBe(base.shots + 1);
     expect(up.cooldown).toBeLessThan(base.cooldown);
     expect(up.power).toBe(base.power - 1);
-    expect(up.title).toMatch(/★★★★/);
+    expect(up.title).toBe(`${base.title}++++`);
     expect(registerWeapons(db, [id])[id]).toBeTruthy();
     expect(db.weapons[id]).toBeTruthy();
   });
@@ -72,7 +72,7 @@ describe("survival: rewards", () => {
     const run = newRun(db, ship);
     run.battle = 10;
     expect(drawCards(db, run, 3).some((c) => c.tier === 4)).toBe(true);
-    expect(drawCards(db, run, 3).length).toBeGreaterThanOrEqual(4);
+    expect(drawCards(db, run, 3).length).toBeGreaterThanOrEqual(5);
   });
 
   it("the supplies package is worth about as much as the gear beside it", () => {
@@ -91,6 +91,16 @@ describe("survival: rewards", () => {
     expect(Math.abs(full.value - 90) / 90).toBeLessThan(0.25);
     applyCard(db, run, full);
     expect(run.loadout.hull).toBe(db.ships[ship].health + full.maxHull!);
+  });
+
+  it("every hand offers a system or reactor upgrade while the ship has room for one", () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const run = newRun(db, ship);
+      run.battle = 1 + (seed % 9);
+      const hand = drawCards(db, run, seed);
+      expect(hand.some((c) => c.kind === "system" || c.kind === "reactor")).toBe(true);
+      expect(hand.length).toBeGreaterThanOrEqual(4);
+    }
   });
 
   it("taking a card puts it on the ship", () => {
@@ -124,7 +134,16 @@ describe("survival: battles", () => {
     me.crew[0].xp.pilot = 15;
     me.crew[1].dead = true;
     me.systems.shields!.damage = 1;
+    // Crew stand where they were put: one moved to a free tile in another room.
+    const used = new Set(me.crew.map((c) => c.tile));
+    const spot = [...m.geo(me).tiles.keys()].find((t) => !used.has(t))!;
+    me.crew[0].tile = me.crew[0].home = spot;
+    const stayed = me.crew[2]?.tile;
+    // Weapons swapped around in battle keep their new order.
+    const order = me.weapons.map((w) => w.bp).reverse();
+    if (me.weapons.length > 1) me.weapons.reverse().forEach((w, i) => (w.slot = i)); // as swapWeapons leaves them
     carryOver(run, me);
+    if (me.weapons.length === 2) expect(run.loadout.weapons).toEqual(order);
     const next = buildShip(db, run.loadout, 0, "me", () => "x");
     expect(next.hull).toBe(12);
     expect(next.missiles).toBe(3);
@@ -132,6 +151,8 @@ describe("survival: battles", () => {
     expect(next.crew[0].hp).toBe(40);
     expect(next.crew[0].xp.pilot).toBe(15);
     expect(next.systems.shields!.damage).toBe(1);
+    expect(next.crew[0].tile).toBe(spot);
+    if (stayed) expect(next.crew[1].tile).toBe(stayed);
   });
 
   it("the aftermath runs the winner's ship (crew repair) and nothing else", () => {
@@ -183,6 +204,29 @@ describe("survival: battles", () => {
     expect(b.length).toBe(1);
     expect(b[0].hp).toBe(33);
     expect(b[0].tile).toBe(me.crew[0].tile);
+  });
+
+  it("stranded boarders never go home: the new enemy's teleporter can't pull them back, and its AI doesn't try", () => {
+    const run = newRun(db, ship);
+    const first = new Match(db, DEFAULT_CONFIG, [run.loadout, nextEnemy(db, 1, 1).loadout], ["me", "bot"]);
+    const raider = structuredClone(first.state.ships[1].crew[0]);
+    Object.assign(raider, { id: 900, owner: 1, tile: first.state.ships[0].crew[0].tile, path: [], hp: 20 });
+    first.state.ships[0].crew.push(raider);
+    carryOver(run, first.state.ships[0]);
+    // The next enemy has a teleporter, ready to go.
+    const tele = db.hangar.find((h) => db.ships[h].systems.some((x) => x.id === "teleporter"))!;
+    const foe = { ...baseLoadout(db, tele), systems: { ...baseLoadout(db, tele).systems, teleporter: 1 } };
+    const m = new Match(db, DEFAULT_CONFIG, [run.loadout, foe], ["me", "bot"]);
+    const b = m.state.ships[0].crew.find((c) => c.owner === 1)!;
+    expect(b.stranded).toBe(true);
+    m.state.ships[1].tele = 99;
+    m.state.ships[1].systems.teleporter!.power = 1;
+    m.state.ships[1].reactor += 3;
+    const room = m.geo(m.state.ships[0]).tiles.get(b.tile)!.room;
+    m.push(1, { c: "retrieve", room });
+    for (let i = 0; i < 30 * 3; i++) m.step();
+    expect(m.state.ships[0].crew.some((c) => c.id === b.id && !c.dead)).toBe(true);
+    expect(m.state.ships[1].crew.some((c) => c.id === b.id)).toBe(false);
   });
 
   it("only practice lobbies get Survival", () => {

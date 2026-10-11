@@ -38,6 +38,8 @@ export interface CrewPick {
   xp?: Partial<Record<SkillId, number>>;
   /** Survival: health carried from the last fight. */
   hp?: number;
+  /** Survival: where they stood (or were headed) when the ship jumped; they start the next fight there. */
+  tile?: string;
 }
 
 export interface PriceLine {
@@ -336,8 +338,16 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     }
   const blocked = blockedTiles(ship);
   for (const k of g.tiles.keys()) if (!taken.has(k) && !blocked.has(k)) spots.push(k);
+  // Crew who carry a position (Survival, after a jump) keep it; everyone else takes the next free spot.
+  const kept = new Set<string>();
+  for (const c of l.crew) if (c.tile && g.tiles.has(c.tile) && !blocked.has(c.tile) && !kept.has(c.tile)) kept.add(c.tile);
+  const free = spots.filter((t) => !kept.has(t));
+  const claimed = new Set<string>();
+  let next = 0;
   for (let i = 0; i < l.crew.length; i++) {
-    const tile = spots[i] ?? spots[0];
+    const want = l.crew[i].tile;
+    const tile = want && kept.has(want) && !claimed.has(want) ? want : (free[next++] ?? spots[0]);
+    claimed.add(tile);
     const [x, y] = tile.split(",").map(Number);
     const pick = l.crew[i];
     const t = raceOf(pick.race);

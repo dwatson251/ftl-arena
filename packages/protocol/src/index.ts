@@ -73,7 +73,8 @@ export type DebugOp =
   | { op: "parts"; ship: 0 | 1 }
   | { op: "fixall"; ship: 0 | 1 }
   | { op: "restart" }
-  | { op: "skipAftermath" };
+  | { op: "skipAftermath" }
+  | { op: "boarder"; ship: 0 | 1 };
 
 export interface DebugInfo {
   speed: number;

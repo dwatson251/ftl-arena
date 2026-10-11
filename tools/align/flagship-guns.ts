@@ -1,0 +1,26 @@
+/** Close-up of the flagship's guns in the hostiles window (2x), per stage. Usage: ARENA_URL=... npx tsx tools/align/flagship-guns.ts [BOSS_1] */
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+const URL = process.env.ARENA_URL ?? "http://localhost:5173";
+const ship = process.argv[2] ?? "BOSS_1";
+mkdirSync("traces/flagship-guns", { recursive: true });
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })).newPage();
+p.setDefaultTimeout(20000);
+await p.goto(URL);
+await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
+await p.click("#practice");
+await p.waitForSelector(".hg-step");
+await p.waitForTimeout(400);
+await p.selectOption('select[data-prac="botShip"]', ship);
+await p.waitForTimeout(300);
+await p.locator(".hg-step", { hasText: "Launch" }).click();
+await p.click('button[data-ready="1"]');
+const force = await p.waitForSelector('button[data-force="1"]', { timeout: 1500 }).catch(() => null);
+if (force) await force.click();
+await p.waitForFunction(() => !document.querySelector(".hg-step"), null, { timeout: 20000 });
+await p.waitForTimeout(2500);
+await p.click('#debug [data-op="reveal"]').catch(() => {});
+await p.waitForTimeout(800);
+await p.screenshot({ path: `traces/flagship-guns/${ship}.png`, clip: { x: 650, y: 130, width: 290, height: 400 } });
+await b.close();

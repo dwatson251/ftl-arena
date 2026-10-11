@@ -63,7 +63,7 @@ export class Match {
           id: 500 + i * 50 + k, name: b.name, race: RACES[b.race] ? b.race : "human", hp: Math.max(1, Math.min(t.hp, b.hp)), maxHp: t.hp,
           x, y, tile, path: [], home: tile, task: "idle",
           xp: Object.fromEntries(SKILLS.map((sk) => [sk, Math.max(0, Math.round(Number(b.xp?.[sk]) || 0))])) as CrewState["xp"],
-          stun: 0, dead: false, owner: (1 - i) as 0 | 1,
+          stun: 0, dead: false, owner: (1 - i) as 0 | 1, stranded: true,
         });
       });
     });
@@ -891,20 +891,22 @@ export class Match {
     // Zoltan Shield absorbs anything that would reach the ship (bombs included) until it's used up.
     // (ASB shots go straight through a Zoltan shield without touching it.)
     const bypass = (p.kind === "BOMB" && augCount(src, "ZOLTAN_BYPASS") > 0) || p.weapon === "__ASB";
-    if (!bypass && (T.superShield ?? 0) > 0 && room >= 0 && (p.kind === "BOMB" || !this.rng.chance(T.evasion / 100))) {
+    // One evasion roll per shot (bombs never miss); whatever gets through meets the super shield first, and
+    // only once that's gone the ordinary shield layers.
+    if (p.kind !== "BOMB" && (room < 0 || this.rng.chance(T.evasion / 100))) {
+      src.stats.misses++;
+      st.events.push({ e: "miss", ship: T.idx, px: p.px, py: p.py, weapon: p.weapon });
+      this.gainXp(this.mannedBy(T, "pilot"), "pilot");
+      this.gainXp(this.mannedBy(T, "engines"), "engines");
+      return;
+    }
+    if (!bypass && (T.superShield ?? 0) > 0 && room >= 0) {
       T.superShield = Math.max(0, (T.superShield ?? 0) - Math.max(1, bp.damage + bp.ion));
       src.stats.blocked++;
       st.events.push({ e: "shield", ship: T.idx, px: p.px, py: p.py, weapon: p.weapon });
       return;
     }
     if (p.kind !== "BOMB") {
-      if (room < 0 || this.rng.chance(T.evasion / 100)) {
-        src.stats.misses++;
-        st.events.push({ e: "miss", ship: T.idx, px: p.px, py: p.py, weapon: p.weapon });
-        this.gainXp(this.mannedBy(T, "pilot"), "pilot");
-        this.gainXp(this.mannedBy(T, "engines"), "engines");
-        return;
-      }
       if (T.shieldLayers > bp.sp) {
         T.shieldLayers--;
         T.shieldCharge = 0;
@@ -1811,7 +1813,8 @@ export class Match {
       moved = going.slice(0, free.length);
       moved.forEach((c, i) => (c.beam = { t: RULES.teleportTime, phase: "out", ship: enemy.idx, tile: free[i] }));
     } else {
-      const coming = enemy.crew.filter((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined && !c.beam && eg.tiles.get(c.tile)?.room === room);
+      // (Boarders stranded by a ship that's gone can't be pulled back: this teleporter isn't theirs.)
+      const coming = enemy.crew.filter((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined && !c.beam && !c.stranded && eg.tiles.get(c.tile)?.room === room);
       const taken = held(ship);
       const pad = g.roomTiles.get(ts.room)!.filter((t) => !taken.has(t));
       const rest = [...g.tiles.keys()].filter((t) => !taken.has(t) && !pad.includes(t));

@@ -157,7 +157,7 @@ function onMsg(m: ServerMsg): void {
   render();
 }
 
-/** Survival's jump: the drive spools (battle.ts: engines flare, jump sound), then a white flash fades to black until the next battle. */
+/** Survival's jump: the ship fades out under its rear flare (battle.ts), then the view fades to black until the next battle. */
 let jumpVeil: HTMLDivElement | null = null;
 function jumpOut(): void {
   battle?.jumpOut();
@@ -166,8 +166,7 @@ function jumpOut(): void {
   v.className = "jump-veil";
   document.body.appendChild(v);
   jumpVeil = v;
-  setTimeout(() => v.classList.add("flash"), 1500);
-  setTimeout(() => v.classList.replace("flash", "black"), 1750);
+  setTimeout(() => v.classList.add("black"), 2100);
 }
 
 /** Out of the jump at the next beacon: the new battle fades in from black. */
@@ -175,7 +174,6 @@ function arrive(): void {
   const v = jumpVeil;
   if (!v) return;
   jumpVeil = null;
-  v.classList.remove("flash");
   v.classList.add("black");
   play(db!, ["jumpArrive"], 1);
   battle?.arriveIn();
@@ -337,6 +335,7 @@ function renderDebug(): void {
       else if (a.op === "autopilot") dbg({ op: "autopilot", on: !debugInfo?.autopilot, level: 1 });
       else if (a.op === "hull") dbg({ op: "hull", ship: who, delta: Number(a.delta ?? -5) });
       else if (a.op === "breach") dbg({ op: "breach", ship: who });
+      else if (a.op === "boarder") dbg({ op: "boarder", ship: who });
       else if (a.op === "fire") dbg({ op: "fire", ship: who });
       else if (a.op === "damage") dbg({ op: "damage", ship: who });
       else if (a.op === "ion") dbg({ op: "ion", ship: who });
@@ -371,7 +370,7 @@ function renderDebug(): void {
         <input type="range" min="0" max="100" step="5" data-diff style="width:100%">
         <div class="note" data-skill></div>
         <div class="row"><span class="note">Enemy</span><button class="small" data-op="hull" data-who="them" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="them" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="them">breach</button><button class="small" data-op="fire" data-who="them">fire</button><button class="small" data-op="damage" data-who="them">break system</button><button class="small" data-op="ion" data-who="them">ion</button><button class="small" data-op="hurt" data-who="them">hurt crew</button></div>
-        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="me" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="me">breach</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button><button class="small" data-op="kill" data-who="me">kill one</button><button class="small" data-op="missiles" data-who="me">+5 missiles</button><button class="small" data-op="parts" data-who="me">+5 drone parts</button><button class="small" data-op="fixall" data-who="me">fix all systems</button></div>
+        <div class="row"><span class="note">Me</span><button class="small" data-op="hull" data-who="me" data-delta="-5">−5 hull</button><button class="small" data-op="hull" data-who="me" data-delta="5">+5 hull</button><button class="small" data-op="breach" data-who="me">breach</button><button class="small" data-op="fire" data-who="me">fire</button><button class="small" data-op="damage" data-who="me">break system</button><button class="small" data-op="ion" data-who="me">ion</button><button class="small" data-op="hurt" data-who="me">hurt crew</button><button class="small" data-op="kill" data-who="me">kill one</button><button class="small" data-op="boarder" data-who="me">add boarder</button><button class="small" data-op="missiles" data-who="me">+5 missiles</button><button class="small" data-op="parts" data-who="me">+5 drone parts</button><button class="small" data-op="fixall" data-who="me">fix all systems</button></div>
         <div class="debug-log" data-log></div>`
       : `<button class="small" data-toggle title="Debug">⟨ DEBUG</button>`;
   }

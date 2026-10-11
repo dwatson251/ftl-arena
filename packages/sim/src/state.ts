@@ -159,6 +159,9 @@ export interface CrewState {
   aim?: [number, number];
   /** Mind controlled: by which player, seconds left, the true owner, the damage boost and the max HP before. */
   mind?: { by: 0 | 1; t: number; owner: 0 | 1; boost: number; maxHp: number };
+  /** Survival: a boarder left aboard when its own ship was destroyed. No teleporter can take it home, so it
+   *  never retreats; it fights on for the next enemy. */
+  stranded?: boolean;
 }
 
 export type WeaponTarget =
