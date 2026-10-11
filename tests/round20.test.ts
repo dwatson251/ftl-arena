@@ -63,3 +63,28 @@ describe("playtest round 20: power comes back after repairs", () => {
     expect(sh.power).toBeLessThanOrEqual(usable(sh));
   });
 });
+
+describe("playtest round 20: guns without power drop their target", () => {
+  it("switched off by hand, or knocked out by damage, a gun stops aiming", () => {
+    const m = new Match(db, DEFAULT_CONFIG, [b, b], ["a", "b"]);
+    const me = m.state.ships[0];
+    run(m, 0.1);
+    const slot = me.weapons.findIndex((w) => w.powered);
+    expect(slot).toBeGreaterThanOrEqual(0);
+    m.push(0, { c: "target", slot, target: { kind: "room", room: 0 } });
+    run(m, 0.1);
+    expect(me.weapons[slot].target).not.toBeNull();
+    m.push(0, { c: "weaponPower", slot, on: false });
+    run(m, 0.1);
+    expect(me.weapons[slot].target).toBeNull();
+    // Back on and aimed, then the weapons system is wrecked: the target goes with the power.
+    m.push(0, { c: "weaponPower", slot, on: true });
+    run(m, 0.1);
+    m.push(0, { c: "target", slot, target: { kind: "room", room: 0 } });
+    run(m, 0.1);
+    me.systems.weapons!.damage = me.systems.weapons!.level;
+    run(m, 0.1);
+    expect(me.weapons[slot].powered).toBe(false);
+    expect(me.weapons[slot].target).toBeNull();
+  });
+});

@@ -271,3 +271,5 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Low crew health beep | Once below 30% health, re-armed above it | user |
 | Repair rate | One bar per 12.5 s for an untrained human (Engi 6.25 s, Mantis 25 s), plus the repair-skill bonus | FTL wiki |
 | Reinforced system (Survival card) | Bars take 1 + 0.1 × level times the punishment (weapons, flares, fire, boarders); fractions carry | user |
+| Teleported bombs | Appear 0.3 s after firing, beep about 2.1 s, go off at 2.4 s (damage then) | user + FTL sound length |
+| Unpowered guns | Lose their target, however they lost the power | user (FTL) |

@@ -657,6 +657,17 @@
 - **Tests:** reinforcement (card, toughness, bars soaked) and aftermath shots (the enemy's land, ours
   don't); 152 passing in total.
 
+## Round 35: bomb sequence, unpowered guns stop aiming
+- **Teleported bombs** now play in FTL's order, one step after another:
+  - the launcher's teleport (0.3 s, `RULES.bombAppear`);
+  - then the bomb appears in the room, spinning, with FTL's bomb sound (its teleport-in and beeping, about
+    2.1 s);
+  - then it goes off at 2.4 s (`RULES.flight.BOMB`, was 0.8 s). The damage, its blast frames and the
+    explosion all come at that moment.
+  - The bomb sound used to play as it was fired, over a hit that had already landed.
+- **Guns without power drop their target**, whether switched off by hand or knocked out by damage, ion or
+  a power shortage (`weaponPower` off and `clampWeapons`). Test in `round20.test.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

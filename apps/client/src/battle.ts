@@ -353,7 +353,7 @@ export class Battle {
         // Artillery (the flagship's guns): their fire frames on the hull.
         if (e.slot <= -2) this.rOf(e.ship).artilleryFired[-2 - e.slot] = this.animTime;
         // Projectile weapons sound per shot as each leaves the barrel (drawProjectiles); bombs and beams here.
-        if (bpOf(e.ship, e.slot)?.type === "BOMB") play(this.db, ["bombTeleport"], e.ship === v.you ? 1 : 0.6);
+        // (A bomb's sound, its teleport-in and beeping, plays as it appears in the room: drawProjectiles.)
         else if (bpOf(e.ship, e.slot)?.type === "BEAM") play(this.db, bpOf(e.ship, e.slot)?.sounds?.launch, e.ship === v.you ? 1 : 0.6);
         break;
       case "breach":
@@ -893,9 +893,14 @@ export class Battle {
       }
       const target = this.stage.toLocal(dst.root.toGlobal({ x: tx, y: ty }));
       if (p.kind === "BOMB") {
-        // The bomb materialises in the room and spins (frames 0-3) until it goes off; its blast frames play
-        // with the explosion itself (the "hit" event), not before.
-        if (k2 >= 0) {
+        // In sequence, as FTL does it: the launcher's teleport (bombAppear), then the bomb appears in the room
+        // spinning (frames 0-3) with its teleport-and-beep sound, then it goes off (the "hit" event: the
+        // damage, the blast frames and the explosion together).
+        if (t >= RULES.bombAppear) {
+          if (!this.launched.has(p.id)) {
+            this.launched.add(p.id);
+            play(this.db, ["bombTeleport"], mine ? 1 : 0.6);
+          }
           const a = bp?.image ? this.db.anims[bp.image] : undefined;
           const n = a?.frames ?? 9;
           const fr = Math.floor(this.time * 10) % Math.min(4, n);

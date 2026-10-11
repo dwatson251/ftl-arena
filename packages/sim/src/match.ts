@@ -240,6 +240,8 @@ export class Match {
           if (!w.powered) return false;
           w.powered = false;
           w.want = false;
+          // A gun without power drops its target (FTL), however it lost the power.
+          w.target = null;
           ws.power = Math.max(0, ws.power - this.wbp(w.bp).power);
           return true;
         }
@@ -622,7 +624,10 @@ export class Match {
     const ws = ship.systems.weapons;
     const cap = ws ? this.eff(ws) : 0;
     for (let i = ship.weapons.length - 1; i >= 0 && this.weaponLoad(ship) > cap; i--) {
-      if (ship.weapons[i].powered) ship.weapons[i].powered = false;
+      if (ship.weapons[i].powered) {
+        ship.weapons[i].powered = false;
+        ship.weapons[i].target = null;
+      }
     }
   }
 
