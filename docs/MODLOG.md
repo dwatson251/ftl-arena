@@ -936,6 +936,9 @@
   - small badges for the reactor, augments and "+1 choice".
 
   The hangar's art helpers moved to `art.ts`, so both use the same code.
+- **Menus:** LB / RB (L1 / R1) step back and forward through the hangar's steps and the main menu's tabs,
+  skipping locked steps (`menunav.ts`). The ring follows to the new tab. Checked with `menu-shoulders.ts`
+  (scripted pad).
 
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).

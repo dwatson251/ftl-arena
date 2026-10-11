@@ -128,7 +128,7 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
       AI.
   - **Start**: pause.
   - **AUTOFIRE:** with a controller there's no AUTOFIRE button: wheel picks always autofire.
-- **Menus:** the D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to
+- **Menus:** **LB / RB** (L1 / R1) step back and forward through the hangar's steps and the main menu's tabs. The D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to
   submit, B to cancel).
 - **Lobby:** a gamepad icon shows beside players on a controller.
 

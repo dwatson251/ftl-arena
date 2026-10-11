@@ -685,7 +685,7 @@ function settingsBody(): string {
       <div><b>LB</b> hold for the systems wheel: point at one, <b>D-pad ↑/↓</b> powers it up/down</div>
       <div><b>LB</b> + a button: power that system or gun down</div>
       <div><b>Start</b> pause · <b>Back/View</b> match menu</div>
-      <div>Menus: <b>D-pad</b> moves, <b>A</b> selects (and edits numbers/lists: D-pad to change, A to submit), <b>B</b> backs out</div>
+      <div>Menus: <b>D-pad</b> moves, <b>A</b> selects (and edits numbers/lists: D-pad to change, A to submit), <b>B</b> backs out, <b>LB / RB</b> previous / next tab</div>
     </div>` : ""}`;
 }
 

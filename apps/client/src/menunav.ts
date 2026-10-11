@@ -3,6 +3,7 @@
  * clear what's selected before anything changes. A presses a button or ticks a box. On a number, slider or
  * dropdown, A starts editing: the D-pad steps the value (↑/→ up, ↓/← down) and A again submits it (B puts
  * the old value back). B also backs out of a focused field. Focus survives the hangar re-rendering itself.
+ * LB / RB (L1 / R1) step back and forward through the tabs: the hangar's steps, the main menu's tabs.
  */
 import { BTN, type Pad } from "./controller.ts";
 
@@ -103,6 +104,23 @@ export function menuNav(p: Pad, root: HTMLElement): void {
     for (const [b, dx, dy] of dirs) if (p.down(b)) step(editing.el, dx + -dy > 0 ? 1 : -1);
     if (p.down(BTN.A)) finishEdit(true);
     else if (p.down(BTN.B)) finishEdit(false);
+    return;
+  }
+  // LB / RB: the previous or next tab (skipping locked ones), unless an overlay has the pad.
+  for (const [b, dir] of [[BTN.LB, -1], [BTN.RB, 1]] as const) {
+    if (!p.down(b) || [...root.querySelectorAll<HTMLElement>(".overlay")].some(visible)) continue;
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>(".hg-step, .tab[data-mode]")].filter(visible);
+    const at = tabs.findIndex((t) => t.classList.contains("on"));
+    if (at < 0) return;
+    for (let i = at + dir; i >= 0 && i < tabs.length; i += dir) {
+      if (tabs[i].disabled) continue;
+      const sel = tabs[i].classList.contains("hg-step") ? `.hg-step[data-step="${tabs[i].dataset.step}"]` : `.tab[data-mode="${tabs[i].dataset.mode}"]`;
+      tabs[i].click();
+      // The click re-renders the screen: put the ring on the new tab.
+      const now = root.querySelector<HTMLElement>(sel);
+      if (now) mark(now);
+      break;
+    }
     return;
   }
   const list = candidates(root);
