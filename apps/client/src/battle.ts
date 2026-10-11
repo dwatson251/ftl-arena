@@ -2094,15 +2094,29 @@ export class Battle {
     return next;
   }
 
+  /** Hacking drones (by owner) that went up with a ship's break-up. */
+  private hackBlown = new Set<number>();
+
   private drawDrones(v: MatchView): void {
+    // A ship that's blowing up: every drone circling it, and every drone of its own, goes offline at the first
+    // blast; a hacking drone clamped to it (or one it sent) explodes when it breaks apart.
+    const dying = (i: number) => this.explodedAt.has(i);
+    const broken = (i: number) => this.explodedAt.has(i) && this.time >= this.explodedAt.get(i)!;
     // Hacking drones clamp onto the hull just outside the room they hacked (never over a room), probe in; while
     // a pulse runs, purple lightning crackles across the room.
     for (const s of v.ships) {
-      if (!s.hack?.attached) continue;
+      if (!s.hack?.attached || this.hackBlown.has(s.idx)) continue;
       const r = s.idx === v.you ? this.enemy : this.own;
       const spot = this.hackSpot(r, s.hack.room);
       const strip = texNow("ship/drones/drone_hack_extend.png");
       if (!spot) continue;
+      if (broken(s.idx) || broken(1 - s.idx)) {
+        this.hackBlown.add(s.idx);
+        this.boom(1 - s.idx, spot.x, spot.y, 1.1);
+        play(this.db, ["explosion1", "explosion2", "explosion3", "explosion4"], 0.6);
+        continue;
+      }
+      const pulsing = s.hack.pulse > 0 && !dying(s.idx) && !dying(1 - s.idx);
       const layer = s.idx === v.you ? this.projWin : this.projOwn;
       const at = this.stage.toLocal(r.root.toGlobal({ x: spot.x, y: spot.y }));
       const landed = this.time - (this.hackLandAt.get(s.idx) ?? -9);
@@ -2114,7 +2128,7 @@ export class Battle {
         sp.position.set(at.x, at.y);
         sp.rotation = spot.rot + Math.PI + r.root.rotation;
         layer.addChild(sp);
-        if (s.hack.pulse > 0) {
+        if (pulsing) {
           const lt = texNow(Math.floor(this.animTime * 6) % 2 ? "ship/drones/drone_hack_light1.png" : "ship/drones/drone_hack_light2.png");
           if (lt) {
             const l = new Sprite(lt);
@@ -2125,7 +2139,7 @@ export class Battle {
           }
         }
       }
-      if (s.hack.pulse > 0) {
+      if (pulsing) {
         const tiles = r.geo.roomTiles.get(s.hack.room) ?? [];
         const seed = Math.floor(this.animTime * 12);
         const g = new Graphics();
@@ -2154,8 +2168,11 @@ export class Battle {
         if (!bp || !d.deployed || UNIT_DRONES.includes(bp.type)) continue;
         const p = this.dronePos(owner, d.slot);
         if (!p) continue;
-        // Offline drones (their power cut) go dark and drift where they are.
-        const t = (d.powered ? texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_charged.png`) : null) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
+        // Offline drones (their power cut, or the ship they belong to or circle blowing up) go dark and drift
+        // where they are.
+        const circled = (owner === v.you) !== (bp.type === "COMBAT") ? v.you : 1 - v.you;
+        const on = d.powered && !dying(owner) && !dying(circled);
+        const t = (on ? texNow(`ship/drones/${bp.image}_on.png`) ?? texNow(`ship/drones/${bp.image}_charged.png`) : null) ?? texNow(`ship/drones/${bp.image}_base.png`) ?? texNow(`ship/drones/${bp.image}_off.png`);
         const layer = layerFor(owner, bp.type);
         // The art points up: turn it toward what it last shot at, else the ship it circles (combat) or
         // away from its own ship (defense, repair).
@@ -2164,7 +2181,7 @@ export class Battle {
         const aim = this.droneAim.get(`${owner}:${d.slot}`);
         const face = bp.type === "COMBAT" ? (aim ?? c) : { x: 2 * p.x - c.x, y: 2 * p.y - c.y };
         // Turn toward the new heading gradually rather than snapping to it.
-        const rot = this.turn(`d${owner}:${d.slot}`, Math.atan2(face.y - p.y, face.x - p.x) + Math.PI / 2, d.powered ? 7 : 0);
+        const rot = this.turn(`d${owner}:${d.slot}`, Math.atan2(face.y - p.y, face.x - p.x) + Math.PI / 2, on ? 7 : 0);
         if (t) {
           const sp = new Sprite(t);
           sp.anchor.set(0.5);
@@ -2176,7 +2193,7 @@ export class Battle {
           // Shield Overcharger mid-charge: it holds still (the sim stops its orbit), glows, and arcs energy
           // into its ship's shield.
           const sup = v.ships[owner].superShield ?? 0;
-          if (bp.type === "SHIELD" && d.powered && d.cd <= RULES.shieldDroneCharge && sup < RULES.shieldDroneMax) {
+          if (bp.type === "SHIELD" && on && d.cd <= RULES.shieldDroneCharge && sup < RULES.shieldDroneMax) {
             const k = 1 - Math.max(0, d.cd) / RULES.shieldDroneCharge;
             const pulse = 0.55 + 0.45 * Math.sin(this.time * 18);
             const glow = texNow(`ship/drones/${bp.image}_glow.png`);
@@ -2214,7 +2231,7 @@ export class Battle {
             gs.anchor.set(0.5);
             gs.position.set(p.x, p.y);
             gs.scale.set(0.8);
-            gs.rotation = this.turn(`g${owner}:${d.slot}`, aim ? Math.atan2(aim.y - p.y, aim.x - p.x) + Math.PI / 2 : rot, d.powered ? 9 : 0);
+            gs.rotation = this.turn(`g${owner}:${d.slot}`, aim ? Math.atan2(aim.y - p.y, aim.x - p.x) + Math.PI / 2 : rot, on ? 9 : 0);
             if (owner !== v.you) gs.tint = 0xffd0d0;
             layer.addChild(gs);
           }

@@ -392,6 +392,16 @@
   - The enemy's `want` is stripped from the view.
 - Tests: `tests/round20.test.ts` (116 passing in total).
 
+## Round 21: drones when a ship blows up
+- **Drones going offline (client):** at a ship's first blast, every drone circling it goes offline, and so
+  does every drone of its own. That covers its defense drones, the enemy's combat drones on it, and its
+  combat drones on the enemy.
+  - Offline means dark art, no turning, and no Shield Overcharger glow.
+  - The sim already freezes at the end, so they hold still.
+- **Hacking drones (client):** a hacking drone clamped to the dying ship, or one the dying ship sent,
+  explodes when the ship breaks apart, with a small blast and a sound, and is no longer drawn. Its pulse
+  lightning stops at the first blast.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
