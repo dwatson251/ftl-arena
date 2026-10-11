@@ -5,7 +5,7 @@
  */
 import type { GameDB, SystemId, WeaponBP } from "@ftl/data";
 import { baseLoadout, buyableDrones, buyableWeapons, hireableRaces, hullSystems, isSubsystem, priceLoadout, randomCrewName, reactorCap, type Loadout } from "./loadout.ts";
-import { difficultyToBot, enemyLoadout } from "./bot.ts";
+import { botLoadout, difficultyToBot, enemyLoadout } from "./bot.ts";
 import { Rng } from "./rng.ts";
 import { RULES } from "./rules.ts";
 import type { HazardKind, ShipState } from "./state.ts";
@@ -19,8 +19,12 @@ export const SURVIVAL = {
   jump: 3.6,
   /** Difficulty (0-100) of battle n: starts easy, +7 a battle, capped. */
   difficulty: (n: number) => Math.min(95, 5 + 5 * (n - 1)),
-  /** Every tenth battle is a boss: the Rebel flagship's stages in turn (Hard layouts from battle 40). */
-  bossEvery: 10,
+  /** Every 25th battle is the Rebel flagship, its stages in turn (Hard layouts from the fourth time). */
+  bossEvery: 25,
+  /** Every fifth battle otherwise is a mini-boss: a player cruiser, fitted out like a rival captain's. */
+  miniEvery: 5,
+  /** A mini-boss's hangar budget: this plus 6 scrap per point of difficulty. */
+  miniScrap: 250,
   /** From battle 4, a hazard sometimes comes with the beacon (never with a boss). */
   hazardChance: 0.12,
   hazards: ["sun", "pulsar", "asteroids", "nebula", "storm", "asb"] as HazardKind[],
@@ -42,7 +46,7 @@ export const SURVIVAL = {
     "ROCK_ARMOR", "SHIELD_RECHARGE", "SLUG_GEL", "SYSTEM_CASING", "TELEPORT_HEAL", "WEAPON_PREIGNITE", "ZOLTAN_BYPASS",
   ],
   /** Score: per battle won, per boss, per card, per rare card. */
-  score: { win: 100, boss: 500, card: 10, rare: 25 },
+  score: { win: 100, boss: 500, mini: 250, card: 10, rare: 25 },
 };
 
 export interface SurvivalRun {
@@ -50,6 +54,8 @@ export interface SurvivalRun {
   battle: number;
   won: number;
   bosses: number;
+  /** Mini-bosses beaten (player cruisers). */
+  minis?: number;
   /** Titles of the cards taken, in order. */
   picks: string[];
   rare: number;
@@ -94,6 +100,7 @@ export function newRun(db: GameDB, ship: string): SurvivalRun {
 }
 
 export const isBoss = (n: number) => n > 0 && n % SURVIVAL.bossEvery === 0;
+export const isMiniBoss = (n: number) => n > 0 && !isBoss(n) && n % SURVIVAL.miniEvery === 0;
 
 /** Tier from FTL's own price and store rarity: rarity 5 or 80+ scrap is rare. */
 export function tierOf(cost: number, rarity: number): 1 | 2 | 3 | 4 {
@@ -345,10 +352,12 @@ export function drawCards(db: GameDB, run: SurvivalRun, seed: number): Card[] {
   const l = run.loadout;
   const d = SURVIVAL.difficulty(run.battle);
   const boss = isBoss(run.battle);
+  const mini = isMiniBoss(run.battle);
   const hand: Card[] = [];
-  const gear = gearCard(db, l, rng, boss ? 4 : rollTier(rng, d));
+  // The flagship's hand is rare; a mini-boss's leans a tier up.
+  const gear = gearCard(db, l, rng, boss ? 4 : mini ? Math.min(4, rollTier(rng, d) + 1) : rollTier(rng, d));
   if (gear) hand.push(gear);
-  if (boss) {
+  if (boss || mini) {
     const more = gearCard(db, l, rng, rollTier(rng, d));
     if (more && !hand.some((c) => c.id === more.id)) hand.push(more);
   }
@@ -378,6 +387,8 @@ export interface SurvivalEnemy {
   loadout: Loadout;
   difficulty: number;
   boss: boolean;
+  /** A mini-boss: a player cruiser. */
+  mini: boolean;
   hazard: HazardKind;
 }
 
@@ -387,6 +398,13 @@ export function nextEnemy(db: GameDB, n: number, seed: number): SurvivalEnemy {
   const d = SURVIVAL.difficulty(n);
   const { level, scrapBonus } = difficultyToBot(d);
   const boss = isBoss(n);
+  const mini = isMiniBoss(n);
+  if (mini && db.hangar.length) {
+    // A player cruiser, kitted out by the bot's own hangar logic with a growing budget.
+    const ship = rng.pick(db.hangar);
+    const loadout = botLoadout(db, ship, SURVIVAL.miniScrap + d * 6, level, seed);
+    return { loadout, difficulty: d, boss: false, mini: true, hazard: "none" };
+  }
   let ship: string;
   if (boss) {
     const stage = ((n / SURVIVAL.bossEvery - 1) % 3) + 1;
@@ -403,7 +421,7 @@ export function nextEnemy(db: GameDB, n: number, seed: number): SurvivalEnemy {
     ? enemyLoadout(db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14), boss ? undefined : budget)
     : baseLoadout(db, ship);
   const hazard: HazardKind = !boss && n > 3 && rng.chance(SURVIVAL.hazardChance) ? rng.pick(SURVIVAL.hazards) : "none";
-  return { loadout, difficulty: d, boss, hazard };
+  return { loadout, difficulty: d, boss, mini: false, hazard };
 }
 
 /**
@@ -432,5 +450,5 @@ export function carryOver(run: SurvivalRun, ship: ShipState): void {
 
 export function score(run: SurvivalRun): number {
   const s = SURVIVAL.score;
-  return run.won * s.win + run.bosses * s.boss + run.picks.length * s.card + run.rare * s.rare;
+  return run.won * s.win + run.bosses * s.boss + (run.minis ?? 0) * s.mini + run.picks.length * s.card + run.rare * s.rare;
 }

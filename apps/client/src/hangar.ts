@@ -311,7 +311,7 @@ export class Hangar {
     const hazard: Record<string, string> = { none: "none", random: "random", sun: "red giant", pulsar: "pulsar", asteroids: "asteroids", nebula: "nebula", storm: "ion storm", asb: "anti-ship batteries" };
     const pause: Record<string, string> = { off: "off", tactical: `tactical timeouts every ${cfg.tacticalEvery ?? 0}s`, clock: "pause clock" };
     if (cfg.survival) {
-      const lines = ["Survival: battle after battle", "Stock ship · rewards after each win", `Boss every ${SURVIVAL.bossEvery} battles`, `Pausing: ${pause[cfg.pause ?? "off"] ?? cfg.pause}`];
+      const lines = ["Survival: battle after battle", "Stock ship · rewards after each win", `Mini-boss every ${SURVIVAL.miniEvery} · flagship every ${SURVIVAL.bossEvery}`, `Pausing: ${pause[cfg.pause ?? "off"] ?? cfg.pause}`];
       const host = lobby.host === this.me();
       return `<div class="rules-summary">${lines.map((x) => `<div>${h(x)}</div>`).join("")}${link && host && this.step !== "Rules" ? `<button class="small link" data-step="Rules">Change rules</button>` : ""}</div>`;
     }
@@ -359,7 +359,7 @@ export class Hangar {
   private survivalRules(lobby: LobbyState): string {
     const pc = lobby.practice;
     return `<label class="kv"><span>Autonomous ships <span class="note">(not in Survival)</span></span><input type="checkbox" disabled></label>
-      <div class="note">Pick a ship and fly its stock loadout. Battles come one after another against random enemies that get tougher each jump, with the Rebel flagship every ${SURVIVAL.bossEvery} battles and the odd hazard. Your hull, crew, damage and supplies carry over. After each win you have ${SURVIVAL.aftermath} s to patch the ship up (${SURVIVAL.aftermathBoarders} s if enemy boarders are still aboard), then choose one reward: gear (rare finds are gold), an upgrade, or repairs and supplies. Lose the ship and the run ends with a score.</div>
+      <div class="note">Pick a ship and fly its stock loadout. Battles come one after another against random enemies that get tougher each jump, a mini-boss (a rival player cruiser, fully fitted out) every ${SURVIVAL.miniEvery} battles, the Rebel flagship every ${SURVIVAL.bossEvery}, and the odd hazard. Your hull, crew, damage and supplies carry over. After each win you have ${SURVIVAL.aftermath} s to patch the ship up (${SURVIVAL.aftermathBoarders} s if enemy boarders are still aboard), then choose one reward: gear (rare finds are gold), an upgrade, or repairs and supplies. Lose the ship and the run ends with a score.</div>
       ${this.pauseRules(lobby.config, true, true)}
       ${pc ? `<label class="kv"><span>Debug tools in battle</span><input type="checkbox" data-prac="debug" ${pc.debug ? "checked" : ""}></label>` : ""}`;
   }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
 import {
-  applyCard, baseLoadout, buildShip, carryOver, drawCards, installable, isBoss, Match, newRun, nextEnemy, parseUpgraded, registerWeapons, score,
+  applyCard, baseLoadout, buildShip, carryOver, drawCards, installable, isBoss, isMiniBoss, Match, newRun, nextEnemy, parseUpgraded, registerWeapons, score,
   suppliesCard, SURVIVAL, tierOf, upgradedId, upgradedWeapon, DEFAULT_CONFIG, type Card,
 } from "@ftl/sim";
 import { Lobby, sanitizeConfig, type Client } from "../apps/server/src/lobby.ts";
@@ -70,7 +70,7 @@ describe("survival: rewards", () => {
     };
     expect(rares(12)).toBeGreaterThan(rares(1));
     const run = newRun(db, ship);
-    run.battle = 10;
+    run.battle = 25;
     expect(drawCards(db, run, 3).some((c) => c.tier === 4)).toBe(true);
     expect(drawCards(db, run, 3).length).toBeGreaterThanOrEqual(5);
   });
@@ -113,13 +113,19 @@ describe("survival: rewards", () => {
 });
 
 describe("survival: battles", () => {
-  it("every tenth battle is a boss (the flagship's stages), and difficulty climbs", () => {
-    expect([9, 10, 11, 20, 30].map(isBoss)).toEqual([false, true, false, true, true]);
+  it("every 25th battle is the flagship (its stages in turn), every other 5th a mini-boss, and difficulty climbs", () => {
+    expect([24, 25, 26, 50, 75].map(isBoss)).toEqual([false, true, false, true, true]);
+    expect([4, 5, 10, 20, 25, 30].map(isMiniBoss)).toEqual([false, true, true, true, false, true]);
     expect(SURVIVAL.difficulty(1)).toBeLessThan(SURVIVAL.difficulty(8));
     if (real) {
-      expect(nextEnemy(db, 10, 1).loadout.ship).toBe("BOSS_1");
-      expect(nextEnemy(db, 20, 1).loadout.ship).toBe("BOSS_2");
-      expect(nextEnemy(db, 40, 1).loadout.ship).toBe("BOSS_1_HARD");
+      expect(nextEnemy(db, 25, 1).loadout.ship).toBe("BOSS_1");
+      expect(nextEnemy(db, 50, 1).loadout.ship).toBe("BOSS_2");
+      expect(nextEnemy(db, 100, 1).loadout.ship).toBe("BOSS_1_HARD");
+      // Mini-bosses are player cruisers, kitted out past their stock fit.
+      const mini = nextEnemy(db, 5, 3);
+      expect(mini.mini).toBe(true);
+      expect(db.hangar).toContain(mini.loadout.ship);
+      expect(nextEnemy(db, 25, 1).mini).toBe(false);
       expect(nextEnemy(db, 3, 1).hazard).toBe("none");
     }
   });

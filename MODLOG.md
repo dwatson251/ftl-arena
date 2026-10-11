@@ -570,6 +570,18 @@
   Settings, the D-pad ring, editing scrap, the lobby icon, the wheel (pause, pick, autofire), tap to clear,
   LB + B power-down.
 
+## Round 29: Survival bosses
+- **The flagship** only comes every 25th battle: stages 1, 2 and 3 at 25, 50 and 75, then the Hard layouts
+  from 100.
+- **Mini-bosses** every other 5th battle: a random player cruiser (30 hull, full crew) fitted out by the
+  bot's hangar with 250 + 6 scrap per difficulty point. Samples: a Kestrel with 2 shield layers at battle 5;
+  an Osprey or Bravais with 3 layers and 4 guns by battles 20-30.
+- **Mini-boss rewards and labels:**
+  - Beating one gives 5 cards (an extra gear card, the first a tier better) and 250 points.
+  - The HUD says MINI-BOSS (FLAGSHIP for the boss), the reward screen says "RIVAL DEFEATED", and the
+    game-over tally counts both.
+- Tests updated (146 passing).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

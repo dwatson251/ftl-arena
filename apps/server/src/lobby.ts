@@ -71,7 +71,7 @@ export class Lobby {
   private survivalState(): SurvivalState {
     const r = this.run;
     return {
-      battle: r?.battle ?? 1, won: r?.won ?? 0, bosses: r?.bosses ?? 0, score: r ? score(r) : 0, boss: !!this.enemy?.boss,
+      battle: r?.battle ?? 1, won: r?.won ?? 0, bosses: r?.bosses ?? 0, minis: r?.minis ?? 0, score: r ? score(r) : 0, boss: !!this.enemy?.boss, mini: !!this.enemy?.mini,
       hazard: this.enemy?.hazard ?? "none", aftermathLeft: Math.max(0, Math.ceil(this.aftermathLeft)), aftermathTotal: this.aftermathTotal || SURVIVAL.aftermath,
       boarders: this.aftermathBoarders, offer: this.offer,
       picks: r?.picks ?? [], rare: r?.rare ?? 0, over: !!r?.over, weapons: this.upgraded,
@@ -548,7 +548,7 @@ export class Lobby {
     Object.assign(this.upgraded, registerWeapons(this.db, run.loadout.weapons));
     this.enemy = nextEnemy(this.db, run.battle, Math.abs(this.config.seed));
     foe.loadout = this.enemy.loadout;
-    foe.name = this.enemy.boss ? "Rebel Flagship" : `Enemy (${this.enemy.difficulty})`;
+    foe.name = this.enemy.boss ? "Rebel Flagship" : this.enemy.mini ? `Rival captain (${this.enemy.difficulty})` : `Enemy (${this.enemy.difficulty})`;
     const cfg: MatchConfig = { ...this.config, hazard: this.enemy.hazard, winCondition: "hull" };
     const ls: [Loadout, Loadout] = h === 0 ? [run.loadout, this.enemy.loadout] : [this.enemy.loadout, run.loadout];
     this.loadouts = ls;
@@ -647,6 +647,7 @@ export class Lobby {
         // Won: the ship carries on a while (repairs, fires, boarders), then the cards.
         this.run.won++;
         if (this.enemy?.boss) this.run.bosses++;
+        if (this.enemy?.mini) this.run.minis = (this.run.minis ?? 0) + 1;
         this.phase = "aftermath";
         // Enemy boarders still on our ship: a longer wait before the jump, to fight them off.
         const ship = m.state.ships[w];

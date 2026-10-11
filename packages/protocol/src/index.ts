@@ -16,8 +16,12 @@ export interface SurvivalState {
   battle: number;
   won: number;
   bosses: number;
+  /** Mini-bosses (player cruisers) beaten. */
+  minis: number;
   score: number;
   boss: boolean;
+  /** This battle is a mini-boss (a player cruiser). */
+  mini: boolean;
   hazard: string;
   /** Seconds of aftermath left (while in "aftermath"). */
   aftermathLeft: number;

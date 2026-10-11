@@ -1197,8 +1197,8 @@ export class Battle {
     // Under the pause tint and the PAUSED banner, not over them.
     const h = this.under;
     const s = sv.s;
-    const line = `SURVIVAL  ·  BATTLE ${s.battle}  ·  SCORE ${s.score}${s.boss ? "  ·  BOSS" : ""}`;
-    h.text("svL", line, 640, 8, fstyle("JustinFont10", s.boss ? 0xff9a80 : 0xd8e8d0, { stroke: 0x101010 }), [0.5, 0]);
+    const line = `SURVIVAL  ·  BATTLE ${s.battle}  ·  SCORE ${s.score}${s.boss ? "  ·  FLAGSHIP" : s.mini ? "  ·  MINI-BOSS" : ""}`;
+    h.text("svL", line, 640, 8, fstyle("JustinFont10", s.boss ? 0xff9a80 : s.mini ? 0xffc870 : 0xd8e8d0, { stroke: 0x101010 }), [0.5, 0]);
     if (sv.phase !== "aftermath" && sv.phase !== "reward" && sv.phase !== "jump") return;
     // The aftermath clock ticks once a second from the server; smooth it between updates.
     const left = sv.phase === "aftermath" ? Math.max(0, s.aftermathLeft - (performance.now() - sv.at) / 1000) : 0;

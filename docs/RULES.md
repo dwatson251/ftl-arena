@@ -251,7 +251,8 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 |---|---|---|
 | Ship | The chosen hull's stock FTL loadout, with its missiles; building and presets are off | user |
 | Difficulty | Battle n: 5 + 5(n−1), capped at 95. The bot's skill comes from `difficultyToBot`. The enemy is a random single-player hull via `enemyLoadout`, with budget 150 + 5d (more above 60) | est |
-| Bosses | Battles 10, 20 and 30 are the flagship's stages 1-3. From battle 40 they cycle through the Hard layouts | user |
+| Bosses | The flagship every 25th battle: stages 1-3 at 25, 50 and 75, then the Hard layouts from 100 | user |
+| Mini-bosses | Every other 5th battle (5, 10, 15, 20, 30…): a random player cruiser with 30 hull and a full crew, fitted out by the bot's hangar on 250 + 6d scrap; no hazard. Its hand has an extra gear card, and the first is a tier better. 250 points | user + est |
 | Hazards | From battle 4: a 12% chance of a random hazard (never with a boss) | user (rare) |
 | Carried over | Hull and max hull; live crew aboard with their HP and XP (anyone left on the wreck is lost); system damage; missiles; drone parts | user |
 | Reset at the jump | Fires, breaches, ion, O2, weapon charge, deployed drones (boarding drones are lost with their ship) | est |
@@ -263,6 +264,6 @@ documented the game's code (gitlab.com/znixian/xftl, its `doc/` notes and UI cod
 | Weapon upgrades | +1 damage, +1 shot (lasers, bursts, missiles), −20% charge time, −1 power (minimum 1); 3 per gun; worth 25 each | user + est |
 | Can it be installed? | The card is applied to a copy and priced with unlimited scrap; any rule error (slots, max level, augment limit, crew limit) drops it | — |
 | Augments offered | Only the ones the arena simulates (no campaign-only scrap or fleet effects) | — |
-| Score | 100 per win, 500 per boss, 10 per card, 25 per rare card | user (arbitrary) |
+| Score | 100 per win, 500 per flagship, 250 per mini-boss, 10 per card, 25 per rare card | user (arbitrary) |
 | Autonomous ships | A Rules checkbox (no longer a Game mode). Only the hull counts, and builds may launch with no crew. Off in Survival | user |
 

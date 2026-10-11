@@ -108,7 +108,7 @@ the server serves it at `http://<host>:8787/`. To play with each player's own ar
   on the Ship step and you go straight to Launch. You fly its stock FTL loadout: no building and no
   presets.
 - **The run:** battles come one after another against random single-player enemies that get tougher each
-  jump. The Rebel flagship turns up every 10th battle, and hazards now and then. Hull, crew (health,
+  jump. Every 5th battle is a mini-boss (a rival player cruiser, fully fitted out), the Rebel flagship turns up every 25th, and hazards now and then. Hull, crew (health,
   skills and losses), system damage, missiles and drone parts carry over, and so do enemy boarders you
   didn't finish off.
 - **After a win:** the ship carries on for 15 s (60 s if enemy boarders are still aboard, dropping to 15 s once they're dead), so the crew can repair, put out fires and deal with

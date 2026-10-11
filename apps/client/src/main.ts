@@ -196,7 +196,7 @@ function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement 
       <span class="rkind">${esc(kind[c.kind] ?? c.kind)}${c.tier === 4 ? " · RARE" : ""}</span>
       <span class="rtitle">${esc(c.title)}</span>
       <span class="rblurb">${esc(c.blurb)}</span></button>`).join("");
-  o.innerHTML = `<div class="menu reward-menu"><h1>${sv.boss ? "FLAGSHIP DOWN" : `BATTLE ${sv.battle} WON`}</h1>
+  o.innerHTML = `<div class="menu reward-menu"><h1>${sv.boss ? "FLAGSHIP DOWN" : sv.mini ? "RIVAL DEFEATED" : `BATTLE ${sv.battle} WON`}</h1>
     <p class="note">Choose one. Your ship jumps to the next fight as soon as you do.</p>
     <div class="rcards">${cards}</div>
     <p class="note">Score ${sv.score} · ${sv.won} won${sv.bosses ? ` · ${sv.bosses} boss${sv.bosses > 1 ? "es" : ""}` : ""}</p></div>`;
@@ -233,7 +233,8 @@ function gameOverOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElemen
     <p>Survival ended in battle ${sv.battle}.</p>
     <div class="score-rows">
       <div class="kv"><span>Battles won</span><b>${sv.won}</b></div>
-      <div class="kv"><span>Bosses</span><b>${sv.bosses}</b></div>
+      <div class="kv"><span>Mini-bosses</span><b>${sv.minis}</b></div>
+      <div class="kv"><span>Flagships</span><b>${sv.bosses}</b></div>
       <div class="kv"><span>Rewards taken</span><b>${sv.picks.length}${sv.rare ? ` (${sv.rare} rare)` : ""}</b></div>
       <div class="kv score-total"><span>Score</span><b>${sv.score}</b></div>
       <div class="kv"><span>Best on this computer</span><b>${b.best}${b.isNew ? " · new best!" : ""}</b></div>
