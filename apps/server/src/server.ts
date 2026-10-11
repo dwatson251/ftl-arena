@@ -232,6 +232,8 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
           return c.lobby?.setController(c, !!m.on);
         case "controlCrew":
           return c.lobby?.controlCrew(c, m.crew, !!m.on);
+        case "stations":
+          return c.lobby?.setStations(c, m.rooms);
       }
     });
     ws.on("close", () => {

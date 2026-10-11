@@ -127,7 +127,9 @@ export type ClientMsg =
   /** Survival: swap the cards on offer for a fresh hand (spends a re-roll). */
   | { t: "reroll" }
   /** Controller play: crew the player takes from the AI (sent to the teleporter), or hands back. */
-  | { t: "controlCrew"; crew: number[]; on: boolean };
+  | { t: "controlCrew"; crew: number[]; on: boolean }
+  /** Controller play: the saved crew stations ([crew id, room]), for the AI's "back to stations". */
+  | { t: "stations"; rooms: [number, number][] };
 
 export type ServerMsg =
   | { t: "welcome"; v: number; token: string; db: GameDB }

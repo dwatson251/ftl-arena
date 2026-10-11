@@ -63,7 +63,23 @@ export interface Assist {
   ownedWeapons: Set<number>;
   ownedSystems: Set<SystemId>;
   claimedCrew: Set<number>;
+  /** The player's saved crew stations (crew id -> room), for "back to stations" after a battle. */
+  stations?: Map<number, number>;
 }
+
+/**
+ * Survival's aftermath (the enemy gone, the jump drive charging): the AI works the whole crew through one job
+ * at a time, all together. Boarders first; then repairs in `repairOrder`; then healing; then back to stations.
+ */
+export const AFTERMATH = {
+  /** Leave a fight (and go heal) below this share of health. */
+  healBelow: 0.35,
+  /**
+   * Repairs, first listed first: "fire" and "breach" are rooms burning or holed; the rest are damaged systems.
+   * Systems not listed come after, in FTL's crew priority.
+   */
+  repairOrder: ["fire", "breach", "oxygen", "medbay", "clonebay", "shields", "engines", "pilot", "weapons", "drones", "teleporter", "cloaking", "hacking", "mind", "sensors", "doors", "battery"] as string[],
+};
 
 export class Bot {
   level = 0;
@@ -123,6 +139,8 @@ export class Bot {
 
   /** Assisting a controller player (see Assist), else null. */
   private assist: Assist | null = null;
+  /** Survival's aftermath: the crew works as one (see AFTERMATH). The lobby sets it. */
+  aftermath = false;
 
   /** Crew the boarding plan has claimed this think (the crew planner leaves them alone). */
   private reserved = new Set<number>();
@@ -467,6 +485,7 @@ export class Bot {
   private crew(m: Match, ship: ShipState, out: Command[]): void {
     const sk = this.skills;
     if (!sk.repair) return;
+    if (this.aftermath) return this.aftermathCrew(m, ship, out);
     const g = geometry(m.db.layouts[ship.layout]);
     const roomOf = (c: CrewState) => g.tiles.get(c.home)!.room;
     const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === ship.idx && c.drone === undefined && !c.mind && !c.beam && !this.reserved.has(c.id));
@@ -560,6 +579,115 @@ export class Bot {
       if (dist(c, t.room) >= 1e9) continue;
       free.delete(c.id);
       send(c, t.room, t.why);
+    }
+  }
+
+  /**
+   * The aftermath's crew plan: one job for everyone at a time (see AFTERMATH). A job's room takes as many crew
+   * as it has tiles, nearest first; the rest go on to the next job of the same kind.
+   */
+  private aftermathCrew(m: Match, ship: ShipState, out: Command[]): void {
+    const g = geometry(m.db.layouts[ship.layout]);
+    const roomOf = (c: CrewState) => g.tiles.get(c.home)!.room;
+    const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === ship.idx && c.drone === undefined && !c.mind && !c.beam && !this.reserved.has(c.id));
+    if (!alive.length) return;
+    const intruders = ship.crew.filter((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined);
+    const foesIn = (room: number) => intruders.some((q) => g.tiles.get(q.tile)?.room === room);
+    const med = ship.systems.medbay;
+    const medOk = !!med && m.eff(med) > 0 && !med.hacked && !this.deadly(ship, med.room, foesIn(med.room));
+    const send = (c: CrewState, room: number, why: string) => {
+      if (roomOf(c) === room) return;
+      out.push({ c: "moveCrew", crew: [c.id], room });
+      this.note(m, `${c.name} → ${why}`);
+    };
+    const dist = (c: CrewState, room: number) => {
+      if (roomOf(c) === room) return -1;
+      const t = g.roomTiles.get(room)?.[0];
+      const p = t ? findPath(g, c.tile, t) : null;
+      return p ? p.length : 1e9;
+    };
+    // Rooms a job can't send someone into: no air (for those who breathe), or an open airlock. Fires and boarders
+    // are the jobs themselves.
+    const unsafe = (room: number, c?: CrewState) => {
+      const rs = ship.rooms.find((r) => r.id === room);
+      if (!rs) return true;
+      const airlock = g.doors.some((d, i) => ship.doors[i] && (d.roomA === room || d.roomB === room) && (d.roomA < 0 || d.roomB < 0));
+      return airlock || (rs.o2 < CRITICAL_O2 && (!c || raceOf(c.race).suffocation > 0));
+    };
+    let free = [...alive];
+    // Hurt in a fight or out of air: heal (or get somewhere safe) first.
+    const heal = (c: CrewState) => {
+      const safe = medOk ? med!.room : this.safeRoom(g, ship, c, foesIn);
+      if (safe !== null) send(c, safe, medOk ? "medbay" : "get somewhere safe");
+    };
+    free = free.filter((c) => {
+      const here = roomOf(c);
+      const low = c.hp < c.maxHp * AFTERMATH.healBelow && (intruders.length > 0 || medOk);
+      if (!low && !this.inPeril(c, ship, here, foesIn(here))) return true;
+      heal(c);
+      return false;
+    });
+    /** Fill the jobs' rooms in order, nearest crew first; returns who's left. */
+    const fill = (rooms: { room: number; why: string }[], crew: CrewState[]): CrewState[] => {
+      let left = [...crew];
+      for (const job of rooms) {
+        if (!left.length) break;
+        let room = (g.roomTiles.get(job.room) ?? []).length || 1;
+        left.sort((a, b) => dist(a, job.room) - dist(b, job.room));
+        const next: CrewState[] = [];
+        for (const c of left) {
+          if (room > 0 && dist(c, job.room) < 1e9 && !unsafe(job.room, c)) {
+            send(c, job.room, job.why);
+            room--;
+          } else next.push(c);
+        }
+        left = next;
+      }
+      return left;
+    };
+    // 1. Boarders: everyone at the room with the most of them.
+    if (intruders.length) {
+      const count = new Map<number, number>();
+      for (const q of intruders) {
+        const r = g.tiles.get(q.tile)?.room;
+        if (r !== undefined) count.set(r, (count.get(r) ?? 0) + 1);
+      }
+      const rooms = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([room]) => ({ room, why: "repel boarders (all hands)" }));
+      fill(rooms, free);
+      return;
+    }
+    // 2. Repairs, in AFTERMATH.repairOrder.
+    const rank = (key: string, sys?: SystemId) => {
+      const i = AFTERMATH.repairOrder.indexOf(key);
+      return i >= 0 ? i : AFTERMATH.repairOrder.length + (sys ? SYS_PRIORITY[sys] ?? 8 : 8);
+    };
+    const jobs: { room: number; why: string; rank: number }[] = [];
+    for (const rs of ship.rooms) {
+      if (unsafe(rs.id)) continue;
+      if (Object.keys(rs.fires).length && rs.o2 > 10) jobs.push({ room: rs.id, why: "fight fire (all hands)", rank: rank("fire") });
+      if (Object.keys(rs.breaches).length) jobs.push({ room: rs.id, why: "fix breach (all hands)", rank: rank("breach") });
+    }
+    for (const sys of Object.values(ship.systems)) {
+      if (sys && sys.damage > 0) jobs.push({ room: sys.room, why: `repair ${sys.id} (all hands)`, rank: rank(sys.id, sys.id) });
+    }
+    if (jobs.length) {
+      jobs.sort((a, b) => a.rank - b.rank);
+      free = fill(jobs, free);
+      if (!free.length) return;
+    }
+    // 3. Healing, for anyone not at full health (when there's a medbay to heal in).
+    if (!jobs.length && medOk) {
+      const hurt = free.filter((c) => c.hp < c.maxHp);
+      if (hurt.length) {
+        const left = fill([{ room: med!.room, why: "heal up" }], hurt);
+        free = free.filter((c) => !hurt.includes(c) || left.includes(c));
+      }
+    }
+    // 4. Everyone else back to their saved stations.
+    if (jobs.length) return;
+    for (const c of free) {
+      const room = this.assist?.stations?.get(c.id);
+      if (room !== undefined && g.roomTiles.has(room)) send(c, room, "back to station");
     }
   }
 }

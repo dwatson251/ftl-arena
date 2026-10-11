@@ -940,6 +940,28 @@
   skipping locked steps (`menunav.ts`). The ring follows to the new tab. Checked with `menu-shoulders.ts`
   (scripted pad).
 
+## Round 51: the controller AI works as one crew in Survival's aftermath
+- **Aftermath crew plan** (`Bot.aftermathCrew`, on while `bot.aftermath` is set): the lobby sets it around
+  the aftermath's think, for the controller assistant and the debug autopilot. The whole crew does one job at
+  a time, in this order:
+  1. **Boarders:** everyone goes to the room with the most of them. Anyone under `AFTERMATH.healBelow`
+     (35%) heals instead.
+  2. **Repairs** in `AFTERMATH.repairOrder` (exported to tweak): fire, breach, oxygen, medbay, clone bay,
+     shields, engines, piloting, weapons, drones, teleporter, cloaking, hacking, mind control, sensors, doors,
+     battery. Each job's room takes as many crew as it has tiles, nearest first; overflow goes to the next
+     job.
+  3. **Healing** in the medbay, for anyone not at full health.
+  4. **Stations:** the rest go back to the player's saved stations.
+- **Stations reach the server:** a new `stations` message carries the client's saved stations (crew id →
+  room). It's sent when they're first set and on every save.
+- **Bug found while testing:** `deadly()` treats any room with fire or foes as off-limits, so the first
+  version wouldn't send anyone to the jobs themselves. The planner now refuses only airless rooms (for those
+  who breathe) and open airlocks.
+- **Button letters:** A/B/X/Y now use the smaller font, a pixel higher in a slightly bigger circle, and sit
+  centred.
+- **Tests:** `aftermath-ai.test.ts` (5): repairs together, boarders together with the hurt healing, a fire
+  before a system, healing and stations, and the normal plan unchanged. 187 passing in total.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

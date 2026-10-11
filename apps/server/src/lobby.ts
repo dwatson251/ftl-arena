@@ -100,6 +100,13 @@ export class Lobby {
     for (const id of crew.slice(0, 16)) on ? as.a.claimedCrew.add(Number(id)) : as.a.claimedCrew.delete(Number(id));
   }
 
+  /** Controller play: the player's saved crew stations (crew id -> room), where the AI sends crew when there's nothing to do. */
+  setStations(c: Client, rooms: [number, number][]): void {
+    const as = this.assistFor(this.players.findIndex((q) => q.id === c.id));
+    if (!as || !Array.isArray(rooms)) return;
+    as.a.stations = new Map(rooms.slice(0, 16).filter((r) => Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1])).map(([id, room]) => [id, room]));
+  }
+
   /** The assistant for a controller player's seat (made on first use; none for anyone else). */
   private assistFor(idx: number): { bot: Bot; a: Assist } | null {
     const p = this.players[idx];
@@ -597,10 +604,12 @@ export class Lobby {
     const m = this.match;
     if (!m || !this.run) return;
     const h = this.humanIdx();
-    if (this.autopilot) for (const c of this.autopilot.think(m, h)) m.push(h, c);
-    else {
-      const as = this.assistFor(h);
-      if (as) for (const c of as.bot.think(m, h, as.a)) m.push(h, c);
+    // The AI's aftermath plan: the whole crew on one job at a time (AFTERMATH in bot.ts).
+    const ai = this.autopilot ? { bot: this.autopilot, a: undefined } : this.assistFor(h);
+    if (ai) {
+      ai.bot.aftermath = true;
+      for (const c of ai.bot.think(m, h, ai.a)) m.push(h, c);
+      ai.bot.aftermath = false;
     }
     const paused = m.aftermathStep(h);
     if (m.state.events.length) {

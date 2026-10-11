@@ -369,6 +369,7 @@ function startBattle(you: 0 | 1): void {
   battle.onEndReady = () => render();
   battle.onMenu = () => (escMenu ? closeMenu() : openMenu());
   battle.onControlCrew = (crew, on) => net.send({ t: "controlCrew", crew, on });
+  battle.onStations = (rooms) => net.send({ t: "stations", rooms });
   app.stage.addChild(battle.stage);
   layoutBattle();
 }

@@ -6,6 +6,6 @@ export * from "./geometry.ts";
 export * from "./loadout.ts";
 export { Match } from "./match.ts";
 export * from "./view.ts";
-export { Bot, type Assist, botCommands, botLoadout, botSkills, enemyLoadout, difficultyToBot, type BotSkills } from "./bot.ts";
+export { AFTERMATH, Bot, type Assist, botCommands, botLoadout, botSkills, enemyLoadout, difficultyToBot, type BotSkills } from "./bot.ts";
 export * from "./survival.ts";
 export * from "./pricing.ts";

@@ -106,6 +106,13 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
 - **What you control:** with it on, the AI runs your crew and reactor, but leaves alone any gun or system
   you've powered up or down yourself, and crew you've sent to the teleporter. You aim, board, hack and
   mind-control with **selector wheels**: hold the button, point the left stick at a segment, and let go.
+- **After a Survival win:** while the jump drive charges, the AI works the whole crew through one job at a
+  time, together. In order:
+  1. **Boarders:** everyone fights them, and anyone badly hurt goes to heal.
+  2. **Repairs:** fires, breaches, then damaged systems (oxygen, medbay, shields, engines, piloting,
+     weapons…). Each room takes as many crew as it has space; the rest go on to the next job.
+  3. **Healing:** in the medbay.
+  4. **Stations:** everyone goes back to the positions you saved.
 - **Pausing:** the wheel pauses the game when the lobby's pause rules allow (practice and Survival always).
 - **Buttons** (in battle, each button's icon sits beside what it works):
   - **A/B/X/Y**: weapons 1-4.

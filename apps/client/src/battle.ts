@@ -318,6 +318,7 @@ export class Battle {
         const room = kept?.get(c.name);
         this.savedStations.set(c.id, room !== undefined && g.roomTiles.has(room) ? room : g.tiles.get(c.home)!.room);
       }
+      this.onStations([...this.savedStations]);
     }
     this.soundscape(v);
     this.snapAt = performance.now();
@@ -2673,6 +2674,8 @@ export class Battle {
   onMenu: () => void = () => {};
   /** Tell the server which crew the player takes from the AI (teleport picks) or hands back (main.ts sends it). */
   onControlCrew: (crew: number[], on: boolean) => void = () => {};
+  /** Tell the server the saved crew stations (the controller AI sends crew back to them; main.ts sends it). */
+  onStations: (rooms: [number, number][]) => void = () => {};
 
   /** The buttons that open a wheel when held: weapons, teleport out/back, hacking, mind control (right stick click). */
   private static WHEEL_BTNS = new Set<number>([BTN.A, BTN.B, BTN.X, BTN.Y, BTN.RB, BTN.LT, BTN.RT, BTN.RS]);
@@ -2978,8 +2981,9 @@ export class Battle {
     const g = h.gfx(`${key}g`);
     const face: Record<string, number> = { A: 0x3fae49, B: 0xd0453a, X: 0x2f6fd6, Y: 0xe0b520 };
     if (face[btn] !== undefined) {
-      g.circle(x, y, 8).fill({ color: face[btn] }).stroke({ color: 0x101010, width: 1.5 });
-      h.text(key, btn, x, y, fstyle("JustinFont10", 0xffffff, { stroke: 0x101010 }), [0.5, 0.5]);
+      g.circle(x, y, 9).fill({ color: face[btn] }).stroke({ color: 0x101010, width: 1.5 });
+      // The bitmap font sits low in its line box: up a pixel to sit in the middle.
+      h.text(key, btn, x + 0.5, y - 1, fstyle("JustinFont8", 0xffffff), [0.5, 0.5]);
       return;
     }
     const w = btn.length > 1 ? 24 : 16;
@@ -3070,6 +3074,7 @@ export class Battle {
           }
           Battle.keptStations = byName;
         }
+        this.onStations([...this.savedStations]);
         play(this.db, ["powerUpSystem"]);
         this.say("Crew positions saved");
       } else {
