@@ -2,7 +2,7 @@ import { Application } from "pixi.js";
 import { baseSystemId, type GameDB } from "@ftl/data";
 import { PROTOCOL_VERSION, type DebugInfo, type DebugOp, type LobbyState, type ServerMsg } from "@ftl/protocol";
 import { parseUpgraded, type Card, type MatchView } from "@ftl/sim";
-import { artReady, BACKDROPS, hasImg, loadPresentation, PLANETS, preload, registerOfflineCache } from "./assets.ts";
+import { artReady, BACKDROPS, loadPresentation, PLANETS, preload, registerOfflineCache } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
 import { music, play, preloadSounds } from "./audio.ts";
 import { presets } from "./presets.ts";
@@ -655,9 +655,10 @@ const MENU_LOGO = `<svg class="mm-logo" viewBox="0 0 1280 720" preserveAspectRat
   </g>
 </svg>`;
 
-/** The main menu's background picture (swap it here). The "FTL" title is drawn over it by us, so any picture
- *  works; FTL's own splash has the same title painted in, in the same place. */
-const MENU_SPLASH = "main_menus/main_base2.png";
+/** The main menu's background picture (swap it here): our own art, shipped with the client
+ *  (apps/client/public/menu/, a web-sized copy of art/main-menu-bg.png), so it shows with or without FTL.
+ *  The "FTL" title is drawn over it by us. */
+const MENU_SPLASH = "/menu/main-menu-bg.webp";
 
 /** The main menu: FTL's title screen with our four buttons; each opens its own panel (Back returns). */
 const MENU_ITEMS: [typeof mode, string][] = [["single", "Single player"], ["lan", "LAN"], ["online", "Online"], ["settings", "Settings"]];
@@ -667,7 +668,6 @@ function renderMenu(): void {
   const title = db?.music.find((t) => t.name === "title")?.explore;
   if (title) music(title);
   const lan = mode === "lan";
-  const art = hasArt && hasImg(MENU_SPLASH);
   const titles: Record<string, string> = { single: "Single player", lan: "LAN", online: "Online", settings: "Settings" };
   // First launch: ask the captain's name once (it lives in Settings afterwards).
   const askName = !nameAsked && !name;
@@ -694,8 +694,8 @@ function renderMenu(): void {
         <div class="tab-body">${body}</div>
         <div class="note">${esc(busyNote)}</div><div class="err">${esc(error)}</div></div>`
       : "";
-  ui.innerHTML = `<div class="mainmenu ${art ? "art" : ""} ${menuOpen || askName ? "dim" : ""}">
-    <div class="mm-stage" ${art ? `style="background-image:url('/assets/img/${MENU_SPLASH}')"` : ""}>
+  ui.innerHTML = `<div class="mainmenu art ${menuOpen || askName ? "dim" : ""}">
+    <div class="mm-stage" style="background-image:url('${MENU_SPLASH}')">
       ${MENU_LOGO}
       <div class="mm-arena">ARENA</div>
       <div class="mm-buttons">${MENU_ITEMS.map(([m, label]) => `<button class="mm-btn" data-open="${m}">${label}</button>`).join("")}</div>
