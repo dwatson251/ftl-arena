@@ -1316,7 +1316,9 @@ export class Battle {
   private intruderWarning(v: MatchView): void {
     const own = v.ships[v.you];
     // (Not while jumping: the ship is fading out of the picture.)
-    if (this.jumpAt !== null || !own.crew.some((c) => c.owner !== v.you && !c.dead && c.dying === undefined)) return;
+    // (Counted by the server: with sensors down the intruders themselves aren't in the view.)
+    const n = own.intruders ?? own.crew.filter((c) => c.owner !== v.you && !c.dead && c.dying === undefined).length;
+    if (this.jumpAt !== null || n <= 0) return;
     this.warning("in", ["INTRUDERS", "DETECTED"], 0);
   }
 

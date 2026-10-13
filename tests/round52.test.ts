@@ -142,3 +142,21 @@ describe("Survival: losing the crew after the battle", () => {
     expect(l.phase).toBe("over");
   });
 });
+
+describe("intruder alert without sensors", () => {
+  it("the view counts hostile crew aboard even when sensors are down and they're out of sight", () => {
+    const l = baseLoadout(db, KESTREL);
+    const m = new Match(db, DEFAULT_CONFIG, [l, l], ["a", "b"]);
+    const me = m.state.ships[0];
+    me.systems.sensors!.damage = me.systems.sensors!.level;
+    const g = m.geo(me);
+    const empty = [...g.roomTiles.keys()].find((r) => me.crew.every((c) => g.tiles.get(c.tile)!.room !== r))!;
+    const b = structuredClone(me.crew[0]);
+    const t = g.roomTiles.get(empty)![0];
+    Object.assign(b, { id: 900, owner: 1, tile: t, home: t, path: [] });
+    me.crew.push(b);
+    const v = viewFor(m, 0).ships[0];
+    expect(v.crew.some((c) => c.id === 900)).toBe(false);
+    expect(v.intruders).toBe(1);
+  });
+});

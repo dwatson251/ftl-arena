@@ -19,6 +19,8 @@ export interface ShipView extends ShipState {
   systemsKnown: boolean;
   /** Our own ship with sensors down: intruders we can't see but can hear (fighting, wrecking), no positions. */
   heard?: { id: number; task: CrewState["task"]; punch?: boolean; atk?: number; atkDur?: number }[];
+  /** Our own ship: how many hostile crew are aboard, seen or not (the intruder alert works without sensors). */
+  intruders?: number;
   /** Weapon charge is shown even without sensors: the viewer's hacking drone sits on the weapons room. */
   weaponChargeKnown?: boolean;
   /** Their shield recharge bar is readable: a hacking drone sits on their shields room. */
@@ -110,7 +112,10 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   };
 
   const ownView: ShipView = { ...structuredClone(own), visibleRooms: null, interior: true, weaponsKnown: true, systemsKnown: true };
-  if (sensors <= 0 && !over) {
+  // The ship knows it's been boarded even when its sensors can't say where (FTL's intruder alert).
+  ownView.intruders = own.crew.filter((c) => c.owner !== you && !c.dead && c.dying === undefined).length;
+  // (Survival's aftermath runs after the "win": its reveal mustn't make broken sensors look mended until the jump.)
+  if (sensors <= 0 && (!over || (st.config.survival && !reveal))) {
     const seen = sight(own);
     ownView.visibleRooms = [...seen];
     ownView.crew = sense(own, seen, ownView.crew);

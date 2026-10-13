@@ -109,6 +109,9 @@ export interface ShipDrawOpts {
 export class ShipRenderer {
   root = new Container();
   private hull = new Container();
+  /** The floor art (FTL's room-layout template under the rooms): its own layer, hidden with the interior when
+   *  only the exterior shows (a ship going up). It used to sit in `hull` and stay visible. */
+  private floorArt = new Container();
   private floorG = new Graphics();
   private interior = new Container();
   private dynRoot = new Container();
@@ -150,7 +153,7 @@ export class ShipRenderer {
     this.marks = new Imm(this.marksRoot);
     this.thrusters = new Imm(this.thrusterRoot);
     this.weaponsImm = new Imm(this.weaponRoot);
-    this.root.addChild(this.shieldG, this.thrusterRoot, this.weaponRoot, this.hull, this.floorG, this.interior, this.stripeRoot, this.wallsG, this.fog, this.dynRoot, this.overlay, this.marksRoot, this.gibRoot);
+    this.root.addChild(this.shieldG, this.thrusterRoot, this.weaponRoot, this.hull, this.floorArt, this.floorG, this.interior, this.stripeRoot, this.wallsG, this.fog, this.dynRoot, this.overlay, this.marksRoot, this.gibRoot);
   }
 
   /** img/<dir>/<img>_<suffix>.png for this hull (player hulls in ship/, enemy hulls in ships_glow/). */
@@ -194,6 +197,7 @@ export class ShipRenderer {
     const bp = this.db.ships[this.shipId];
     const L = this.layout;
     this.hull.removeChildren();
+    this.floorArt.removeChildren();
     this.interior.removeChildren();
     const base = texNow(this.art("base"));
     // Type C hulls have no floor of their own: they use the A hull's (floorImg).
@@ -205,7 +209,7 @@ export class ShipRenderer {
       if (floor) {
         const f = new Sprite(floor);
         f.position.set(L.img.x + L.floor.x, L.img.y + L.floor.y);
-        this.hull.addChild(f);
+        this.floorArt.addChild(f);
       }
     } else {
       const b = this.bounds();
@@ -300,9 +304,9 @@ export class ShipRenderer {
     const up = this.upright;
     const d = this.dyn;
     const exploded = o.exploded ?? null;
-    for (const n of [this.hull, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.wallsG, this.weaponRoot, this.thrusterRoot]) n.visible = exploded === null;
+    for (const n of [this.hull, this.floorArt, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.wallsG, this.weaponRoot, this.thrusterRoot]) n.visible = exploded === null;
     // Dying: the exterior sprite only (FTL hides the rooms as a ship goes up).
-    if (o.exterior && exploded === null) for (const n of [this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.wallsG]) n.visible = false;
+    if (o.exterior && exploded === null) for (const n of [this.floorArt, this.floorG, this.interior, this.dynRoot, this.fog, this.stripeRoot, this.wallsG]) n.visible = false;
     // Cloaking: fade toward FTL's half-there look (eased so it doesn't pop).
     const want = o.cloaked ? 0.4 : 1;
     this.root.alpha += (want - this.root.alpha) * 0.15;

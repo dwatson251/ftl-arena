@@ -1127,6 +1127,23 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
     it, Enter sends, and lines fade.
   - Hotkeys never see the typing. Checked with `tools/align/chat.ts`.
 
+## Round 59: the intruder alert without sensors; ships going up show only their exterior
+- **Intruder alert:**
+  - With sensors down the view drops unseen boarders, so the warning had nothing to count and vanished.
+    The own-ship view now carries `intruders` (hostile crew aboard, seen or not), and the warning uses it.
+  - Why it looked like the sensors went down after a jump: Survival's aftermath runs after the win, and the
+    end-of-battle reveal (`over`) showed the whole ship even with the sensors wrecked. The next battle went
+    back to the real sensors.
+  - In Survival the own ship's blindness now holds through the aftermath, so nothing appears to mend at the
+    jump.
+- **Exterior while dying:**
+  - The floor art (FTL's room-layout template) was in the same container as the hull art, so it stayed
+    visible when the exterior-only view hid the interior. That was the user's Kestrel/Bulwark "wrong
+    sprite".
+  - The floor now has its own layer (`floorArt`), hidden with the rooms. Checked with
+    `tools/align/dying.ts`.
+- **Tests:** one more in `round52.test.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
