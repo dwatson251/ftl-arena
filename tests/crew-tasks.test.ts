@@ -74,17 +74,66 @@ describe("crew tasks: repelling boarders by strength", () => {
 });
 
 describe("crew tasks: a controller player's own orders", () => {
-  it("the AI leaves someone the player moved alone until that room's work is done", () => {
-    const { me, think, g } = setup();
+  const sit = (m: Match, c: { tile: string; home: string; path: string[] }, room: number) => {
+    const t = m.geo(m.state.ships[0]).roomTiles.get(room)![0];
+    Object.assign(c, { tile: t, home: t, path: [] });
+  };
+  const wait = (m: Match, s: number) => {
+    for (let i = 0; i < s * 30; i++) m.state.tick++;
+  };
+
+  it("the AI leaves someone the player moved alone on the way there", () => {
+    const { me, think } = setup();
     const a = assist();
     const c = me.crew[0];
     me.systems.engines!.damage = 1;
+    a.orders!.set(c.id, { room: me.systems.sensors!.room });
+    expect(moves(think(a)).some((x) => x.crew.includes(c.id))).toBe(false);
+    expect(a.orders!.has(c.id)).toBe(true);
+  });
+
+  it("a quiet room with a computer: they man it for 5 s, then the AI has them again", () => {
+    const { m, me, think } = setup();
+    const a = assist();
+    const c = me.crew[0];
     const room = me.systems.sensors!.room;
     a.orders!.set(c.id, { room });
-    expect(moves(think(a)).some((x) => x.crew.includes(c.id))).toBe(false);
-    // Arrived and nothing to do there: handed back.
-    const t = g.roomTiles.get(room)![0];
-    Object.assign(c, { tile: t, home: t, path: [] });
+    sit(m, c, room);
+    think(a);
+    expect(a.orders!.has(c.id)).toBe(true);
+    wait(m, 4);
+    think(a);
+    expect(a.orders!.has(c.id)).toBe(true);
+    wait(m, 1.5);
+    think(a);
+    expect(a.orders!.has(c.id)).toBe(false);
+  });
+
+  it("a quiet room with no computer: handed straight back", () => {
+    const { m, me, think, g } = setup();
+    const a = assist();
+    const c = me.crew[0];
+    const room = [...g.roomTiles.keys()].find((r) => !Object.values(me.systems).some((s) => s && s.room === r))!;
+    a.orders!.set(c.id, { room });
+    sit(m, c, room);
+    think(a);
+    expect(a.orders!.has(c.id)).toBe(false);
+  });
+
+  it("a room with work (a fire): held until it's out, however long, then straight back (no 5 s)", () => {
+    const { m, me, think, g } = setup();
+    const a = assist();
+    const c = me.crew[0];
+    const room = me.systems.sensors!.room;
+    const rs = me.rooms.find((r) => r.id === room)!;
+    rs.fires[g.roomTiles.get(room)![0]] = 100;
+    a.orders!.set(c.id, { room });
+    sit(m, c, room);
+    think(a);
+    wait(m, 10);
+    think(a);
+    expect(a.orders!.has(c.id)).toBe(true);
+    rs.fires = {};
     think(a);
     expect(a.orders!.has(c.id)).toBe(false);
   });

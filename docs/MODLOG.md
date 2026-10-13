@@ -1265,6 +1265,19 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
 - **Swapping the splash:** `MENU_SPLASH` in `main.ts` is the one place to change it (a path under the asset
   folder; backup art under `packages/content/art/img/` is served the same way).
 
+## Round 68: a player's order into a quiet room mans its computer for 5 s
+- **The rule** (`Bot.orderHolds`, both the normal and the aftermath crew plans): a controller player's
+  order stands until the crew member arrives.
+  - **Work there on arrival** (boarders, fire, a breach, damage): it stands until that's sorted, then the AI
+    takes them back straight away.
+  - **A quiet room with a computer:** they hold its station for `CREW_TASKS.manOrderSeconds` (5), then go
+    back to the AI. A move already lands on the station tile when it's free.
+  - **A quiet room without one:** handed back at once, as before.
+  - The arrival time and "had work" are noted on the order the first time they arrive. A new order resets
+    them.
+- **Tests:** 4 in `crew-tasks.test.ts` (on the way; computer for 5 s; no computer; a fire held past 5 s,
+  then released). 226 passing.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

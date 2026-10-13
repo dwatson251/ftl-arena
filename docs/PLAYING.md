@@ -160,6 +160,11 @@ greyed out, and its tooltip says why.
      weapons…). Each room takes as many crew as it has space; the rest go on to the next job.
   3. **Healing:** in the medbay.
   4. **Stations:** everyone goes back to the positions you saved.
+- **Sending crew yourself:** the AI leaves them to it.
+  - **A room with work** (boarders, fire, a breach or damage when they get there): they stay until it's
+    sorted, then the AI takes them back.
+  - **A quiet room with a computer:** they man it for 5 seconds first.
+  - **A quiet room without one:** the AI has them back at once.
 - **Pausing:** the wheel pauses the game when the lobby's pause rules allow (practice and Survival always).
 - **Buttons** (in battle, each button's icon sits beside what it works):
   - **A/B/X/Y**: weapons 1-4.

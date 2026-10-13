@@ -67,7 +67,7 @@ export interface Assist {
   /** The player's saved crew stations (crew id -> room), for "back to stations" after a battle. */
   stations?: Map<number, number>;
   /** Crew the player has sent somewhere themselves: theirs until that room's work is done (then the AI's again). */
-  orders?: Map<number, { room: number; enemy?: boolean }>;
+  orders?: Map<number, { room: number; enemy?: boolean; arrivedAt?: number; hadWork?: boolean }>;
 }
 
 export type CrewTaskKind = "heal" | "fight" | "fire" | "breach" | "repair" | "man" | "player";
@@ -89,6 +89,8 @@ export const CREW_TASKS = {
   } as Record<CrewTaskKind, CrewTaskKind[]>,
   /** Go to the medbay below this share of health (and stay until healed). */
   healBelow: 0.25,
+  /** A player's order into a quiet room with a computer: they man it this many seconds, then the AI has them. */
+  manOrderSeconds: 5,
   /** Defenders go until their strength (HP x combat x boosts) is this many times the boarders'. */
   defendMargin: 1.2,
   /** Stations defenders leave first when boarders need fighting; shields, weapons and piloting go last. */
@@ -571,9 +573,8 @@ export class Bot {
     for (const c of alive) {
       const order = orders?.get(c.id);
       if (order && !order.enemy) {
-        const arrived = roomOf(c) === order.room && c.path.length === 0 && g.tiles.get(c.tile)?.room === order.room;
-        if (arrived && roomDone(order.room)) orders!.delete(c.id);
-        else this.tasks.set(c.id, { kind: "player", room: order.room, why: "player's order" });
+        if (this.orderHolds(m, ship, g, c, order, roomDone)) this.tasks.set(c.id, { kind: "player", room: order.room, why: "player's order" });
+        else orders!.delete(c.id);
       }
       const t = this.tasks.get(c.id);
       if (!t) continue;
@@ -688,6 +689,24 @@ export class Bot {
     }
   }
 
+  /**
+   * Is a controller player's order (Assist.orders) still theirs? Until they arrive, yes. Then, if the room had
+   * work when they got there (boarders, fire, a breach, damage), until it's sorted. A quiet room with a
+   * computer: CREW_TASKS.manOrderSeconds at its station. A quiet room without one: no longer.
+   */
+  private orderHolds(m: Match, ship: ShipState, g: Geometry, c: CrewState, o: NonNullable<Assist["orders"]> extends Map<number, infer V> ? V : never, roomDone: (room: number) => boolean): boolean {
+    const arrived = g.tiles.get(c.tile)?.room === o.room && c.path.length === 0;
+    if (!arrived) return true;
+    const t = m.state.tick * DT;
+    if (o.arrivedAt === undefined) {
+      o.arrivedAt = t;
+      o.hadWork = !roomDone(o.room);
+    }
+    if (o.hadWork) return !roomDone(o.room);
+    const computer = Object.values(ship.systems).some((s) => s && s.room === o.room && s.station);
+    return computer && t - o.arrivedAt < CREW_TASKS.manOrderSeconds;
+  }
+
   /** Each crew member's task, kept until it's done (or something in CREW_TASKS.interrupts takes over). */
   private tasks = new Map<number, { kind: CrewTaskKind; room: number; why: string }>();
 
@@ -706,14 +725,17 @@ export class Bot {
     const intruders = ship.crew.filter((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined);
     const foesIn = (room: number) => intruders.some((q) => g.tiles.get(q.tile)?.room === room);
     // A controller player's orders stand until the room they sent someone to is sorted.
+    const roomDone = (room: number) => {
+      const rs = ship.rooms.find((r) => r.id === room);
+      const sys = Object.values(ship.systems).find((x) => x && x.room === room);
+      return !!rs && !Object.keys(rs.fires).length && !Object.keys(rs.breaches).length && !(sys && sys.damage > 0) && !foesIn(room);
+    };
     const ordered = (c: CrewState) => {
       const o = this.assist?.orders?.get(c.id);
       if (!o || o.enemy) return false;
-      const rs = ship.rooms.find((r) => r.id === o.room);
-      const sys = Object.values(ship.systems).find((x) => x && x.room === o.room);
-      const done = g.tiles.get(c.tile)?.room === o.room && c.path.length === 0 && !!rs && !Object.keys(rs.fires).length && !Object.keys(rs.breaches).length && !(sys && sys.damage > 0) && !foesIn(o.room);
-      if (done) this.assist!.orders!.delete(c.id);
-      return !done;
+      if (this.orderHolds(m, ship, g, c, o, roomDone)) return true;
+      this.assist!.orders!.delete(c.id);
+      return false;
     };
     const alive = ship.crew.filter((c) => !c.dead && c.dying === undefined && c.owner === ship.idx && c.drone === undefined && !c.mind && !c.beam && !this.reserved.has(c.id) && !ordered(c));
     if (!alive.length) return;
