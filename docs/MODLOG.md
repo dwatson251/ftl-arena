@@ -1256,6 +1256,15 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
   font. It now matches that specificity.
 - **Checked:** `tools/align/menu-sound.ts` (title track requested; colour on hover goes white to FTL yellow).
 
+## Round 67: the menu's "FTL" title drawn by us
+- **The logo:** the title is now always drawn over the splash, so the splash can be replaced. It's seven
+  white blocks with a soft glow, in an SVG laid over the stage in the splash's own 1280×720 coordinates.
+  - The blocks were measured from the logo painted into FTL's `main_base2.png`: F at x 850-953, T at
+    974-1095, L at 1123-1205, all from y 80 to 229.
+  - Overlaid in red on the painted one, no edge shows.
+- **Swapping the splash:** `MENU_SPLASH` in `main.ts` is the one place to change it (a path under the asset
+  folder; backup art under `packages/content/art/img/` is served the same way).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

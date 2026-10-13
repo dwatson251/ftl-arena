@@ -640,6 +640,25 @@ function render(): void {
   renderMenu();
 }
 
+/**
+ * The "FTL" title, drawn by us in the same place and shape as the one painted into FTL's splash: solid white
+ * blocks with a soft glow, in the splash's own 1280×720 coordinates (the stage is that box, so it lines up
+ * whatever the window size).
+ */
+const MENU_LOGO = `<svg class="mm-logo" viewBox="0 0 1280 720" preserveAspectRatio="none" aria-label="FTL">
+  <defs><filter id="mm-glow" x="-20%" y="-30%" width="140%" height="160%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/>
+    <feColorMatrix in="b" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.75 0"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <g fill="#fff" filter="url(#mm-glow)">
+    <rect x="850" y="80" width="36" height="150"/><rect x="850" y="80" width="104" height="37"/><rect x="850" y="138" width="80" height="33"/>
+    <rect x="974" y="80" width="122" height="37"/><rect x="1016" y="80" width="35" height="150"/>
+    <rect x="1123" y="80" width="35" height="150"/><rect x="1123" y="192" width="83" height="38"/>
+  </g>
+</svg>`;
+
+/** The main menu's background picture (swap it here). The "FTL" title is drawn over it by us, so any picture
+ *  works; FTL's own splash has the same title painted in, in the same place. */
+const MENU_SPLASH = "main_menus/main_base2.png";
+
 /** The main menu: FTL's title screen with our four buttons; each opens its own panel (Back returns). */
 const MENU_ITEMS: [typeof mode, string][] = [["single", "Single player"], ["lan", "LAN"], ["online", "Online"], ["settings", "Settings"]];
 function renderMenu(): void {
@@ -648,7 +667,7 @@ function renderMenu(): void {
   const title = db?.music.find((t) => t.name === "title")?.explore;
   if (title) music(title);
   const lan = mode === "lan";
-  const art = hasArt && hasImg("main_menus/main_base2.png");
+  const art = hasArt && hasImg(MENU_SPLASH);
   const titles: Record<string, string> = { single: "Single player", lan: "LAN", online: "Online", settings: "Settings" };
   // First launch: ask the captain's name once (it lives in Settings afterwards).
   const askName = !nameAsked && !name;
@@ -676,8 +695,8 @@ function renderMenu(): void {
         <div class="note">${esc(busyNote)}</div><div class="err">${esc(error)}</div></div>`
       : "";
   ui.innerHTML = `<div class="mainmenu ${art ? "art" : ""} ${menuOpen || askName ? "dim" : ""}">
-    <div class="mm-stage" ${art ? `style="background-image:url('/assets/img/main_menus/main_base2.png')"` : ""}>
-      ${art ? "" : `<div class="mm-logo">FTL</div>`}
+    <div class="mm-stage" ${art ? `style="background-image:url('/assets/img/${MENU_SPLASH}')"` : ""}>
+      ${MENU_LOGO}
       <div class="mm-arena">ARENA</div>
       <div class="mm-buttons">${MENU_ITEMS.map(([m, label]) => `<button class="mm-btn" data-open="${m}">${label}</button>`).join("")}</div>
       ${db?.source === "ftl" && !hasArt ? `<div class="mm-note note">No local art found: drawing placeholders.</div>` : ""}
