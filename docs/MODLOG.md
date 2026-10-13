@@ -1074,6 +1074,16 @@ install.
   (it used to be `difficultyToBot(difficulty)`). Card tiers still follow the battle number.
 - **Tests:** 3 in `survival.test.ts`, the balance rule checked over 200 seeds × 40 battles.
 
+## Round 56: Tournament makes big builds expensive
+All the numbers are in `PRICING.tournament`, and none of this changes the other modes:
+- **Weapons:** ×1.5 on top of rarity.
+- **Escalation:** each extra weapon, augment or crew member bought costs 25% more than the last.
+- **Growth:** system level steps ×1.2^(level − 1); reactor bars ×1.12 per bar bought.
+- **Crystal crew** only come with a hull's stock crew (`stockOnlyCrew`).
+- **Shared helpers:** `itemPrice` / `crewPrice` / `systemStepPrice` / `reactorBarPrice` are used by both
+  `priceLoadout` and the hangar's buy buttons (which show the next one's price), so the two always agree.
+- **Tests:** 3 in `pricing.test.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

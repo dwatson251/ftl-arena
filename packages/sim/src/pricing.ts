@@ -4,7 +4,9 @@
  * - "ships" (Ship Expenses): picking a hull costs scrap: its stock fit's value (crew, weapons, systems, drones,
  *   augments) plus a premium for how far into FTL it unlocks.
  * - "tournament": hulls cost the same, and bought weapons and augments are priced by their FTL rarity; items
- *   a normal run can't give you are banned (beyond the hull's own stock fit).
+ *   a normal run can't give you are banned (beyond the hull's own stock fit). Big builds cost more and more:
+ *   weapons are dearer, every extra weapon, augment or crew member costs more than the last, system levels and
+ *   reactor bars rise exponentially, and Crystal crew come only with a hull's stock crew.
  */
 import type { GameDB } from "@ftl/data";
 import type { Loadout } from "./loadout.ts";
@@ -22,6 +24,19 @@ export const PRICING = {
   raceTier: { HARD: 0, CIRCLE: 20, FED: 30, ENERGY: 30, MANTIS: 30, JELLY: 40, ROCK: 40, STEALTH: 50, ANAEROBIC: 60, CRYSTAL: 70 } as Record<string, number>,
   /** Tournament: multipliers on FTL's own cost, by store rarity. */
   rarity: { 1: 0.9, 2: 1, 3: 1.1, 4: 1.25, 5: 1.5 } as Record<number, number>,
+  /** Tournament: what makes a big build expensive. */
+  tournament: {
+    /** Weapons cost this much more (on top of rarity). */
+    weaponMult: 1.5,
+    /** Each extra weapon, augment or crew member bought costs this share more than the one before it. */
+    escalate: 0.25,
+    /** A system's level step costs FTL's price × growth^(level - 1). */
+    systemGrowth: 1.2,
+    /** A reactor bar costs FTL's price × growth^(bars bought before it). */
+    reactorGrowth: 1.12,
+    /** Races only allowed when they come with the hull. */
+    stockOnlyCrew: ["crystal"],
+  },
   /** Banned beyond the stock fit when unobtainable items are off, on top of everything with rarity 0. */
   unobtainable: { weapons: [] as string[], augments: [] as string[], crew: [] as string[] },
   /** Rarity-0 items that a normal run does give you (events), so they stay allowed. */
@@ -61,12 +76,33 @@ export function shipPrice(db: GameDB, ship: string, stock: Loadout): number {
   return Math.round(stockValue(db, stock) * PRICING.componentRate) + (PRICING.premium[f.layout] ?? 0) + (PRICING.raceTier[f.race] ?? 0);
 }
 
-/** A weapon's or augment's price: FTL's cost, scaled by rarity in a Tournament. */
-export function itemPrice(db: GameDB, kind: "weapon" | "augment", id: string, costs: CostMode = "none"): number {
+/**
+ * A weapon's or augment's price: FTL's cost, scaled by rarity in a Tournament (weapons dearer still), and in a
+ * Tournament rising by PRICING.tournament.escalate for each one already `bought`.
+ */
+export function itemPrice(db: GameDB, kind: "weapon" | "augment", id: string, costs: CostMode = "none", bought = 0): number {
   const bp = kind === "weapon" ? db.weapons[id] : db.augments?.[id];
   if (!bp) return 0;
   if (costs !== "tournament") return bp.cost;
-  return Math.round(bp.cost * (PRICING.rarity[bp.rarity] ?? 1));
+  const T = PRICING.tournament;
+  return Math.round(bp.cost * (PRICING.rarity[bp.rarity] ?? 1) * (kind === "weapon" ? T.weaponMult : 1) * (1 + T.escalate * bought));
+}
+
+/** Hiring one more of a race: FTL's price, rising in a Tournament for each crew member already `bought`. */
+export function crewPrice(db: GameDB, race: string, costs: CostMode = "none", bought = 0): number {
+  const cost = db.crew[race]?.cost ?? 0;
+  return costs === "tournament" ? Math.round(cost * (1 + PRICING.tournament.escalate * bought)) : cost;
+}
+
+/** A system going from level `lv` to lv+1 (lv 0: installing it): FTL's price, exponential in a Tournament. */
+export function systemStepPrice(bp: { cost: number; upgradeCost: number[] }, lv: number, costs: CostMode = "none"): number {
+  const base = lv === 0 ? bp.cost : (bp.upgradeCost[lv - 1] ?? bp.upgradeCost[bp.upgradeCost.length - 1] ?? 100);
+  return costs === "tournament" ? Math.round(base * PRICING.tournament.systemGrowth ** Math.max(0, lv - 1)) : base;
+}
+
+/** A reactor bar at level `lv` (`base`: the hull's own reactor): FTL's price, exponential in a Tournament. */
+export function reactorBarPrice(lv: number, base: number, price: (lv: number) => number, costs: CostMode = "none"): number {
+  return costs === "tournament" ? Math.round(price(lv) * PRICING.tournament.reactorGrowth ** Math.max(0, lv - base)) : price(lv);
 }
 
 /** Can a normal FTL run give you this? Store rarity above 0, or let back in by PRICING.obtainable. */

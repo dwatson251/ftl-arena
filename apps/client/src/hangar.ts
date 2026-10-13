@@ -13,7 +13,7 @@ import { DEV_TOOLS } from "./version.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buildShip, buyableDrones, reactorUsed, usable, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
-  type MatchConfig, stockLoadout, SURVIVAL, itemPrice, obtainable, shipPrice,
+  type MatchConfig, stockLoadout, SURVIVAL, itemPrice, obtainable, shipPrice, crewPrice, PRICING, reactorBarPrice, systemStepPrice,
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -365,7 +365,7 @@ export class Hangar {
         <option value="none" ${(cfg.costs ?? "none") === "none" ? "selected" : ""}>None</option>
         <option value="ships" ${cfg.costs === "ships" ? "selected" : ""}>Ship expenses</option>
         <option value="tournament" ${cfg.costs === "tournament" ? "selected" : ""}>Tournament</option></select></div>
-      <div class="note">${cfg.costs === "ships" ? "Hulls cost scrap: their stock crew, weapons and systems, plus a premium for how late FTL unlocks them." : cfg.costs === "tournament" ? "Hulls cost scrap, weapons and augments are priced by their FTL rarity, and only what a normal run can give you is allowed (stock fits excepted)." : "Hulls are free; only what you add costs scrap."}</div>
+      <div class="note">${cfg.costs === "ships" ? "Hulls cost scrap: their stock crew, weapons and systems, plus a premium for how late FTL unlocks them." : cfg.costs === "tournament" ? "Hulls cost scrap, weapons and augments are priced by their FTL rarity, and only what a normal run can give you is allowed (stock fits excepted). Big builds cost more and more: weapons are dearer, each extra weapon, augment or crew member costs more than the last, system levels and reactor bars rise steeply, and Crystal crew only come with a hull." : "Hulls are free; only what you add costs scrap."}</div>
       <label class="kv"><span>Allow unobtainable crew, weapons and augments</span><input type="checkbox" data-cfg="unobtainable" ${cfg.unobtainable !== false ? "checked" : ""} ${cfg.costs === "tournament" ? "disabled" : ""}></label>
       ${cfg.costs === "tournament" ? `<div class="note">Tournament: normal-run items only.</div>` : ""}
       <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""}></label>
@@ -509,8 +509,23 @@ export class Hangar {
   /** Off-limits to buy now: unobtainable items are off, a normal run can't give you this, and the fit already
    *  has as many as the hull came with (stock ones can always be put back). */
   private banned(kind: "weapons" | "augments" | "crew", id: string, have: string[], stock: string[]): boolean {
+    const atStock = have.filter((x) => x === id).length >= stock.filter((x) => x === id).length;
+    // Tournament: some races (Crystal) only come with a hull's own crew.
+    if (kind === "crew" && this.priceRules().costs === "tournament" && PRICING.tournament.stockOnlyCrew.includes(id)) return atStock;
     if (this.priceRules().unobtainable || obtainable(this.db, kind, id)) return false;
-    return have.filter((x) => x === id).length >= stock.filter((x) => x === id).length;
+    return atStock;
+  }
+
+  /** How many of a kind the fit has bought beyond the hull's stock (a Tournament prices each next one higher). */
+  private bought(have: string[], stock: string[]): number {
+    const left = [...stock];
+    let n = 0;
+    for (const x of have) {
+      const i = left.indexOf(x);
+      if (i >= 0) left.splice(i, 1);
+      else n++;
+    }
+    return n;
   }
 
   /** "Bring your own ship" has no scrap allowance. */
@@ -723,7 +738,7 @@ export class Hangar {
         // FTL's 8-system limit: a new (main) system can't go in once 8 are installed (a bay swap is fine).
         const capped = lv === 0 && !isSub(s.id) && atCap && !this.bayPair(s.id);
         const bp = db.systems[s.id];
-        const next = lv >= s.max ? "max" : lv === 0 ? `install ${bp?.cost ?? "?"}` : `next ${bp?.upgradeCost[lv - 1] ?? bp?.upgradeCost[bp.upgradeCost.length - 1] ?? "?"}`;
+        const next = lv >= s.max ? "max" : !bp ? "?" : `${lv === 0 ? "install" : "next"} ${systemStepPrice(bp, lv, this.priceRules().costs)}`;
         const bars = Array.from({ length: s.max }, (_, i) => `<i class="${i < Math.min(s.base, lv) ? "on" : i < lv ? "new" : ""}"></i>`).join("");
         return `<div class="sys-row">${this.sysIcon(s.id)}<span class="sys-name">${s.id}</span><span class="bars">${bars}</span>
           <button class="small" data-sys="${s.id}" data-d="-1" ${lv <= s.base && !(this.bayPair(s.id) && lv > 0 && hullSystems(db, l.ship).some((x) => x.id === this.bayPair(s.id) && x.base > 0)) ? "disabled" : ""}>−</button>
@@ -736,7 +751,7 @@ export class Hangar {
       ${rows}
       <div class="sys-row"><span class="sysicon ph">⚡</span><span class="sys-name">reactor</span><span><b>${l.reactor}</b></span>
         <button class="small" data-reactor="-1" ${l.reactor <= base.reactor ? "disabled" : ""}>−</button>
-        <button class="small" data-reactor="1" ${l.reactor >= reactorCap(db, l.ship, unl) ? "disabled" : ""}>+</button><span class="note">${RULES.reactorPrice(l.reactor)} per bar</span></div>
+        <button class="small" data-reactor="1" ${l.reactor >= reactorCap(db, l.ship, unl) ? "disabled" : ""}>+</button><span class="note">${reactorBarPrice(l.reactor, baseLoadout(db, l.ship).reactor, RULES.reactorPrice, this.priceRules().costs)} per bar</span></div>
       ${db.reactorDesc ? `<div class="sys-info"><div>${h(db.reactorDesc)}</div></div>` : ""}
       ${this.powerNote(l)}
       ${this.nav("Ship", "Weapons")}`;
@@ -816,7 +831,7 @@ export class Hangar {
           const w = db.weapons[id];
           const ban = this.banned("weapons", id, l.weapons, baseLoadout(db, l.ship).weapons);
           return `<div class="wcard ${ban ? "banned" : ""}" ${ban ? `title="${BANNED}"` : `draggable="true" data-drag="buy:${id}"`}>${this.weaponArt(id, 1)}<div class="wcard-body"><b>${h(w.title)}</b><div class="note">${this.stats(id)}</div></div>
-            <button class="small buy" data-buy="${id}" ${full || ban ? "disabled" : ""} ${ban ? `title="${BANNED}"` : ""}>${this.scrapIcon()}${itemPrice(db, "weapon", id, this.priceRules().costs)}</button></div>`;
+            <button class="small buy" data-buy="${id}" ${full || ban ? "disabled" : ""} ${ban ? `title="${BANNED}"` : ""}>${this.scrapIcon()}${itemPrice(db, "weapon", id, this.priceRules().costs, this.bought(l.weapons, baseLoadout(db, l.ship).weapons))}</button></div>`;
         })
         .join("")}</div>`)
       .join("");
@@ -865,7 +880,7 @@ export class Hangar {
       .map((r) => {
         const t = RACES[r];
         return `<div class="race-card">${this.portrait(r, 1.8)}<div><b>${h(db.crew[r].title)}</b> <span class="note">${t.hp} HP${t.speed !== 1 ? ` · speed ×${t.speed}` : ""}${t.repair !== 1 ? ` · repair ×${t.repair}` : ""}</span>
-          <div class="note">${h(t.blurb)}</div></div><button class="small" data-hire="${r}" ${full || this.banned("crew", r, l.crew.map((c) => c.race), baseLoadout(db, l.ship).crew.map((c) => c.race)) ? `disabled title="${BANNED}"` : ""}>${db.crew[r].cost}</button></div>`;
+          <div class="note">${h(t.blurb)}</div></div><button class="small" data-hire="${r}" ${full || this.banned("crew", r, l.crew.map((c) => c.race), baseLoadout(db, l.ship).crew.map((c) => c.race)) ? `disabled title="${BANNED}"` : ""}>${crewPrice(db, r, this.priceRules().costs, this.bought(l.crew.map((c) => c.race), baseLoadout(db, l.ship).crew.map((c) => c.race)))}</button></div>`;
       })
       .join("");
     return `<h2>${this.num("Crew")} · Crew (${l.crew.length}/${RULES.maxCrew})</h2>
@@ -935,7 +950,7 @@ export class Hangar {
         const ban = this.banned("augments", a.id, augs, base);
         return `<div class="wcard aug ${ban ? "banned" : ""}" ${ban ? `title="${BANNED}"` : ""}><div class="wcard-body"><b>${h(a.title)}</b>${a.stackable ? ` <span class="note">stacks</span>` : ""}
           <div class="note">${h(a.desc)}</div></div>
-          <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) || ban ? "disabled" : ""}>${this.scrapIcon()}${itemPrice(db, "augment", a.id, this.priceRules().costs)}</button></div>`;
+          <button class="small buy" data-aug="${a.id}" ${full || (has && !a.stackable) || ban ? "disabled" : ""}>${this.scrapIcon()}${itemPrice(db, "augment", a.id, this.priceRules().costs, this.bought(l.augments ?? [], baseLoadout(db, l.ship).augments ?? []))}</button></div>`;
       })
       .join("");
     return `<h2>${this.num("Augments")} · Augments (${augs.length}/${MAX_AUGMENTS})</h2>

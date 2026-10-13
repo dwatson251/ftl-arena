@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
-import { baseLoadout, DEFAULT_CONFIG, itemPrice, obtainable, priceLoadout, PRICING, shipPrice, stockValue } from "@ftl/sim";
+import { baseLoadout, DEFAULT_CONFIG, itemPrice, obtainable, priceLoadout, PRICING, shipPrice, stockValue, systemStepPrice } from "@ftl/sim";
 import { Lobby, sanitizeConfig, type Client } from "../apps/server/src/lobby.ts";
 
 const real = existsSync("assets-local/manifest.json");
@@ -28,11 +28,12 @@ describe("Scrap costs", () => {
     }
   });
 
-  it("Tournament: weapons and augments are priced by rarity", () => {
+  it("Tournament: weapons and augments are priced by rarity (weapons dearer still)", () => {
     const w5 = Object.values(db.weapons).find((w) => w.rarity === 5 && w.cost > 0);
     const w1 = Object.values(db.weapons).find((w) => w.rarity === 1 && w.cost > 0);
-    if (w5) expect(itemPrice(db, "weapon", w5.id, "tournament")).toBe(Math.round(w5.cost * 1.5));
-    if (w1) expect(itemPrice(db, "weapon", w1.id, "tournament")).toBe(Math.round(w1.cost * 0.9));
+    const k = PRICING.tournament.weaponMult;
+    if (w5) expect(itemPrice(db, "weapon", w5.id, "tournament")).toBe(Math.round(w5.cost * 1.5 * k));
+    if (w1) expect(itemPrice(db, "weapon", w1.id, "tournament")).toBe(Math.round(w1.cost * 0.9 * k));
     if (w5) expect(itemPrice(db, "weapon", w5.id, "ships")).toBe(w5.cost);
   });
 
@@ -74,5 +75,32 @@ describe("Scrap costs", () => {
     l.setConfig(c, { costs: "tournament", unobtainable: true });
     expect(l.config.unobtainable).toBe(false);
     expect(sanitizeConfig(db, { ...DEFAULT_CONFIG, costs: "ships", survival: true }, true).costs).toBe("none");
+  });
+});
+
+describe("Tournament: big builds cost more and more", () => {
+  const ship = "PLAYER_SHIP_HARD";
+  const T = { costs: "tournament" as const, unobtainable: false };
+  it("each extra weapon costs more than the one before; weapons are dearer than in other modes", () => {
+    const base = baseLoadout(db, ship);
+    const w = "LASER_BURST_1";
+    const one = priceLoadout(db, { ...base, weapons: [...base.weapons, w] }, 99999, [], false, false, T).total;
+    const two = priceLoadout(db, { ...base, weapons: [...base.weapons, w, w] }, 99999, [], false, false, T).total;
+    const none = priceLoadout(db, { ...base, weapons: [...base.weapons, w] }, 99999, [], false, false, { costs: "ships" }).total;
+    expect(two - one).toBeGreaterThan(one - priceLoadout(db, base, 99999, [], false, false, T).total);
+    expect(one - priceLoadout(db, base, 99999, [], false, false, T).total).toBeGreaterThan(none - priceLoadout(db, base, 99999, [], false, false, { costs: "ships" }).total);
+  });
+
+  it("system levels rise exponentially", () => {
+    const bp = db.systems.shields;
+    expect(systemStepPrice(bp, 5, "tournament")).toBeGreaterThan(systemStepPrice(bp, 5, "none"));
+    expect(systemStepPrice(bp, 1, "tournament")).toBe(systemStepPrice(bp, 1, "none"));
+  });
+
+  it("Crystal crew only come with a hull; Ship expenses still hires them", () => {
+    const base = baseLoadout(db, ship);
+    const l = { ...base, crew: [...base.crew, { race: "crystal", name: "Ruby" }] };
+    expect(priceLoadout(db, l, 99999, [], false, false, T).errors.some((e) => /Crystal/i.test(e))).toBe(true);
+    expect(priceLoadout(db, l, 99999, [], false, false, { costs: "ships" }).ok).toBe(true);
   });
 });

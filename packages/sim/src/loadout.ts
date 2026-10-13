@@ -3,7 +3,7 @@ import { baseSystemId, SUBSYSTEMS, V1_SYSTEMS, type GameDB, type SystemId } from
 import { geometry, key } from "./geometry.ts";
 import { raceOf, RACES, RULES, SKILLS, type SkillId } from "./rules.ts";
 import type { CrewState, ShipState, SystemState } from "./state.ts";
-import { itemPrice, obtainable, shipPrice, type PriceRules } from "./pricing.ts";
+import { crewPrice, itemPrice, obtainable, PRICING, reactorBarPrice, shipPrice, systemStepPrice, type PriceRules } from "./pricing.ts";
 
 export interface Loadout {
   ship: string;
@@ -199,13 +199,8 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     const bp = db.systems[h.id];
     if (!bp || want <= h.base) continue;
     let cost = 0;
-    let from = h.base;
-    if (from === 0) {
-      cost += bp.cost;
-      from = 1;
-    }
-    // Past FTL's table (unrestricted mode) each bar costs the last listed price.
-    for (let lv = from; lv < want; lv++) cost += bp.upgradeCost[lv - 1] ?? bp.upgradeCost[bp.upgradeCost.length - 1] ?? 100;
+    // (Past FTL's table, unrestricted mode, each bar costs the last listed price.)
+    for (let lv = h.base; lv < want; lv++) cost += systemStepPrice(bp, lv, costs);
     lines.push({ item: `${h.id} ${h.base}→${want}`, scrap: cost });
   }
   for (const k of Object.keys(l.systems)) {
@@ -219,12 +214,13 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   const reactorMax = reactorCap(db, l.ship, unlimited);
   if (l.reactor > reactorMax) errors.push(`reactor max is ${reactorMax}`);
   let rc = 0;
-  for (let lv = base.reactor; lv < l.reactor; lv++) rc += RULES.reactorPrice(lv);
+  for (let lv = base.reactor; lv < l.reactor; lv++) rc += reactorBarPrice(lv, base.reactor, RULES.reactorPrice, costs);
   if (rc) lines.push({ item: `reactor ${base.reactor}→${l.reactor}`, scrap: rc });
 
   if (l.weapons.length > ship.weaponSlots) errors.push(`only ${ship.weaponSlots} weapon slots`);
   const buyable = new Set(buyableWeapons(db));
   const left = [...base.weapons];
+  let weaponsBought = 0;
   for (const w of l.weapons) {
     const i = left.indexOf(w);
     if (i >= 0) {
@@ -236,7 +232,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
       errors.push(`weapon ${w} is not for sale`);
       continue;
     }
-    lines.push({ item: `buy ${bp.title}`, scrap: itemPrice(db, "weapon", w, costs) });
+    lines.push({ item: `buy ${bp.title}`, scrap: itemPrice(db, "weapon", w, costs, weaponsBought++) });
   }
   for (const w of left) {
     const bp = db.weapons[w];
@@ -248,6 +244,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     // Starting crew are free; each extra member of a race costs that race's blueprint price.
     const free = new Map<string, number>();
     for (const c of base.crew) free.set(c.race, (free.get(c.race) ?? 0) + 1);
+    let hired = 0;
     for (const c of l.crew) {
       if (!RACES[c.race] || RACES[c.race].drone || !db.crew[c.race]) {
         errors.push(`unknown race ${c.race}`);
@@ -256,7 +253,8 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
       if (typeof c.name !== "string" || !c.name.trim() || c.name.length > 16) errors.push("crew names must be 1-16 characters");
       const f = free.get(c.race) ?? 0;
       if (f > 0) free.set(c.race, f - 1);
-      else lines.push({ item: `hire ${c.name} (${db.crew[c.race].title})`, scrap: db.crew[c.race].cost });
+      else if (costs === "tournament" && PRICING.tournament.stockOnlyCrew.includes(c.race)) errors.push(`${db.crew[c.race].title} crew only come with a hull in a Tournament`);
+      else lines.push({ item: `hire ${c.name} (${db.crew[c.race].title})`, scrap: crewPrice(db, c.race, costs, hired++) });
     }
   }
   if (!Number.isInteger(l.missiles) || l.missiles < 0 || l.missiles > 99) errors.push("missiles must be 0-99");
@@ -289,6 +287,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
   const augs = l.augments ?? [];
   if (augs.length > MAX_AUGMENTS) errors.push(`at most ${MAX_AUGMENTS} augments`);
   const freeAugs = [...(base.augments ?? [])];
+  let augsBought = 0;
   for (const a of augs) {
     const bp = db.augments?.[a];
     if (!bp) {
@@ -298,7 +297,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     if (!bp.stackable && augs.filter((x) => x === a).length > 1) errors.push(`${bp.title} doesn't stack`);
     const i = freeAugs.indexOf(a);
     if (i >= 0) freeAugs.splice(i, 1);
-    else lines.push({ item: `augment ${bp.title}`, scrap: itemPrice(db, "augment", a, costs) });
+    else lines.push({ item: `augment ${bp.title}`, scrap: itemPrice(db, "augment", a, costs, augsBought++) });
   }
   const total = lines.reduce((a, b) => a + b.scrap, 0);
   if (total > scrap) errors.push(`costs ${total} scrap, budget is ${scrap}`);
