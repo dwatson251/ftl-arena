@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
 import {
   applyCard, baseLoadout, buildShip, carryOver, drawCards, installable, isBoss, isMiniBoss, Match, newRun, nextEnemy, parseUpgraded, registerWeapons, score,
-  suppliesCard, SURVIVAL, tierOf, upgradedId, upgradedWeapon, DEFAULT_CONFIG, type Card,
+  suppliesCard, SURVIVAL, tierOf, upgradedId, upgradedWeapon, DEFAULT_CONFIG, enemyTracks, type Card,
 } from "@ftl/sim";
 import { Lobby, sanitizeConfig, type Client } from "../apps/server/src/lobby.ts";
 
@@ -406,5 +406,39 @@ describe("survival: enemies vary from battle to battle", () => {
     const ids = new Set<string>();
     for (let n = 1; n <= 12; n++) if (!isMiniBoss(n) && !isBoss(n)) ids.add(nextEnemy(db, n, 4242).loadout.ship);
     expect(ids.size).toBeGreaterThan(3);
+  });
+});
+
+describe("survival: enemy progression (scrap or AI each battle)", () => {
+  it("each battle raises one track; neither falls more than maxGap behind while the AI can still grow", () => {
+    const P = SURVIVAL.progression;
+    for (let seed = 1; seed <= 200; seed++) {
+      let prev = enemyTracks(1, seed);
+      for (let n = 2; n <= 40; n++) {
+        const t = enemyTracks(n, seed);
+        expect(t.scrapSteps + t.levelSteps).toBe(n - 1);
+        expect(t.scrapSteps - prev.scrapSteps + (t.levelSteps - prev.levelSteps)).toBe(1);
+        if (t.level < 1) expect(Math.abs(t.scrapSteps - t.levelSteps)).toBeLessThanOrEqual(P.maxGap);
+        prev = t;
+      }
+      // The AI tops out at full skill, then every step goes to scrap.
+      expect(enemyTracks(60, seed).level).toBe(1);
+    }
+  });
+
+  it("the run's seed decides which track moves (two runs differ)", () => {
+    const a = Array.from({ length: 12 }, (_, i) => enemyTracks(i + 2, 7).levelSteps).join();
+    const b = Array.from({ length: 12 }, (_, i) => enemyTracks(i + 2, 8).levelSteps).join();
+    expect(a).not.toBe(b);
+  });
+
+  it("a mini-boss gets a boost on top, and the battle after it is back on the tracks", () => {
+    const seed = 99;
+    const mini = nextEnemy(db, 5, seed);
+    expect(mini.mini).toBe(true);
+    expect(mini.level).toBeCloseTo(Math.min(1, enemyTracks(5, seed).level + SURVIVAL.miniBoost.level), 5);
+    const after = nextEnemy(db, 6, seed);
+    expect(after.level).toBeCloseTo(enemyTracks(6, seed).level, 5);
+    expect(after.budget).toBe(enemyTracks(6, seed).budget);
   });
 });

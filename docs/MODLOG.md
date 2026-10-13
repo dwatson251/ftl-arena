@@ -1061,6 +1061,19 @@ install.
 - **Engine bar → medbay:** the existing swap was verified with a test, so no change was needed.
 - **Tests:** `crew-tasks.test.ts` (8). 206 passing. Bot-vs-bot benches play out as before.
 
+## Round 55: Survival enemies grow along two tracks
+- **Tracks:** `enemyTracks(n, seed)` (`SURVIVAL.progression`). Each battle after the first takes one step on
+  either the enemy's scrap budget (+50) or its AI level (+0.15), by a seeded coin toss.
+  - A track `maxGap` (2) steps behind the other goes next, so there are no fully loaded ships flown badly,
+    or bare ones flown perfectly.
+  - Once the AI is at full skill, every step goes to scrap.
+  - The hull bonus follows: level × 6, plus 1 per scrap step.
+- **Mini-bosses:** `SURVIVAL.miniBoost` (+150 scrap, +0.15 level) goes on top of the tracks, and the battle
+  after is back on them.
+- **Wiring:** `SurvivalEnemy` carries `level` and `budget`, and the lobby flies the enemy at that level
+  (it used to be `difficultyToBot(difficulty)`). Card tiers still follow the battle number.
+- **Tests:** 3 in `survival.test.ts`, the balance rule checked over 200 seeds × 40 battles.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

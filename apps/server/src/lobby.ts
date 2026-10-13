@@ -589,7 +589,7 @@ export class Lobby {
     const ls: [Loadout, Loadout] = h === 0 ? [run.loadout, this.enemy.loadout] : [this.enemy.loadout, run.loadout];
     this.loadouts = ls;
     this.match = new Match(this.db, cfg, ls, [this.players[0].name, this.players[1].name]);
-    this.bot = new Bot(difficultyToBot(this.enemy.difficulty).level, this.config.seed);
+    this.bot = new Bot(this.enemy.level, this.config.seed);
     if (this.autopilot) this.autopilot = new Bot(this.autopilot.level, 99);
     this.speedAcc = 0;
     // A new battle: nothing is the controller player's until they touch it again.

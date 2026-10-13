@@ -5,7 +5,7 @@
  */
 import type { GameDB, SystemId, WeaponBP } from "@ftl/data";
 import { baseLoadout, buyableDrones, buyableWeapons, hireableRaces, hullSystems, isSubsystem, priceLoadout, randomCrewName, reactorCap, type Loadout } from "./loadout.ts";
-import { botLoadout, difficultyToBot, enemyLoadout } from "./bot.ts";
+import { botLoadout, enemyLoadout } from "./bot.ts";
 import { Rng } from "./rng.ts";
 import { RULES } from "./rules.ts";
 import type { HazardKind, ShipState } from "./state.ts";
@@ -25,6 +25,15 @@ export const SURVIVAL = {
   miniEvery: 5,
   /** A mini-boss's hangar budget: this plus 6 scrap per point of difficulty. */
   miniScrap: 250,
+  /**
+   * How the ordinary enemies grow: each battle after the first raises either their scrap budget or their AI
+   * level (seeded, a coin toss), and a track that falls `maxGap` steps behind the other is raised next, so
+   * there are no fully loaded ships flown badly, or bare ones flown perfectly. Once the AI is at its best, every
+   * step goes to scrap.
+   */
+  progression: { budget: 175, level: 0.08, scrapStep: 50, levelStep: 0.15, maxGap: 2, hullPerScrapStep: 1 },
+  /** Mini-bosses get this on top of the tracks (it doesn't count toward them). */
+  miniBoost: { scrap: 150, level: 0.15 },
   /** From battle 4, a hazard sometimes comes with the beacon (never with a boss). */
   hazardChance: 0.12,
   hazards: ["sun", "pulsar", "asteroids", "nebula", "storm", "asb"] as HazardKind[],
@@ -420,6 +429,9 @@ export function applyCard(db: GameDB, run: SurvivalRun, c: Card): void {
 export interface SurvivalEnemy {
   loadout: Loadout;
   difficulty: number;
+  /** Its AI level (0..1) and hangar budget, from enemyTracks (mini-bosses: plus their boost). */
+  level: number;
+  budget: number;
   boss: boolean;
   /** A mini-boss: a player cruiser. */
   mini: boolean;
@@ -427,18 +439,39 @@ export interface SurvivalEnemy {
 }
 
 /** Battle n's opponent: a random single-player ship scaled to the difficulty, or the flagship. */
+/** The enemy's scrap budget and AI level at battle n of a run (see SURVIVAL.progression). */
+export function enemyTracks(n: number, seed: number): { budget: number; level: number; scrapSteps: number; levelSteps: number } {
+  const P = SURVIVAL.progression;
+  const rng = new Rng((seed ^ 0x5bd1e995) >>> 0);
+  const maxLevelSteps = Math.ceil((1 - P.level) / P.levelStep);
+  let scrapSteps = 0;
+  let levelSteps = 0;
+  for (let i = 2; i <= n; i++) {
+    const capped = levelSteps >= maxLevelSteps;
+    const lagScrap = levelSteps - scrapSteps >= P.maxGap;
+    const lagLevel = scrapSteps - levelSteps >= P.maxGap;
+    const level = !capped && (lagLevel || (!lagScrap && rng.chance(0.5)));
+    if (level) levelSteps++;
+    else scrapSteps++;
+  }
+  return { budget: P.budget + scrapSteps * P.scrapStep, level: Math.min(1, P.level + levelSteps * P.levelStep), scrapSteps, levelSteps };
+}
+
 export function nextEnemy(db: GameDB, n: number, seed: number): SurvivalEnemy {
   // Each battle mixes its number into the run's seed: the same seed every battle meant the same hull every time.
   const rng = new Rng((seed ^ Math.imul(n, 0x9e3779b1)) >>> 0);
   const d = SURVIVAL.difficulty(n);
-  const { level, scrapBonus } = difficultyToBot(d);
+  const tracks = enemyTracks(n, seed);
+  const { level, budget } = tracks;
   const boss = isBoss(n);
   const mini = isMiniBoss(n);
   if (mini && db.hangar.length) {
-    // A player cruiser, kitted out by the bot's own hangar logic with a growing budget.
+    // A player cruiser, kitted out by the bot's own hangar logic: the tracks plus a mini-boss's boost.
     const ship = rng.pick(db.hangar);
-    const loadout = botLoadout(db, ship, SURVIVAL.miniScrap + d * 6, level, seed);
-    return { loadout, difficulty: d, boss: false, mini: true, hazard: "none" };
+    const B = SURVIVAL.miniBoost;
+    const lv = Math.min(1, level + B.level);
+    const loadout = botLoadout(db, ship, SURVIVAL.miniScrap + budget + B.scrap, lv, seed);
+    return { loadout, difficulty: d, level: lv, budget: SURVIVAL.miniScrap + budget + B.scrap, boss: false, mini: true, hazard: "none" };
   }
   let ship: string;
   if (boss) {
@@ -451,12 +484,12 @@ export function nextEnemy(db: GameDB, n: number, seed: number): SurvivalEnemy {
     const pool = db.enemies.filter((e) => !/^BOSS_/.test(e) && db.ships[e]);
     ship = pool.length ? rng.pick(pool) : rng.pick(db.hangar);
   }
-  const budget = Math.round(150 + d * 5 * (1 + scrapBonus));
+  const hullBonus = Math.round(level * 6 + tracks.scrapSteps * SURVIVAL.progression.hullPerScrapStep);
   const loadout = db.ships[ship]?.enemy || /^BOSS_/.test(ship)
-    ? enemyLoadout(db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14), boss ? undefined : budget)
+    ? enemyLoadout(db, ship, level, seed, hullBonus, boss ? undefined : budget)
     : baseLoadout(db, ship);
   const hazard: HazardKind = !boss && n > 3 && rng.chance(SURVIVAL.hazardChance) ? rng.pick(SURVIVAL.hazards) : "none";
-  return { loadout, difficulty: d, boss, mini: false, hazard };
+  return { loadout, difficulty: d, level, budget, boss, mini: false, hazard };
 }
 
 /**
