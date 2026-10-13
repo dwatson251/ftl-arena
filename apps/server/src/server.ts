@@ -3,7 +3,7 @@
  * extracted assets over HTTP, and the game over a WebSocket at /ws. `main.ts` is its command line; the desktop
  * app starts it in-process.
  */
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -22,6 +22,11 @@ export interface ServerOptions {
   port: number;
   /** The extracted FTL assets folder (the placeholder set is used when it has none). */
   assets: string;
+  /**
+   * Backup art for files the player's install doesn't have, at the same paths (img/ship/<img>_base.png...):
+   * art a modder (or we) made without FTL's copyright. Default packages/content/art when it exists.
+   */
+  altAssets?: string;
   /** The built client to serve at / (optional: the dev client is served by Vite instead). */
   client?: string;
   /** Interface to listen on: every interface by default, so other players can reach a host. */
@@ -70,6 +75,7 @@ function serveFile(root: string, rel: string, res: import("node:http").ServerRes
 export function startServer(opts: ServerOptions): Promise<RunningServer> {
   const log = opts.log ?? ((s: string) => console.log(s));
   const ASSETS = resolve(opts.assets);
+  const ALT = resolve(opts.altAssets ?? "packages/content/art");
   const CLIENT = opts.client ? resolve(opts.client) : "";
   const db = loadDb(ASSETS);
   log(`game data: ${db.source} (${db.hangar.length} hulls, ${Object.keys(db.weapons).length} weapons)`);
@@ -128,7 +134,20 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       json({ tag: LAN_TAG, server: serverId, ...m });
       return;
     }
-    if (url.startsWith("/assets/") && serveFile(ASSETS, url.slice(8), res, head)) return;
+    // The manifest lists the install's files plus any backup art (the client only asks for listed files).
+    if (url === "/assets/manifest.json" && existsSync(ALT)) {
+      let m: { files: string[] } = { files: [] };
+      try {
+        m = JSON.parse(readFileSync(join(ASSETS, "manifest.json"), "utf8"));
+      } catch {}
+      const have = new Set(m.files);
+      const walk = (d: string, rel = ""): string[] =>
+        readdirSync(join(d, rel), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(d, join(rel, e.name)) : [join(rel, e.name).replace(/\\/g, "/")]));
+      const body = JSON.stringify({ ...m, files: [...m.files, ...walk(ALT).filter((f) => !have.has(f))] });
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache" });
+      return void res.end(head ? undefined : body);
+    }
+    if (url.startsWith("/assets/") && (serveFile(ASSETS, url.slice(8), res, head) || (existsSync(ALT) && serveFile(ALT, url.slice(8), res, head)))) return;
     if (!url.startsWith("/assets/") && CLIENT && existsSync(CLIENT)) {
       if (serveFile(CLIENT, url === "/" ? "index.html" : url.slice(1), res, head)) return;
       if (serveFile(CLIENT, "index.html", res, head)) return;

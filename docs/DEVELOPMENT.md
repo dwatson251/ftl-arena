@@ -60,7 +60,8 @@ In practice lobbies, they add a drawer on the right in battle:
 - **Dedicated server:** `node tools/build-server.mjs [--win|--linux]` makes
   `release/server/FTL-Arena-Server-win-x64.zip` and `…-linux-x64.tar.gz`. These are Node single-executable
   applications, so the machine running them needs nothing installed.
-- **No FTL files in any package:** each player's app unpacks their own copy on first start.
+- **No FTL art or audio in any package:** each player's app unpacks their own copy on first start. Ship
+  layouts, stock loadouts and blueprint numbers are part of the arena's content (`packages/content`).
 
 ## Versions and releases
 - **The version** shows top right in red ("Alpha 0.1.0-alpha.1"). It's set at build time
@@ -88,14 +89,43 @@ In practice lobbies, they add a drawer on the right in battle:
 ## Layout
 | Path | What |
 |---|---|
+| `packages/content` | The game's content: one config class per blueprint (ships with their room layouts, systems and stock loadouts, weapons, drones, augments, crew races, systems) and `buildDb()`. See "Content" below. |
 | `packages/sim` | Pure deterministic simulation (no DOM, no Node). Same seed + same commands = same state hash. |
-| `packages/data` | Tolerant XML reader, blueprint/layout/animation/sound parsers, placeholder set. |
-| `packages/extract` | `ftl.dat` (PKG) reader and extractor. |
+| `packages/data` | GameDB types, a tolerant XML reader, and the presentation layer (FTL's text, animation sheets, sounds, names from the install). The blueprint parsers now only feed the content generator. |
+| `packages/extract` | `ftl.dat` (PKG) reader and extractor: art, sound, music, fonts and the presentation data files. |
 | `packages/protocol` | Wire messages. See `docs/CONTRACT.md`. |
 | `apps/server` | Lobbies, hangar validation, 30 Hz tick, per-player fogged snapshots. |
 | `apps/client` | Vite + Pixi.js v8 client: menu, hangar, battle. |
 | `tools/bench` | Headless bot-vs-bot bench, network smoke test, browser e2e and hull screenshots. |
 | `docs/RULES.md` | Every combat number and where it came from, with the parity status. |
+
+## Content
+The ships, weapons, drones, augments, crew and systems are the arena's own, in `packages/content/src/`, with
+one class per blueprint.
+- **Ships** (`ships/<ID>.ts`) hold the hull and reactor, the systems with their rooms and stations, the
+  stock loadout and the layout (`layouts/<id>.ts`: rooms, doors, mounts, hull image box, shield ellipse,
+  gibs).
+  - Each also has a `sprites` block naming where its art lives. Type C hulls borrow the A hull's floor and
+    shields.
+  - Each has an `enemy` section for how it appears as the opponent. `enemy.scale` sizes it in the target
+    window (1.1 is 10% bigger) and `enemy.shieldNudge` moves its shield bubble.
+- **Numbers** (weapons, drones, augments, crew traits, systems) are in their classes.
+- **The registry** is `registry.ts`: it lists every class, plus the hangar's and the enemy list's order. A
+  new blueprint is a new class added there.
+- **What the player's install still supplies:**
+  - art and sound;
+  - the animation sheets (which frames make a sprite);
+  - the crew name pool;
+  - FTL's own prose: descriptions and level lines. The classes keep FTL's text ids, and we write our own
+    words where FTL has none.
+- **Without an install,** the same ships and rules run with flat shapes, and tests and CI run on the real
+  content.
+- **Backup art:** `packages/content/art/img/...` serves files the install doesn't have, at the same paths.
+  Only art made without FTL's copyright goes there.
+- **Regenerating:** the classes were bootstrapped from FTL's data files by
+  `npx tsx tools/content/generate.ts`, which needs an extract made with `npm run extract -- --all-data`. Hand
+  edits are overwritten if you re-run it. `tests/content.test.ts` checks that the classes still rebuild the DB
+  the old parser produced.
 
 ## Tests
 ```bash

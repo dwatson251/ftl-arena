@@ -1,0 +1,57 @@
+/** Rock Assault (Rock Assault). */
+import type { ShipConfig } from "../types.ts";
+import L_rock_assault from "../layouts/rock_assault.ts";
+
+export default class ROCK_ASSAULT_ELITE implements ShipConfig {
+  readonly id = "ROCK_ASSAULT_ELITE";
+  readonly title = "Rock Assault";
+  readonly className = "Rock Assault";
+  readonly health = 12;
+  readonly reactor = 12;
+  readonly weaponSlots = 4;
+  readonly droneSlots = 0;
+  readonly systems: ShipConfig["systems"] = [
+    { id: "pilot", room: 0, power: 1, start: true, station: 0, max: 3 },
+    { id: "doors", room: 3, power: 1, start: false, station: 0, max: 3 },
+    { id: "oxygen", room: 9, power: 1, start: true, station: -1, max: 3 },
+    { id: "medbay", room: 1, power: 1, start: false, station: 1, max: 2 },
+    { id: "shields", room: 6, power: 2, start: true, station: 0, max: 8 },
+    { id: "engines", room: 7, power: 2, start: true, station: 0, max: 5 },
+    { id: "weapons", room: 5, power: 2, start: true, station: 0, max: 10 },
+    { id: "cloaking", room: 4, power: 1, start: true, station: -1, max: 3 },
+    { id: "teleporter", room: 8, power: 1, start: false, station: -1, max: 2 },
+  ];
+  readonly loadout: ShipConfig["loadout"] = {
+    crew: ["rock", "rock", "rock", "rock"],
+    crewCount: 4,
+    crewRace: "rock",
+    weapons: [],
+    drones: [],
+    augments: ["ROCK_ARMOR"],
+    missiles: 10,
+    droneParts: 0,
+  };
+  readonly layout = L_rock_assault;
+  readonly sprites: ShipConfig["sprites"] = { dir: "ships_glow", img: "rock_assault", cloak: "rock_assault" };
+  readonly enemy: ShipConfig["enemy"] = {
+    scale: 1,
+    single: true,
+    weaponPool: [
+      "LASER_BURST_1",
+      "LASER_BURST_2_A",
+      "LASER_BURST_3",
+      "LASER_BURST_5",
+      "LASER_HEAVY_1",
+      "LASER_HEAVY_2",
+      "MISSILES_1",
+      "MISSILES_2",
+      "MISSILES_3",
+      "MISSILES_BREACH",
+      "BEAM_1",
+      "BEAM_2",
+      "BOMB_1",
+      "ION_2",
+    ],
+    crewMax: 5,
+  };
+}

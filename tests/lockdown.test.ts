@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
 import { baseLoadout, DEFAULT_CONFIG, Match, RULES } from "@ftl/sim";
 
-const db = loadDb(existsSync("assets-local/manifest.json") ? "assets-local" : undefined);
+const db = loadDb();
 const ship = db.hangar[0];
 const run = (m: Match, s: number) => {
   for (let i = 0; i < Math.round(s * 30); i++) m.step();

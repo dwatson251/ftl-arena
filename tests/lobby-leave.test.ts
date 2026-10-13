@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { loadDb } from "@ftl/extract";
 import { Lobby, type Client } from "../apps/server/src/lobby.ts";
-import { existsSync } from "node:fs";
 
-const db = loadDb(existsSync("assets-local/manifest.json") ? "assets-local" : undefined);
+const db = loadDb();
 const client = (id: string): Client & { got: any[] } => {
   const c: any = { id, name: id, lobby: null, got: [] };
   c.send = (m: any) => c.got.push(m);

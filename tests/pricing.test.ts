@@ -5,7 +5,7 @@ import { baseLoadout, DEFAULT_CONFIG, itemPrice, obtainable, priceLoadout, PRICI
 import { Lobby, sanitizeConfig, type Client } from "../apps/server/src/lobby.ts";
 
 const real = existsSync("assets-local/manifest.json");
-const db = loadDb(real ? "assets-local" : undefined);
+const db = loadDb();
 const kestrel = db.hangar.includes("PLAYER_SHIP_HARD") ? "PLAYER_SHIP_HARD" : db.hangar[0];
 const BIG = 1e9;
 

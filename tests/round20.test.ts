@@ -124,8 +124,7 @@ describe("projectile speeds follow each weapon's FTL speed", () => {
     expect(flightTime({ type: "LASER" })).toBe(1);
     expect(flightTime({ type: "MISSILES", speed: 0 })).toBe(1.5);
     expect(flightTime({ type: "BOMB", speed: 30 })).toBe(2.4);
-    if (!existsSync("assets-local/manifest.json")) return;
-    const db = loadDb("assets-local");
+    const db = loadDb();
     const t = (id: string) => flightTime(db.weapons[id]);
     expect(t("LASER_BURST_1")).toBe(1);
     expect(t("LASER_HULL_1")).toBeCloseTo(0.8); // speed 75: sooner

@@ -9,10 +9,19 @@ export interface ExtractOptions {
   out: string;
   /** Extract music too (default on; the arena plays FTL's menu and battle tracks). */
   music?: boolean;
+  /** Every data file too (blueprints, layouts): only for regenerating packages/content (tools/content). */
+  allData?: boolean;
 }
 
-/** Folders the arena never uses. Everything else is unpacked from the owner's own ftl.dat. */
+/** Folders the arena never uses. */
 const SKIP = [/^img\/loc-/, /^img\/ipad\//, /^img\/achievements\//, /^img\/map\//, /^fonts\/(ja|zh)/, /^data\/text-/];
+/**
+ * The game's rules, ships and layouts are the arena's own (packages/content). From data/ only what presents
+ * them is unpacked: FTL's text, its animation sheets, sound names and the crew name pool.
+ */
+const PRESENTATION = /^data\/(text_blueprints|text_misc|animations|dlcAnimations|sounds|dlcSounds|names)\.xml$/;
+const wanted = (path: string, o: ExtractOptions) =>
+  !SKIP.some((r) => r.test(path)) && !(o.music === false && path.startsWith("audio/music/")) && (!path.startsWith("data/") || o.allData || PRESENTATION.test(path));
 
 /**
  * The extraction as steps: each yield is one entry done (of `total`). The manifest is written last, so a folder
@@ -25,7 +34,7 @@ function* extractSteps(opts: ExtractOptions): Generator<{ done: number; total: n
   let files = 0;
   let bytes = 0;
   const manifest: string[] = [];
-  const todo = pkg.entries.filter((e) => !SKIP.some((r) => r.test(e.path)) && !(opts.music === false && e.path.startsWith("audio/music/")));
+  const todo = pkg.entries.filter((e) => wanted(e.path, opts));
   for (const [i, e] of todo.entries()) {
     const dest = join(opts.out, e.path);
     mkdirSync(dirname(dest), { recursive: true });

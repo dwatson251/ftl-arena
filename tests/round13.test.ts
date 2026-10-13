@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
 import { placeholderDb } from "@ftl/data";
 import { loadDb } from "@ftl/extract";
 import { baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, enemyLoadout, findPath, Match, RULES } from "@ftl/sim";
 
-const real = existsSync("assets-local/data/blueprints.xml");
 
 function run(m: Match, secs: number, each?: () => void): void {
   for (let i = 0; i < secs * 30; i++) {
@@ -44,8 +42,8 @@ describe("crew fights (FTL's swings)", () => {
 });
 
 describe("bays and clone bay", () => {
-  it.skipIf(!real)("a 2x2 medbay takes three crew: its equipment blocks the fourth tile", () => {
-    const db = loadDb("assets-local");
+  it("a 2x2 medbay takes three crew: its equipment blocks the fourth tile", () => {
+    const db = loadDb();
     const lo = { ...baseLoadout(db, "PLAYER_SHIP_HARD"), crew: [1, 2, 3, 4].map((i) => ({ name: `C${i}`, race: "human" })) };
     const m = new Match(db, DEFAULT_CONFIG, [lo, baseLoadout(db, "PLAYER_SHIP_HARD")], ["a", "b"]);
     const s = m.state.ships[0];
@@ -85,8 +83,8 @@ describe("hacked weapons", () => {
 });
 
 describe("bots", () => {
-  it.skipIf(!real)("a bot hires no more than five crew, and single-player hulls bring their augments (a Zoltan shield)", () => {
-    const db = loadDb("assets-local");
+  it("a bot hires no more than five crew, and single-player hulls bring their augments (a Zoltan shield)", () => {
+    const db = loadDb();
     for (const seed of [1, 2, 3]) expect(botLoadout(db, "PLAYER_SHIP_HARD", 900, 1, seed).crew.length).toBeLessThanOrEqual(5);
     const z = enemyLoadout(db, "ZOLTAN_FIGHTER", 1, 1);
     expect(z.augments).toContain("ENERGY_SHIELD");
@@ -95,8 +93,8 @@ describe("bots", () => {
     expect(m.state.ships[1].superShield).toBe(RULES.zoltanShield);
   });
 
-  it.skipIf(!real)("a bot sends one boarding party per fight: once it's dead, no more go", () => {
-    const db = loadDb("assets-local");
+  it("a bot sends one boarding party per fight: once it's dead, no more go", () => {
+    const db = loadDb();
     const me = baseLoadout(db, "PLAYER_SHIP_HARD");
     const bot = { ...baseLoadout(db, "PLAYER_SHIP_HARD"), systems: { ...baseLoadout(db, "PLAYER_SHIP_HARD").systems, teleporter: 3 }, reactor: 12 };
     const m = new Match(db, { ...DEFAULT_CONFIG, seed: 4 }, [me, bot], ["a", "bot"]);
@@ -121,8 +119,8 @@ describe("bots", () => {
 });
 
 describe("mind control", () => {
-  it.skipIf(!real)("a mind-controlled crew member aboard their own ship acts as an intruder: it goes and wrecks a system", () => {
-    const db = loadDb("assets-local");
+  it("a mind-controlled crew member aboard their own ship acts as an intruder: it goes and wrecks a system", () => {
+    const db = loadDb();
     const lo = baseLoadout(db, "PLAYER_SHIP_HARD");
     // The controller needs a working mind control system, or control lapses at once.
     const ctl = { ...lo, systems: { ...lo.systems, mind: 1 }, reactor: 12 };

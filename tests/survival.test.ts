@@ -8,7 +8,7 @@ import {
 import { Lobby, sanitizeConfig, type Client } from "../apps/server/src/lobby.ts";
 
 const real = existsSync("assets-local/manifest.json");
-const db = loadDb(real ? "assets-local" : undefined);
+const db = loadDb();
 const ship = db.hangar[0];
 
 describe("survival: rewards", () => {
@@ -399,4 +399,12 @@ describe("survival: battles", () => {
     expect(l.run!.over).toBe(true);
     expect(score(l.run!)).toBeGreaterThan(0);
   }, 10000);
+});
+
+describe("survival: enemies vary from battle to battle", () => {
+  it("one run's ordinary battles don't all bring the same hull", () => {
+    const ids = new Set<string>();
+    for (let n = 1; n <= 12; n++) if (!isMiniBoss(n) && !isBoss(n)) ids.add(nextEnemy(db, n, 4242).loadout.ship);
+    expect(ids.size).toBeGreaterThan(3);
+  });
 });

@@ -1,0 +1,58 @@
+/** Room layout "boss_3": rooms, doors, weapon mounts, hull image box, shield ellipse, gibs. */
+import type { ShipLayout } from "@ftl/data";
+
+const layout: ShipLayout = {
+  id: "boss_3",
+  xOffset: 0,
+  yOffset: 0,
+  rooms: [
+    { id: 0, x: 2, y: 0, w: 2, h: 1 },
+    { id: 1, x: 2, y: 1, w: 2, h: 2 },
+    { id: 2, x: 1, y: 3, w: 1, h: 2 },
+    { id: 3, x: 2, y: 3, w: 2, h: 1 },
+    { id: 4, x: 4, y: 3, w: 1, h: 2 },
+    { id: 5, x: 1, y: 5, w: 2, h: 2 },
+    { id: 6, x: 3, y: 5, w: 2, h: 2 },
+    { id: 7, x: 2, y: 7, w: 2, h: 1 },
+    { id: 8, x: 2, y: 8, w: 2, h: 2 },
+    { id: 9, x: 0, y: 1, w: 1, h: 2 },
+    { id: 10, x: 5, y: 1, w: 1, h: 2 },
+    { id: 11, x: 1, y: 1, w: 1, h: 2 },
+    { id: 12, x: 4, y: 1, w: 1, h: 2 },
+  ],
+  doors: [
+    { x: 2, y: 1, a: 0, b: 1, vertical: false },
+    { x: 3, y: 3, a: 1, b: 3, vertical: false },
+    { x: 2, y: 3, a: 2, b: 3, vertical: true },
+    { x: 4, y: 3, a: 3, b: 4, vertical: true },
+    { x: 5, y: 4, a: 4, b: -1, vertical: true },
+    { x: 1, y: 4, a: 2, b: -1, vertical: true },
+    { x: 1, y: 5, a: 2, b: 5, vertical: false },
+    { x: 4, y: 5, a: 4, b: 6, vertical: false },
+    { x: 3, y: 7, a: 6, b: 7, vertical: false },
+    { x: 2, y: 7, a: 5, b: 7, vertical: false },
+    { x: 2, y: 8, a: 7, b: 8, vertical: false },
+    { x: 2, y: 1, a: 1, b: 11, vertical: true },
+    { x: 1, y: 2, a: 9, b: 11, vertical: true },
+    { x: 4, y: 1, a: 1, b: 12, vertical: true },
+    { x: 5, y: 2, a: 10, b: 12, vertical: true },
+  ],
+  img: { x: -136, y: -83, w: 566, h: 511 },
+  floor: { x: 0, y: 0 },
+  mounts: [
+    { x: 150, y: 50, rotate: false, mirror: true, slide: "up" },
+    { x: 264, y: 50, rotate: false, mirror: false, slide: "up" },
+    { x: 89, y: 65, rotate: false, mirror: true, slide: "up" },
+    { x: 324, y: 65, rotate: false, mirror: false, slide: "" },
+    { x: 134, y: 52, rotate: false, mirror: false, slide: "" },
+    { x: 315, y: 52, rotate: false, mirror: false, slide: "" },
+  ],
+  ellipse: { a: 250, b: 260, x: 0, y: -90 },
+  gibs: [
+    { n: 1, x: 9, y: 90, velocity: [0.1, 1], direction: [20, 160], angular: [-1, 1] },
+    { n: 2, x: 0, y: 0, velocity: [0.1, 0.3], direction: [280, 350], angular: [-1, 1] },
+    { n: 3, x: 223, y: 34, velocity: [0.4, 1], direction: [190, 260], angular: [-0.4, 1] },
+    { n: 4, x: 119, y: 258, velocity: [0.4, 1], direction: [190, 260], angular: [-0.4, 1] },
+  ],
+};
+export default layout;

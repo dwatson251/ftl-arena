@@ -285,13 +285,15 @@ export class Battle {
     const cy = e.y + e.h / 2;
     const tx = WIN_SHIP.x + WIN_SHIP.w / 2;
     const ty = WIN_SHIP.y + WIN_SHIP.h / 2;
+    // The ship class's enemy.scale tunes each hull's size in the window (packages/content).
+    const k = this.db.ships[this.enemy.shipId]?.viewScale ?? 1;
     if (enemyNative) {
-      const se = Math.min(1, WIN_SHIP.w / e.w, WIN_SHIP.h / e.h);
+      const se = Math.min(1, WIN_SHIP.w / e.w, WIN_SHIP.h / e.h) * k;
       this.enemy.root.scale.set(se);
       this.enemy.root.position.set(tx - cx * se, ty - cy * se);
     } else {
       // Rotated -90°: local (x, y) maps to (y, -x) × scale, so the hull's width becomes the height.
-      const se = Math.min(0.85, WIN_SHIP.w / e.h, WIN_SHIP.h / e.w);
+      const se = Math.min(0.85, WIN_SHIP.w / e.h, WIN_SHIP.h / e.w) * k;
       this.enemy.root.scale.set(se);
       this.enemy.root.rotation = -Math.PI / 2;
       this.enemy.root.position.set(tx - cy * se, ty + cx * se);

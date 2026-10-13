@@ -95,7 +95,7 @@ export function parseSystem(n: XNode): SystemBP | undefined {
  * Which "System level info" line of text_misc.xml FTL shows for each level of a system. A string is a fixed
  * key per level (`door_1`...), a function picks one by level; templates keep their \1 / \2 placeholders.
  */
-const LEVEL_TEXT: Record<string, (lv: number) => string | undefined> = {
+export const LEVEL_TEXT: Record<string, (lv: number) => string | undefined> = {
   shields: (lv) => (lv % 2 === 0 ? `shields_${lv / 2 - 1}` : undefined),
   doors: (lv) => `door_${lv}`,
   pilot: (lv) => `pilot_${lv}`,
@@ -169,6 +169,10 @@ export function parseShip(n: XNode, text: Record<string, string>): ShipBP {
     artDir: n.attrs.name.startsWith("PLAYER_SHIP_") ? "ship" : "ships_glow",
     layout: n.attrs.layout,
     img: n.attrs.img,
+    // Type C hulls borrow the A hull's floor, shield and cloak art (<floorImage>kestral</floorImage>...).
+    ...(txt(n, "floorImage") ? { floorImg: txt(n, "floorImage") } : {}),
+    ...(txt(n, "shieldImage") ? { shieldImg: txt(n, "shieldImage") } : {}),
+    ...(txt(n, "cloakImage") ? { cloakImg: txt(n, "cloakImage") } : {}),
     systems,
     weaponSlots: num(n, "weaponSlots", 4),
     weapons: kids(wl, "weapon").map((w) => w.attrs.name),

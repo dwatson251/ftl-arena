@@ -118,8 +118,10 @@ export function weaponFrame(db: GameDB, art: string, i: number): Texture | null 
   return frame(t, Math.min(i, a.frames - 1) * sh.fw, 0, sh.fw, sh.fh);
 }
 
-/** A hull's shield image: B/C variants without their own borrow the A hull's (kestral_2 -> kestral). */
-export function shieldFile(img: string): string {
+/** A hull's shield image: the one its blueprint names (Type C hulls name the A hull's), else its own, else the
+ *  A hull's (kestral_2 -> kestral). */
+export function shieldFile(img: string, borrowed?: string): string {
+  if (borrowed && hasImg(`ship/${borrowed}_shields1.png`)) return `ship/${borrowed}_shields1.png`;
   const own = `ship/${img}_shields1.png`;
   if (hasImg(own)) return own;
   return `ship/${img.replace(/_\d+$/, "")}_shields1.png`;
@@ -139,7 +141,7 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   for (const id of db.hangar) {
     const s = db.ships[id];
     files.add(`ship/${s.img}_base.png`);
-    files.add(`ship/${s.img}_floor.png`);
+    files.add(`ship/${s.floorImg ?? s.img}_floor.png`);
     for (const sys of s.systems) if (sys.img) files.add(`ship/interior/${sys.img}.png`);
   }
   for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "pilot", "sensors", "doors"])
@@ -150,7 +152,7 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   for (const id of db.hangar) {
     const s = db.ships[id];
     for (const g of db.layouts[s.layout]?.gibs ?? []) files.add(`ship/${s.img}_gib${g.n}.png`);
-    files.add(shieldFile(s.img));
+    files.add(shieldFile(s.img, s.shieldImg));
     files.add(`customizeUI/miniship_${s.img}.png`);
   }
   for (const sys of ["shields", "engines", "oxygen", "weapons", "medbay", "clonebay", "drones", "teleporter", "cloaking", "hacking", "pilot", "sensors", "doors"]) {

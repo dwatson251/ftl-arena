@@ -7,6 +7,7 @@ export default defineConfig({
       "@ftl/sim": p("packages/sim/src/index.ts"),
       "@ftl/protocol": p("packages/protocol/src/index.ts"),
       "@ftl/data": p("packages/data/src/index.ts"),
+      "@ftl/content": p("packages/content/src/index.ts"),
       "@ftl/extract": p("packages/extract/src/index.ts"),
     },
   },

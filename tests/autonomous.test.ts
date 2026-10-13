@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
 import { baseLoadout, DEFAULT_CONFIG, Match, priceLoadout } from "@ftl/sim";
 import { Lobby, type Client } from "../apps/server/src/lobby.ts";
 
-const db = loadDb(existsSync("assets-local/manifest.json") ? "assets-local" : undefined);
+const db = loadDb();
 const ship = db.hangar[0];
 
 describe("Autonomous ships (a rules checkbox)", () => {

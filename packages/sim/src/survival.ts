@@ -428,7 +428,8 @@ export interface SurvivalEnemy {
 
 /** Battle n's opponent: a random single-player ship scaled to the difficulty, or the flagship. */
 export function nextEnemy(db: GameDB, n: number, seed: number): SurvivalEnemy {
-  const rng = new Rng(seed);
+  // Each battle mixes its number into the run's seed: the same seed every battle meant the same hull every time.
+  const rng = new Rng((seed ^ Math.imul(n, 0x9e3779b1)) >>> 0);
   const d = SURVIVAL.difficulty(n);
   const { level, scrapBonus } = difficultyToBot(d);
   const boss = isBoss(n);

@@ -17,6 +17,7 @@
       "@ftl/sim": ["packages/sim/src/index.ts"],
       "@ftl/protocol": ["packages/protocol/src/index.ts"],
       "@ftl/data": ["packages/data/src/index.ts"],
+      "@ftl/content": ["packages/content/src/index.ts"],
       "@ftl/extract": ["packages/extract/src/index.ts"]
     }
   },

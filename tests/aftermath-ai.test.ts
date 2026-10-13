@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
 import { AFTERMATH, baseLoadout, Bot, DEFAULT_CONFIG, Match, type Assist, type Command } from "@ftl/sim";
 
-const db = loadDb(existsSync("assets-local/manifest.json") ? "assets-local" : undefined);
+const db = loadDb();
 const ship = db.hangar[0];
 type Move = Extract<Command, { c: "moveCrew" }>;
 const movesOf = (cmds: Command[]) => cmds.filter((c): c is Move => c.c === "moveCrew");

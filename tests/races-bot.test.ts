@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
 import { placeholderDb } from "@ftl/data";
 import { loadDb } from "@ftl/extract";
 import { baseLoadout, Bot, botLoadout, DEFAULT_CONFIG, difficultyToBot, Match, priceLoadout } from "@ftl/sim";
@@ -51,8 +50,8 @@ describe("bot", () => {
   });
   // Skill only separates bots on real hulls (the tiny placeholder skiff is mostly luck), so this needs the
   // owner's extracted FTL data.
-  it.skipIf(!existsSync("assets-local/data/blueprints.xml"))("a skilled bot beats a passive one (Kestrel)", () => {
-    const fdb = loadDb("assets-local");
+  it("a skilled bot beats a passive one (Kestrel)", () => {
+    const fdb = loadDb();
     let wins = 0;
     for (let seed = 1; seed <= 10; seed++) {
       const lo = botLoadout(fdb, "PLAYER_SHIP_HARD", 300, 1, seed);

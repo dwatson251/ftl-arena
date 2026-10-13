@@ -962,6 +962,41 @@
 - **Tests:** `aftermath-ai.test.ts` (5): repairs together, boarders together with the hurt healing, a fire
   before a system, healing and stations, and the normal plan unchanged. 187 passing in total.
 
+## Round 52: the game's content moves into the repo (a config class per blueprint)
+The user's decision: ships (with their room layouts and stock loadouts), weapons, drones, augments, crew and
+systems are now the arena's own content. Only art, sound, music and FTL's prose still come from the player's
+install.
+- **`packages/content`:** 209 classes and 57 layouts in all.
+  - 62 ships, 68 weapons, 21 drones, 32 augments, 10 crew races, 16 systems.
+  - Interfaces live in `types.ts`, the classes are listed in `registry.ts` (with the hangar's and enemy
+    list's order), and `buildDb()` builds the same GameDB the sim and client use.
+  - The race traits (`RACES`) and augment effect text (`AUGMENT_EFFECTS`) in `rules.ts` now come from the
+    classes; the drone units stay in `rules.ts`.
+- **Generator:** `tools/content/generate.ts` bootstrapped the classes from FTL's data files.
+  - `tests/content.test.ts` proves that classes plus the install's presentation rebuild exactly the DB the
+    old parser made.
+  - Its only exception is artillery: FTL writes its description inline, so it has our own wording.
+- **Presentation** (`packages/data/src/presentation.ts`): FTL's text tables (looked up by the text ids the
+  classes keep), animation sheets, sounds, music and the crew name pool.
+  - `loadDb()` = `buildDb(buildPresentation(install))`. With no install, it's the same ships with flat
+    shapes.
+- **Extractor:** from `data/` it now unpacks only the presentation files. `--all-data` unpacks everything,
+  for regenerating.
+- **Tests:** the `assets-local` guards are gone from tests that only need game data, so CI runs on the real
+  ships: without data, 186 pass and 4 skip (install-only); with it, 190 pass.
+- **Backup art:** the server serves `packages/content/art/<path>` when the install lacks a file, and lists it
+  in the manifest.
+- **Fixed on the way:**
+  - Type C hulls had no floor art of their own. They now use the A hull's floor and shields, as FTL's
+    `<floorImage>` / `<shieldImage>` say.
+  - Survival used the same enemy seed every battle, so every ordinary battle was the same hull. The battle
+    number is now mixed into the seed.
+- **Per-ship tuning:**
+  - `enemy.scale` on each ship class sizes it in the target window (all 1 for now, for the user to tune).
+  - `SHIELD_NUDGE` moved to `enemy.shieldNudge` on the Engi Bomber and Energy Fighter.
+- **Not reproduced:** the "Kestrel/Bulwark exterior view" sprite note. The A/B/C hulls look right in the
+  hangar and in battle (`tools/align/hulls.ts`), so it goes back to the user.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

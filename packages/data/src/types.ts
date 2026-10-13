@@ -223,6 +223,14 @@ export interface ShipBP {
   crewMax?: number;
   layout: string;
   img: string;
+  /** Art stems borrowed from another hull (Type C hulls use the A hull's floor, shields and cloak). */
+  floorImg?: string;
+  shieldImg?: string;
+  cloakImg?: string;
+  /** As the opponent in the target window: drawn this much bigger or smaller than the fitted size. */
+  viewScale?: number;
+  /** Shield bubble offset (ship pixels) on top of centring on the solid art. */
+  shieldNudge?: { x?: number; y?: number };
   systems: ShipSystemSlot[];
   weaponSlots: number;
   weapons: string[];

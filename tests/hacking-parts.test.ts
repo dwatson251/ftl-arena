@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
 import { loadDb } from "@ftl/extract";
 import { baseLoadout, priceLoadout } from "@ftl/sim";
 
-const db = loadDb(existsSync("assets-local/manifest.json") ? "assets-local" : undefined);
+const db = loadDb();
 // A hull that can take hacking (not in the placeholder set).
 const hull = db.hangar.find((h) => db.ships[h].systems.some((x) => x.id === "hacking"));
 

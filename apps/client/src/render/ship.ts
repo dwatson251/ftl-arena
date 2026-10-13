@@ -43,14 +43,6 @@ export function attackPhase(c: CrewState, time: number): number | null {
 /** Share of health below which a crew member's box turns red and the low-health warning beeps. */
 export const LOW_HP = 0.25;
 
-/**
- * Extra shield bubble offsets (ship pixels), on top of centring on the solid art, where it still reads high
- * by eye (the hull's visual weight sits below its outline). Playtest-reported, tuned from 2x close-ups.
- */
-const SHIELD_NUDGE: Record<string, { x?: number; y?: number }> = {
-  CIRCLE_BOMBER: { y: 10 }, // Engi Bomber
-  ZOLTAN_FIGHTER: { y: 10 }, // Energy Fighter
-};
 
 /** The centre of a picture's solid pixels, in its own pixels; once per picture. (Solid: FTL's "glow" hull art
  *  has a faint halo round the ship, which mustn't count.) */
@@ -204,7 +196,8 @@ export class ShipRenderer {
     this.hull.removeChildren();
     this.interior.removeChildren();
     const base = texNow(this.art("base"));
-    const floor = bp.enemy ? null : texNow(this.art("floor"));
+    // Type C hulls have no floor of their own: they use the A hull's (floorImg).
+    const floor = bp.enemy ? null : texNow(bp.floorImg ? `${bp.artDir ?? "ship"}/${bp.floorImg}_floor.png` : this.art("floor"));
     if (base) {
       const s = new Sprite(base);
       s.position.set(L.img.x, L.img.y);
@@ -252,7 +245,7 @@ export class ShipRenderer {
       sp.position.set(r.x * TILE, r.y * TILE);
       this.interior.addChild(sp);
     }
-    const sh = texNow(bp.enemy ? "ship/enemy_shields.png" : shieldFile(bp.img));
+    const sh = texNow(bp.enemy ? "ship/enemy_shields.png" : shieldFile(bp.img, bp.shieldImg));
     const c = this.gridCentre();
     if (sh && !this.shieldArt) {
       this.shieldArt = new Sprite(sh);
@@ -269,7 +262,8 @@ export class ShipRenderer {
         else this.shieldArt.position.set(L.img.x + L.img.w / 2, L.img.y + L.img.h / 2);
       }
       // One-off nudges where a hull's art canvas has uneven empty space, so its centre isn't the hull's.
-      const nudge = SHIELD_NUDGE[this.shipId];
+      // The ship class's enemy.shieldNudge (packages/content).
+      const nudge = this.db.ships[this.shipId].shieldNudge;
       if (nudge) this.shieldArt.position.set(this.shieldArt.position.x + (nudge.x ?? 0), this.shieldArt.position.y + (nudge.y ?? 0));
       if (bp.enemy && L.ellipse.a > 0) {
         this.shieldArt.width = L.ellipse.a * 2;
