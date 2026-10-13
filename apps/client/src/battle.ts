@@ -1980,6 +1980,8 @@ export class Battle {
     const room = 686 - Math.max(this.crewListBottom, 330);
     const pitch = Math.max(2, Math.min(BAR_PITCH, Math.floor(room / Math.max(1, shown))));
     const bh = Math.max(1, Math.min(6, pitch - 2));
+    // The top of the column (the controller's LB icon sits just above it).
+    this.reactorTop = 686 - (shown - 1) * pitch;
     for (let i = 0; i < shown; i++) {
       const yy = 686 - i * pitch;
       // Battery bars sit on top of the reactor's, in FTL's battery orange.
@@ -2385,7 +2387,6 @@ export class Battle {
       // Slot number tag in the bottom-right corner.
       g.rect(bx + SLOT.w - 12, by + SLOT.h - 12, 11, 11).fill({ color: 0x0f1414 }).stroke({ color: edge, width: 1 });
       h.text(`wnum${i}`, String(i + 1), bx + SLOT.w - 6.5, by + SLOT.h - 12, fstyle("JustinFont8", 0xe8ece8), [0.5, 0]);
-      if (w.autofire) h.text(`wa${i}`, "AUTO", bx + SLOT.w - 15, by + SLOT.h - 12, fstyle("JustinFont8", 0xffd040), [1, 0]);
       this.weapHit.push({ slot: i, box: { x: bx, y: by, w: SLOT.w, h: SLOT.h } });
     }
     // AUTOFIRE: a tab under the right end of the tray, lit when any weapon autofires. Not with a controller:
@@ -2668,7 +2669,7 @@ export class Battle {
   private padOff: (() => void) | null = null;
   private wheel = new Wheel();
   /** Buttons held right now: whether they started with LB (power-down combos) and whether a wheel opened. */
-  private padPress = new Map<number, { lb: boolean; opened: boolean }>();
+  private padPress = new Map<number, { lb: boolean; opened: boolean; denied?: boolean }>();
   private wheelBtn: number | null = null;
   private pausedByWheel = false;
   private padSeen = false;
@@ -2715,8 +2716,10 @@ export class Battle {
       }
       const pr = this.padPress.get(b);
       if (!pr) continue;
-      if (live && !pr.lb && !pr.opened && p.held(b) && p.heldFor(b) >= HOLD_MS && this.wheelBtn === null && Battle.WHEEL_BTNS.has(b)) {
+      if (live && !pr.lb && !pr.opened && !pr.denied && p.held(b) && p.heldFor(b) >= HOLD_MS && this.wheelBtn === null && Battle.WHEEL_BTNS.has(b)) {
         const w = this.wheelFor(b, v);
+        // Refused (a gun that can't be powered says why once): no retrying every frame, and no tap on release.
+        if (!w && Battle.SLOT[b] !== undefined) pr.denied = true;
         if (w) {
           pr.opened = true;
           this.wheelBtn = b;
@@ -2730,7 +2733,7 @@ export class Battle {
         if (pr.opened) {
           if (live) this.padCommit(b, this.wheel.selected(), v);
           this.closeWheel();
-        } else if (live) this.padTap(b, v);
+        } else if (live && !pr.denied) this.padTap(b, v);
       }
     }
     if (this.wheelBtn !== null) this.wheel.steer(p.stick());
@@ -2854,6 +2857,12 @@ export class Battle {
     if (slot !== undefined) {
       const w = own.weapons[slot];
       if (!w) return null;
+      // A gun that can't be powered has nothing to aim: say why, and no wheel.
+      const why = w.powered ? null : this.cantPower(own, slot);
+      if (why) {
+        this.fail(why);
+        return null;
+      }
       return { title: `Weapon ${slot + 1}: ${this.db.weapons[w.bp]?.short ?? this.db.weapons[w.bp]?.title ?? w.bp}`, items: this.roomItems(v, true), ...win };
     }
     if (b === BTN.RT) return own.systems.hacking ? { title: "Hacking drone: pick a system", items: this.roomItems(v, false).filter((i) => i.icon), ...win } : null;
@@ -2990,6 +2999,9 @@ export class Battle {
     return e.v;
   }
 
+  /** Where the reactor column's top bar is (systemsBar), for the LB icon. */
+  private reactorTop = 610;
+
   /** Controller mode: switched on in Settings, and a pad in use. */
   private padUi(): boolean {
     return this.padSeen && controllerEnabled();
@@ -3004,6 +3016,14 @@ export class Battle {
       g.circle(x, y, 9).fill({ color: face[btn] }).stroke({ color: 0x101010, width: 1.5 });
       // The bitmap font sits low in its line box: up a pixel to sit in the middle.
       h.text(key, btn, x + 0.5, y - 1, fstyle("JustinFont8", 0xffffff), [0.5, 0.5]);
+      return;
+    }
+    // D-pad: a thick arrow, no box (the boxed text arrows read too big and too thin).
+    const dir = { "↑": -Math.PI / 2, "↓": Math.PI / 2, "←": Math.PI, "→": 0 }[btn];
+    if (dir !== undefined) {
+      const pts = [[6, 0], [0, -6], [0, -2.5], [-6, -2.5], [-6, 2.5], [0, 2.5], [0, 6]].flatMap(([px, py]) => [x + px * Math.cos(dir) - py * Math.sin(dir), y + px * Math.sin(dir) + py * Math.cos(dir)]);
+      g.poly(pts).fill({ color: 0xe8ece8 }).stroke({ color: 0x101010, width: 1.5 });
+      h.text(key, "", x, y, fstyle("JustinFont8", 0xe8ece8), [0.5, 0.5]);
       return;
     }
     const w = btn.length > 1 ? 24 : 16;
@@ -3021,7 +3041,7 @@ export class Battle {
       this.glyph(`pg${b}`, b, SLOT.x + this.trayDx + i * SLOT.dx + SLOT.w - 6, SLOT.y + 2);
     });
     // LB: the systems wheel and power-down, by the reactor and power bars.
-    this.glyph("pgLB", "LB", 27, 600);
+    this.glyph("pgLB", "LB", 27, this.reactorTop - 11);
     const near = (id: SystemId, btns: string[]) => {
       const hit = this.sysHit.find((x) => x.id === id);
       if (!hit) return;
@@ -3406,15 +3426,8 @@ export class Battle {
       return;
     }
     if (!w.powered) {
-      const ws = own.systems.weapons;
-      if (ws && ws.ion > 0) return this.fail("Weapons are locked by ion damage");
-      if ((bp?.missiles ?? 0) > own.missiles) return this.fail("NO MISSILES");
-      const load = own.weapons.filter((q) => q.powered).reduce((a, q) => a + (this.db.weapons[q.bp]?.power ?? 1), 0);
-      const need = load + (bp?.power ?? 1);
-      const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
-      const extra = Math.max(0, need - (ws ? ws.power + (ws.bonus ?? 0) : 0));
-      if (!ws || need > usable(ws)) return this.fail("Not enough weapon system power");
-      if (used + extra > own.reactor + (own.reactorBonus ?? 0)) return this.fail("Not enough available power");
+      const why = this.cantPower(own, slot);
+      if (why) return this.fail(why);
       play(this.db, ["powerUpSystem"]);
       return this.send({ c: "weaponPower", slot, on: true });
     }
@@ -3424,6 +3437,21 @@ export class Battle {
     }
     this.armed = slot;
     this.beamStart = null;
+  }
+
+  /** Why weapon `slot` can't be powered up now (ion, missiles, weapon system power, reactor), or null. */
+  private cantPower(own: ShipView, slot: number): string | null {
+    const bp = this.db.weapons[own.weapons[slot]?.bp ?? ""];
+    const ws = own.systems.weapons;
+    if (ws && ws.ion > 0) return "Weapons are locked by ion damage";
+    if ((bp?.missiles ?? 0) > own.missiles) return "NO MISSILES";
+    const load = own.weapons.filter((q) => q.powered).reduce((a, q) => a + (this.db.weapons[q.bp]?.power ?? 1), 0);
+    const need = load + (bp?.power ?? 1);
+    const used = Object.values(own.systems).reduce((a, x) => a + (x && !SUBSYSTEMS.includes(x.id) ? x.power : 0), 0);
+    const extra = Math.max(0, need - (ws ? ws.power + (ws.bonus ?? 0) : 0));
+    if (!ws || need > usable(ws)) return "Not enough weapon system power";
+    if (used + extra > own.reactor + (own.reactorBonus ?? 0)) return "Not enough available power";
+    return null;
   }
 
   private disarm(): void {

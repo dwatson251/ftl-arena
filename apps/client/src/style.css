@@ -302,3 +302,19 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .mods .mod { flex: 1 1 auto; padding: 4px 6px; font-size: 12px; white-space: nowrap; border: 2px solid var(--edge); background: #1b1f27; color: var(--dim); }
 .mods .mod.on { border-color: var(--ok); background: #1d2b1f; color: var(--text); }
 .mods .mod:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Controller button badges (reward cards, re-roll). */
+.padbtn { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 4px; background: #262b33; border: 1px solid #c8d0dc; color: #fff; font: bold 11px system-ui, sans-serif; }
+.rcard { position: relative; }
+.rcard .padbtn { position: absolute; top: 8px; right: 8px; border-radius: 10px; border-color: #101010; }
+.rcard .padbtn.pb0 { background: #3fae49; } .rcard .padbtn.pb1 { background: #d0453a; } .rcard .padbtn.pb2 { background: #2f6fd6; } .rcard .padbtn.pb3 { background: #e0b520; }
+.share-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.share-label { font-size: 11px; color: var(--dim); min-width: 56px; }
+/* Chat: the lobby sidebar's corner in the hangar; above the weapons bar in battle. */
+.chat { position: fixed; z-index: 60; display: none; font: 12px system-ui, sans-serif; }
+.chat.chat-lobby { display: block; left: 30px; bottom: 40px; width: 256px; }
+.chat.chat-battle { display: block; left: 300px; bottom: 150px; width: 360px; pointer-events: none; }
+.chat.chat-battle.open { pointer-events: auto; }
+.chat-log { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.chat-line { color: var(--text); text-shadow: 0 0 3px #000, 0 0 2px #000; word-break: break-word; }
+.chat-line b { color: var(--accent); }
+.chat-input { width: 100%; box-sizing: border-box; padding: 4px 6px; background: #12151b; border: 1px solid var(--edge); color: var(--text); }

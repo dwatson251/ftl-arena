@@ -124,6 +124,17 @@ export class PresetStore {
     return p;
   }
 
+  /** Replace a preset's build (its name and card look stay); it becomes the newest. */
+  overwrite(id: string, loadout: Loadout, costs: "none" | "ships" | "tournament" = "none"): Preset | undefined {
+    const p = this.items.find((q) => q.id === id);
+    if (!p) return undefined;
+    p.loadout = structuredClone(loadout);
+    p.costs = costs;
+    p.savedAt = Date.now() + this.items.length * 1e-3;
+    this.flush();
+    return p;
+  }
+
   remove(id: string): void {
     this.items = this.items.filter((p) => p.id !== id);
     this.flush();

@@ -1,0 +1,55 @@
+/** Chat in the lobby (the sidebar box) and in battle (Enter, type, Enter), plus the share panel and
+ *  the preset overwrite prompt (traces/chat/).  Usage: ARENA_URL=... npx tsx tools/align/chat.ts */
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+const URL = process.env.ARENA_URL ?? "http://localhost:5173";
+mkdirSync("traces/chat", { recursive: true });
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+p.on("pageerror", (e) => console.log("pageerror:", e.message));
+await p.goto(URL);
+await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
+await p.click("#practice");
+await p.waitForSelector(".hg-step");
+await p.waitForTimeout(500);
+const step = () => p.$eval(".hg-step.on", (e) => e.textContent?.replace(/\d/g, "").trim());
+const before = await step();
+await p.fill(".chat-input", "hello from the hangar");
+await p.press(".chat-input", "Enter");
+await p.waitForTimeout(500);
+console.log("lobby chat:", await p.$$eval(".chat-line", (es) => es.map((e) => e.textContent).join(" | ")), "| step unchanged:", (await step()) === before);
+await p.screenshot({ path: "traces/chat/1-lobby.png" });
+// Preset overwrite prompt: save twice under the same name.
+await p.click('button[data-step="Launch"]');
+await p.waitForTimeout(300);
+await p.fill("[data-preset-name]", "Chat test");
+await p.click("[data-preset-save]");
+await p.waitForTimeout(300);
+// Change the build so the save box shows again, then save under the same name.
+await p.click('button[data-step="Systems"]');
+await p.waitForTimeout(300);
+await p.click('[data-sys="shields"][data-d="1"]');
+await p.waitForTimeout(300);
+await p.click('button[data-step="Launch"]');
+await p.waitForTimeout(300);
+await p.fill("[data-preset-name]", "Chat test");
+await p.click("[data-preset-save]");
+await p.waitForTimeout(300);
+console.log("overwrite prompt:", !!(await p.$("[data-preset-overwrite]")));
+await p.screenshot({ path: "traces/chat/2-overwrite.png" });
+if (await p.$("[data-preset-overwrite]")) await p.click("[data-preset-overwrite]");
+await p.click('button[data-ready="1"]');
+const force = await p.waitForSelector('button[data-force="1"]', { timeout: 1500 }).catch(() => null);
+if (force) await force.click();
+await p.waitForFunction(() => !document.querySelector(".hg-step"), null, { timeout: 20000 });
+await p.click("#debug [data-toggle]").catch(() => {});
+await p.waitForTimeout(1500);
+await p.keyboard.press("Enter");
+await p.waitForTimeout(200);
+console.log("battle input open:", await p.$eval(".chat-input", (e) => (e as HTMLElement).style.display !== "none" && document.activeElement === e));
+await p.keyboard.type("fire at will");
+await p.keyboard.press("Enter");
+await p.waitForTimeout(500);
+console.log("battle chat:", await p.$$eval(".chat-line", (es) => es.map((e) => e.textContent).join(" | ")), "| input closed:", await p.$eval(".chat-input", (e) => (e as HTMLElement).style.display === "none"));
+await p.screenshot({ path: "traces/chat/3-battle.png" });
+await b.close();

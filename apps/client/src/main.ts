@@ -13,7 +13,8 @@ import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar, hangarAfterBattle } from "./hangar.ts";
 import { Net } from "./net.ts";
 import { BTN, controllerEnabled, onPad, pad, setControllerEnabled, startPad } from "./controller.ts";
-import { menuNav } from "./menunav.ts";
+import { focusOn, menuNav } from "./menunav.ts";
+import { Chat } from "./chat.ts";
 import { droneArtHtml, portraitHtml, sysIconHtml, weaponArtHtml } from "./art.ts";
 import { APP_VERSION, DEV_TOOLS } from "./version.ts";
 
@@ -91,6 +92,7 @@ const LOST_FORFEIT_S = 8;
 const GRACE_S = 20;
 
 const net = new Net(wsUrl, name || "Captain");
+const chat = new Chat((text) => net.send({ t: "chat", text }));
 artReady.push(() => render());
 net.on(onMsg);
 
@@ -165,6 +167,10 @@ function onMsg(m: ServerMsg): void {
       if (wasOver === (m.view.winner !== null)) return;
       break;
     }
+    case "chat":
+      chat.add(m.from, m.text);
+      if (db) play(db, ["hoverBeep"], 0.4);
+      break;
     case "error":
       error = m.msg;
       setTimeout(() => {
@@ -294,15 +300,17 @@ function rewardOverlay(sv: NonNullable<LobbyState["survival"]>): HTMLDivElement 
   const o = document.createElement("div");
   o.className = "overlay reward";
   const kind: Record<string, string> = { weapon: "Weapon", upgrade: "Weapon upgrade", drone: "Drone", augment: "Augment", system: "System", reactor: "Reactor", crew: "Crew", supplies: "Supplies", reinforce: "Reinforcement", options: "More choices" };
+  // With a controller, each card shows the button that picks it.
+  const padKey = (i: number) => (controllerEnabled() ? `<span class="padbtn pb${i}">${["A", "B", "X", "Y", "LB"][i] ?? ""}</span>` : "");
   const cards = (sv.offer ?? []).map((c, i) => `<button class="rcard tier${c.tier}" data-pick="${i}">
-      <span class="ricon">${cardIcon(c)}</span>
+      ${padKey(i)}<span class="ricon">${cardIcon(c)}</span>
       <span class="rkind">${esc(kind[c.kind] ?? c.kind)}${c.tier === 4 ? " · RARE" : ""}</span>
       <span class="rtitle">${esc(c.title)}</span>
       <span class="rblurb">${esc(c.blurb)}</span></button>`).join("");
   o.innerHTML = `<div class="menu reward-menu"><h1>${sv.boss ? "FLAGSHIP DOWN" : sv.mini ? "RIVAL DEFEATED" : `BATTLE ${sv.battle} WON`}</h1>
     <p class="note">Choose one. Your ship jumps to the next fight as soon as you do.</p>
     <div class="rcards">${cards}</div>
-    <div class="row" style="justify-content:center"><button id="reroll" ${sv.rerolls > 0 ? "" : "disabled"}>Re-roll (${sv.rerolls} left)</button></div>
+    <div class="row" style="justify-content:center"><button id="reroll" ${sv.rerolls > 0 ? "" : "disabled"}>${controllerEnabled() ? `<span class="padbtn">RB</span> ` : ""}Re-roll (${sv.rerolls} left)</button></div>
     <p class="note">A re-roll deals a fresh hand. Earn one for every boss or mini-boss beaten.</p>
     <p class="note">Score ${sv.score} · ${sv.won} won${sv.bosses ? ` · ${sv.bosses} boss${sv.bosses > 1 ? "es" : ""}` : ""}</p></div>`;
   o.querySelector<HTMLButtonElement>("#reroll")?.addEventListener("click", (e) => {
@@ -530,12 +538,16 @@ function renderDebug(): void {
 }
 
 function render(): void {
+  chat.setMode(battle ? "battle" : lobby && db ? "lobby" : "off");
   if (battle) {
     for (const n of [...ui.children]) if (n.id !== "debug") n.remove();
     const v = lastView;
     const sv = lobby?.survival;
     if (sv && lobby?.phase === "reward" && sv.offer) {
-      ui.appendChild(rewardOverlay(sv));
+      const ro = rewardOverlay(sv);
+      ui.appendChild(ro);
+      // With a controller, the first card has the focus as soon as the cards come up.
+      if (controllerEnabled()) focusOn(ro.querySelector<HTMLElement>(".rcard"));
       // A short fanfare as the cards come up (FTL's crew level-up jingle), once per hand.
       if (rewardJingleFor !== sv.battle) {
         rewardJingleFor = sv.battle;
@@ -598,7 +610,7 @@ function render(): void {
         share: () => {
           if (!share && lobby?.host === token) {
             // (Not from inside this render: shareFor re-renders.)
-            share = { addresses: [], note: "Finding the address to share…" };
+            share = { addresses: [], note: "" };
             queueMicrotask(() => void shareFor(matchAddr));
           }
           return share;
@@ -700,7 +712,7 @@ let busy = false;
 let busyNote = "";
 let joinCode = "";
 /** What to tell friends once a match is created: the addresses they type, plus a hint. */
-let share: { addresses: string[]; note: string } | null = null;
+let share: { addresses: { label?: string; addr: string }[]; note: string } | null = null;
 /** The server address the current match is on ("" = this computer), for the share panel. */
 let matchAddr = "";
 
@@ -760,27 +772,25 @@ async function act(kind: "create" | "practice" | "join"): Promise<void> {
 
 /** The addresses friends use: the server's (a dedicated server), or this computer's own (LAN, and public online). */
 async function shareFor(addr: string): Promise<void> {
+  // Just the addresses (and the code, shown above them): players know what to do with them.
   if (mode === "lan") {
-    share = { addresses: [], note: "Friends on your network: choose LAN and enter this code." };
+    share = { addresses: [], note: "" };
     render();
     if (addr) return;
   }
   if (addr) {
-    share = { addresses: [addr], note: "The server this match is on. Friends choose Online, enter it and the code." };
+    share = { addresses: [{ label: "Server", addr }], note: "" };
     return render();
   }
   try {
     const r = (await (await fetch(mode === "online" ? "/api/share?online=1" : "/api/share")).json()) as { port: number; lan: string[]; public: string; upnp: string };
     if (mode === "lan") {
-      share = { addresses: [], note: `Friends on your network: choose LAN and enter this code. (Or Online with ${r.lan.map((a) => `${a}:${r.port}`).join(" / ") || "your address"}.)` };
+      share = { addresses: r.lan.map((a) => ({ label: "Network", addr: `${a}:${r.port}` })), note: "" };
       return render();
     }
-    const list = [...(r.public ? [`${r.public}:${r.port}`] : []), ...r.lan.map((a) => `${a}:${r.port}`)];
-    const note = r.public
-      ? r.upnp === "ok"
-        ? "Friends choose Online and enter the first address (your router's port was opened automatically); the others work on the same network."
-        : `Friends choose Online and enter the first address; your router must forward TCP port ${r.port} to this computer${r.upnp.startsWith("failed") ? " (automatic forwarding didn't work)" : ""}. The others work on the same network.`
-      : "Friends on the same network can use these addresses.";
+    const list = [...(r.public ? [{ label: "Internet", addr: `${r.public}:${r.port}` }] : []), ...r.lan.map((a) => ({ label: "Network", addr: `${a}:${r.port}` }))];
+    // Only what a player can't work out: the router's port isn't open.
+    const note = r.public && r.upnp !== "ok" ? `Forward TCP port ${r.port} on your router to this computer for players outside your network.` : "";
     share = { addresses: list, note };
   } catch {
     share = { addresses: [], note: "Couldn't work out this computer's address." };
@@ -848,6 +858,16 @@ onPad((p) => {
   if (battle && (p.down(BTN.BACK) || (escMenu && p.down(BTN.B)))) {
     if (escMenu) closeMenu();
     else if (p.down(BTN.BACK)) openMenu();
+    return;
+  }
+  // Survival's reward cards: a button per card (A B X Y, then LB for a fifth) and RB to re-roll.
+  const reward = ui.querySelector<HTMLElement>(".overlay.reward");
+  if (reward) {
+    const picks = [BTN.A, BTN.B, BTN.X, BTN.Y, BTN.LB];
+    picks.forEach((b, i) => {
+      if (p.down(b)) reward.querySelector<HTMLButtonElement>(`.rcard[data-pick="${i}"]:not(:disabled)`)?.click();
+    });
+    if (p.down(BTN.RB)) reward.querySelector<HTMLButtonElement>("#reroll:not(:disabled)")?.click();
     return;
   }
   if (!battle || ui.querySelector(".overlay")) menuNav(p, ui);

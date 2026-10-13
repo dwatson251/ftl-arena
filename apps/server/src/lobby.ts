@@ -164,6 +164,21 @@ export class Lobby {
     return null;
   }
 
+  /** Chat: a line from someone in the lobby to everyone in it (trimmed, capped, and at most a few a second). */
+  private chatAt = new Map<string, number[]>();
+  chat(c: Client, text: unknown): string | null {
+    const p = this.players.find((q) => q.id === c.id);
+    if (!p) return "not in this lobby";
+    const line = String(text ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 200);
+    if (!line) return null;
+    const now = Date.now();
+    const recent = (this.chatAt.get(c.id) ?? []).filter((t) => now - t < 2000);
+    if (recent.length >= 3) return "slow down";
+    this.chatAt.set(c.id, [...recent, now]);
+    for (const q of this.clients.values()) q.send({ t: "chat", from: p.name, text: line });
+    return null;
+  }
+
   broadcast(): void {
     for (const c of this.clients.values()) c.send({ t: "lobby", lobby: this.state() });
   }

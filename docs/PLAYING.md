@@ -50,8 +50,14 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
 6. **Crew:** hire named crew of any race (Human, Engi, Mantis, Rockman, Slug, Zoltan, Crystal, Lanius), each
    at its blueprint price. Rename them or roll a name from FTL's name list.
 
+## Chat
+- **In the lobby:** type in the box at the bottom of the lobby panel and press Enter.
+- **In battle:** press **Enter**, type, and press Enter again (Escape cancels). Messages fade after a few
+  seconds.
+
 ## Ship presets
-- **Saving:** save a finished build from the hangar's **Launch** step, under a name of your choice.
+- **Saving:** save a finished build from the hangar's **Launch** step, under a name of your choice. Saving
+  under a name that's taken asks first, then overwrites that preset.
 - **Using:** the next lobby opens on **Presets**. Each card shows the name, the ship and the cost, plus a
   snapshot of the hull and guns on its own random backdrop. Picking one goes straight to Launch.
   Over-budget presets are flagged but can still be picked.
@@ -149,7 +155,9 @@ greyed out, and its tooltip says why.
       AI.
   - **Start**: pause.
   - **AUTOFIRE:** with a controller there's no AUTOFIRE button: wheel picks always autofire.
-- **Menus:** **LB / RB** (L1 / R1) step back and forward through the hangar's steps and the main menu's tabs. The D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to
+- **Reward cards (Survival):** the first card is focused as they come up. **A / B / X / Y** pick cards 1-4
+  (**LB** a fifth) and **RB** re-rolls; each card shows its button.
+- **Menus:** the **left stick** moves like the D-pad (hold to repeat). **LB / RB** (L1 / R1) step back and forward through the hangar's steps and the main menu's tabs. The D-pad moves a gold ring; **A** presses, or edits a number or list (D-pad to change, A to
   submit, B to cancel).
 - **Lobby:** a gamepad icon shows beside players on a controller.
 

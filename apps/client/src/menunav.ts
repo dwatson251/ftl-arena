@@ -46,6 +46,11 @@ function mark(el: HTMLElement | null): void {
   lastSig = sig(el);
 }
 
+/** Put the focus ring on an element straight away (an overlay that wants the pad's attention). */
+export function focusOn(el: HTMLElement | null): void {
+  mark(el);
+}
+
 /** The nearest control from `from` in direction (dx, dy): ahead on that axis, weighted against drifting sideways. */
 function nearest(from: HTMLElement | null, list: HTMLElement[], dx: number, dy: number): HTMLElement | null {
   if (!from) return list.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0] ?? null;
@@ -93,15 +98,40 @@ function step(el: HTMLInputElement | HTMLSelectElement, dir: 1 | -1): void {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+/** The left stick as a D-pad: one step when pushed, then repeating while held (like a key). */
+let stickDir = "";
+let stickNext = 0;
+function stickStep(p: Pad): [number, number] | null {
+  const mag = Math.hypot(p.x, p.y);
+  if (mag < 0.5) {
+    stickDir = "";
+    return null;
+  }
+  const d: [number, number] = Math.abs(p.x) > Math.abs(p.y) ? [Math.sign(p.x), 0] : [0, Math.sign(p.y)];
+  const key = d.join(",");
+  if (key !== stickDir) {
+    stickDir = key;
+    stickNext = p.t + 350;
+    return d;
+  }
+  if (p.t >= stickNext) {
+    stickNext = p.t + 120;
+    return d;
+  }
+  return null;
+}
+
 /** One frame of menu navigation inside `root`. */
 export function menuNav(p: Pad, root: HTMLElement): void {
   const dirs: [number, number, number][] = [[BTN.UP, 0, -1], [BTN.DOWN, 0, 1], [BTN.LEFT, -1, 0], [BTN.RIGHT, 1, 0]];
+  const stick = stickStep(p);
   if (editing) {
     if (!document.contains(editing.el)) {
       editing = null;
       return;
     }
     for (const [b, dx, dy] of dirs) if (p.down(b)) step(editing.el, dx + -dy > 0 ? 1 : -1);
+    if (stick) step(editing.el, stick[0] + -stick[1] > 0 ? 1 : -1);
     if (p.down(BTN.A)) finishEdit(true);
     else if (p.down(BTN.B)) finishEdit(false);
     return;
@@ -137,6 +167,11 @@ export function menuNav(p: Pad, root: HTMLElement): void {
   for (const [b, dx, dy] of dirs) {
     if (!p.down(b)) continue;
     const next = nearest(cur, list, dx, dy);
+    if (next) mark(next);
+    return;
+  }
+  if (stick) {
+    const next = nearest(cur, list, stick[0], stick[1]);
     if (next) mark(next);
     return;
   }

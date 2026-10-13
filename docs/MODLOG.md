@@ -1104,6 +1104,29 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
   - the lobby summary lists them.
 - **Tests:** `modifiers.test.ts` (5). Checked in the browser with `tools/align/mods.ts`.
 
+## Round 58: client and controller polish
+- **HUD:**
+  - The LB icon now sits on the reactor column's top bar (`reactorTop`).
+  - The D-pad icons are thick polygon arrows, without the boxed text.
+  - The "AUTO" text on the weapon boxes is gone.
+  - The wheel's labels are white.
+- **Weapon wheel:** a gun that can't be powered (ion, no missiles, weapon system or reactor power) doesn't
+  open the room wheel. It says why, once (`cantPower`, shared with `clickWeapon`), and the release doesn't
+  re-try.
+- **Menus:** the left stick moves like the D-pad, repeating after 350 ms and then every 120 ms.
+- **Survival cards with a pad:**
+  - the first card is focused at once;
+  - A/B/X/Y pick cards 1-4 and LB a fifth, RB re-rolls, and the badges sit on the cards;
+  - checked with `cards-pad.ts`.
+- **Presets:** saving under a taken name warns first, then overwrites that preset, keeping its card look
+  (`PresetStore.overwrite`).
+- **Lobby share panel:** just the addresses, labelled Internet or Network, each with Copy beside it. The only
+  note kept is the router warning when the port isn't open.
+- **Chat:** `{t:"chat"}` both ways, relayed by the lobby (200 characters, at most 3 lines per 2 s).
+  - The client widget (`chat.ts`) lives outside `#ui`: a box in the lobby panel, and in battle Enter opens
+    it, Enter sends, and lines fade.
+  - Hotkeys never see the typing. Checked with `tools/align/chat.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

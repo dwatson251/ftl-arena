@@ -253,6 +253,8 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
           return c.lobby?.controlCrew(c, m.crew, !!m.on);
         case "stations":
           return c.lobby?.setStations(c, m.rooms);
+        case "chat":
+          return err(c.lobby ? c.lobby.chat(c, m.text) : "not in a lobby");
       }
     });
     ws.on("close", () => {

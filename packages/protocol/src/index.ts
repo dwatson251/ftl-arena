@@ -129,14 +129,18 @@ export type ClientMsg =
   /** Controller play: crew the player takes from the AI (sent to the teleporter), or hands back. */
   | { t: "controlCrew"; crew: number[]; on: boolean }
   /** Controller play: the saved crew stations ([crew id, room]), for the AI's "back to stations". */
-  | { t: "stations"; rooms: [number, number][] };
+  | { t: "stations"; rooms: [number, number][] }
+  /** A chat line to everyone in the lobby (and the match). */
+  | { t: "chat"; text: string };
 
 export type ServerMsg =
   | { t: "welcome"; v: number; token: string; db: GameDB }
   | { t: "lobby"; lobby: LobbyState | null }
   | { t: "start"; you: 0 | 1 }
   | { t: "snap"; view: MatchView; debug?: DebugInfo }
-  | { t: "error"; msg: string };
+  | { t: "error"; msg: string }
+  /** Someone in the lobby said something. */
+  | { t: "chat"; from: string; text: string };
 
 export const encode = (m: ClientMsg | ServerMsg) => JSON.stringify(m);
 export const decode = <T extends ClientMsg | ServerMsg>(s: string): T => JSON.parse(s) as T;

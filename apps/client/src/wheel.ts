@@ -118,13 +118,13 @@ export class Wheel {
       const x = cx + Math.cos(a) * rm;
       const y = cy + Math.sin(a) * rm;
       const pulse = on ? 1 + 0.05 * Math.sin(time * 10) : 1;
-      if (it.icon) h.sprite(`ic${i}`, it.icon, x, y - (it.faces?.length ? 7 : 4), { anchor: 0.5, scale: 0.65 * pulse, tint: on ? 0xffffff : 0xb8c0cc });
+      if (it.icon) h.sprite(`ic${i}`, it.icon, x, y - (it.faces?.length ? 7 : 4), { anchor: 0.5, scale: 0.65 * pulse, tint: 0xffffff });
       (it.faces ?? []).slice(0, 4).forEach((f, k, all) => {
         if (!f) return;
         const off = (k - (all.length - 1) / 2) * 12;
         h.sprite(`fc${i}_${k}`, f, x + off, y + (it.icon ? 10 : -4), { anchor: 0.5, scale: (it.icon ? 0.45 : 0.75) * pulse });
       });
-      h.text(`lb${i}`, it.label, x, y + (it.icon || it.faces?.length ? 16 : 0), fstyle("JustinFont10", on ? 0xffd76a : 0xaab4c4, { stroke: 0x101010 }), [0.5, 0.5]);
+      h.text(`lb${i}`, it.label, x, y + (it.icon || it.faces?.length ? 16 : 0), fstyle("JustinFont10", on ? 0xffd76a : 0xffffff, { stroke: 0x101010 }), [0.5, 0.5]);
     });
     h.end();
   }

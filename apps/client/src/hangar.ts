@@ -48,7 +48,7 @@ export interface HangarHooks {
   ready(r: boolean): void;
   leave(): void;
   /** For the host: the addresses friends use to join, and a hint (null until known; none for practice). */
-  share?(): { addresses: string[]; note: string } | null;
+  share?(): { addresses: { label?: string; addr: string }[]; note: string } | null;
 }
 
 export class Hangar {
@@ -483,8 +483,9 @@ export class Hangar {
   private sharePanel(lobby: LobbyState): string {
     const s = this.hooks.share?.();
     if (!s || lobby.practice || lobby.players.length >= 2) return "";
-    const rows = s.addresses.map((a) => `<div class="kv"><code class="share-addr">${h(a)}</code><button class="small" data-copy="${h(a)}">Copy</button></div>`).join("");
-    return `<div class="share"><div class="note">Friends join with the address and code ${h(lobby.code)}:</div>${rows}<div class="note">${h(s.note)}</div></div>`;
+    // Just the addresses, each with a Copy button right beside it.
+    const rows = s.addresses.map((a) => `<div class="share-row">${a.label ? `<span class="share-label">${h(a.label)}</span>` : ""}<code class="share-addr">${h(a.addr)}</code><button class="small" data-copy="${h(a.addr)}">Copy</button></div>`).join("");
+    return rows || s.note ? `<div class="share">${rows}${s.note ? `<div class="note">${h(s.note)}</div>` : ""}</div>` : "";
   }
 
   private confirming = false;
@@ -692,6 +693,7 @@ export class Hangar {
     const def = this.loaded ? copyName(this.loaded.name) : (this.db.ships[l.ship]?.title ?? "My ship");
     return `<div class="save-box"><h2>Save as preset</h2>
       <div class="row"><input data-preset-name maxlength="40" placeholder="Preset name" value="${h(this.saveName ?? def)}"><button data-preset-save>Save preset</button></div>
+      ${this.confirmOverwrite ? `<div class="warnbox"><b>There's already a preset called “${h(this.confirmOverwrite.name)}”.</b><div class="err">Saving replaces its ship with this one.</div><div class="row"><button class="primary" data-preset-overwrite>Overwrite</button><button data-preset-keep>Cancel</button></div></div>` : ""}
       <div class="note">Saved on this computer; pick it from Presets next time.</div></div>`;
   }
 
@@ -713,11 +715,24 @@ export class Hangar {
     this.change(baseLoadout(this.db, cfg.shipPool[0] ?? this.db.hangar[0]));
   }
 
-  private savePreset(): void {
+  /** Saving under a name that's taken: the preset waiting for "Overwrite" or "Cancel". */
+  private confirmOverwrite: { id: string; name: string } | null = null;
+
+  private savePreset(overwrite = false): void {
     if (!this.loadout) return;
     const input = this.el.querySelector<HTMLInputElement>("[data-preset-name]");
     const name = (input?.value ?? this.saveName ?? "").trim() || (this.db.ships[this.loadout.ship]?.title ?? "My ship");
-    const p = presets.save(name, this.loadout, Math.random, this.lobby?.config.costs ?? "none");
+    // A preset with that name already: ask first, then overwrite it (keeping its card look).
+    const same = presets.list().find((q) => q.name.toLowerCase() === name.toLowerCase());
+    if (same && !overwrite) {
+      this.saveName = name;
+      this.confirmOverwrite = { id: same.id, name: same.name };
+      this.sfx("powerUpFail");
+      return this.render();
+    }
+    this.confirmOverwrite = null;
+    const costs = this.lobby?.config.costs ?? "none";
+    const p = (same && presets.overwrite(same.id, this.loadout, costs)) || presets.save(name, this.loadout, Math.random, costs);
     this.loaded = { id: p.id, name: p.name, loadout: structuredClone(p.loadout) };
     this.saveName = null;
     this.savedNote = `Saved as preset “${p.name}”.`;
@@ -1111,6 +1126,11 @@ export class Hangar {
       return this.render();
     }
     if ("presetSave" in d) return this.savePreset();
+    if ("presetOverwrite" in d) return this.savePreset(true);
+    if ("presetKeep" in d) {
+      this.confirmOverwrite = null;
+      return this.render();
+    }
     if (d.copy) {
       void navigator.clipboard?.writeText(d.copy).catch(() => {});
       this.sfx("hoverBeep");
