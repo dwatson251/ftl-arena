@@ -773,7 +773,12 @@ export class ShipRenderer {
         gx.rect(px - 13, py - 23, 26 * hp, 4).fill({ color: col });
       } else gx.rect(px + 17, py - 13, 4, 26 * hp).fill({ color: col });
     }
-    if (c.stun > 0) d.gfx(`${key}s`).circle(px, py - 14, 4).fill({ color: 0x9fd0ff });
+    // Stunned: FTL's spinning stars over their head (people/stun_strip5: five 14 px frames).
+    if (c.stun > 0) {
+      const st = texNow("people/stun_strip5.png");
+      if (st) d.sprite(`${key}s`, frame(st, (Math.floor(time * 10) % 5) * 14, 0, 14, 14), px, py - 22, { anchor: 0.5, rotation: this.upright });
+      else d.gfx(`${key}s`).circle(px, py - 14, 4).fill({ color: 0x9fd0ff });
+    }
     // Mind controlled: FTL's spinning swirl over their head, and a purple cast.
     if (c.mind) {
       const sw = texNow("people/mindcontrol_strip8.png");

@@ -478,6 +478,11 @@ export function carryOver(run: SurvivalRun, ship: ShipState): void {
   // The air in each room and the doors as they were left.
   l.o2 = Object.fromEntries(ship.rooms.map((r) => [r.id, Math.round(r.o2 * 10) / 10]));
   l.doorsOpen = [...ship.doors];
+  // The power it was left on (what each system wants, not what damage allows), and the teleporter's charge.
+  l.power = Object.fromEntries(Object.values(ship.systems).filter((s) => !!s).map((s) => [s!.id, s!.want ?? s!.power]));
+  l.weaponsOn = ship.weapons.map((w) => w.want ?? w.powered);
+  l.dronesOn = (ship.drones ?? []).map((d) => d.want ?? d.powered);
+  l.tele = ship.tele;
   l.damage = {};
   l.progress = {};
   for (const s of Object.values(ship.systems)) {

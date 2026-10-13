@@ -73,7 +73,9 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
     const g = geometry(m.db.layouts[ship.layout]);
     const seen = new Set<number>();
     for (const c of ship.crew) {
-      if (c.dead || c.dying !== undefined || (c.mind?.owner ?? c.owner) !== you || c.drone !== undefined) continue;
+      // Crew under the viewer's command see their room: their own, and enemies they mind-control (control hands
+      // `owner` to the controller; `mind.owner` is who they really belong to).
+      if (c.dead || c.dying !== undefined || c.owner !== you || c.drone !== undefined) continue;
       const room = g.tiles.get(c.tile)?.room ?? -1;
       seen.add(room);
       if (!raceOf(c.race).telepathic) continue;
@@ -91,7 +93,7 @@ export function viewFor(m: Match, you: 0 | 1, events: MatchEvent[] = m.state.eve
   const sense = (ship: ShipState, seen: Set<number>, list: ShipState["crew"]): ShipState["crew"] => {
     const g = geometry(m.db.layouts[ship.layout]);
     return list.flatMap((c) => {
-      if ((c.mind?.owner ?? c.owner) === you || seen.has(g.tiles.get(c.tile)?.room ?? -1)) return [c];
+      if (c.owner === you || c.mind?.owner === you || seen.has(g.tiles.get(c.tile)?.room ?? -1)) return [c];
       if (!telepath || c.dead || c.dying !== undefined || c.drone !== undefined) return [];
       // A dot is where they are and nothing else.
       if (senseStyle === "dot") return [{

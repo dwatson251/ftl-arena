@@ -185,7 +185,7 @@ export class Bot {
       const g = geometry(m.db.layouts[ship.layout]);
       const intruder = ship.crew.find((c) => c.owner !== ship.idx && !c.dead && c.dying === undefined && c.drone === undefined && !c.mind);
       if (intruder) out.push({ c: "mind", room: g.tiles.get(intruder.tile)!.room, enemy: false });
-      else if ((enemy.superShield ?? 0) <= 0) {
+      else if ((enemy.superShield ?? 0) <= 0 || bypass(ship)) {
         const eg = geometry(m.db.layouts[enemy.layout]);
         const counts = new Map<number, number>();
         for (const c of enemy.crew) if (c.owner === enemy.idx && !c.dead && c.drone === undefined && !c.mind) counts.set(eg.tiles.get(c.tile)!.room, (counts.get(eg.tiles.get(c.tile)!.room) ?? 0) + 1);
@@ -380,7 +380,7 @@ export class Bot {
     }
     if (ready && want > 0 && onPad.length >= want) {
       const target = enemy.systems.weapons ?? enemy.systems.shields;
-      if (target && (enemy.superShield ?? 0) <= 0) {
+      if (target && ((enemy.superShield ?? 0) <= 0 || bypass(ship))) {
         out.push({ c: "teleport", room: target.room });
         this.party ??= new Set(onPad.map((c) => c.id));
         this.note(m, `board → ${target.id}`);
@@ -691,6 +691,9 @@ export class Bot {
     }
   }
 }
+
+/** Zoltan Shield Bypass: teleporting, bombs and mind control go through a super shield. */
+const bypass = (ship: ShipState) => (ship.augments ?? []).includes("ZOLTAN_BYPASS");
 
 /** Room oxygen (%) the crew AI treats as critical: get out before suffocating. */
 const CRITICAL_O2 = 20;

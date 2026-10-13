@@ -1128,7 +1128,10 @@ export class Match {
     for (const c of T.crew) {
       if (c.dead || !roomTiles.has(c.tile)) continue;
       c.hp = Math.min(c.maxHp, c.hp - pers);
-      if (bp.stunChance > 0 && this.rng.chance(bp.stunChance / 10)) c.stun = bp.stun || RULES.defaultStun;
+      // FTL's stun: a chance in tenths (Heavy Laser 2 = 20%, Ion Blast 1 = 10%), each crew member rolled
+      // separately; a weapon with a stun time but no chance (Ion Stunner, Stun Bomb) always stuns.
+      const chance = bp.stunChance > 0 ? bp.stunChance / 10 : bp.stun > 0 ? 1 : 0;
+      if (chance > 0 && this.rng.chance(chance)) c.stun = Math.max(c.stun, bp.stun || RULES.defaultStun);
     }
     const rs = T.rooms.find((r) => r.id === room)!;
     const tiles = g.roomTiles.get(room)!;
@@ -1197,8 +1200,9 @@ export class Match {
       if (ownShip && augCount(ship, "NANO_MEDBAY") && !(medbay && medbay.room === room) && c.hp < c.maxHp) c.hp = Math.min(c.maxHp, c.hp + RULES.nanoMedbay * DT);
       if (tr.drainO2) this.airLoss(ship, g, room, RULES.breachDrain * tr.drainO2);
       if (this.god.has(c.owner)) c.hp = c.maxHp;
-      // Only a working medbay heals (powered, not wrecked or hacked), and only its own ship's crew.
-      c.healing = ownShip && c.drone === undefined && !!medbay && !medbay.hacked && medbay.room === room && heal > 0 && c.path.length === 0 && c.hp < c.maxHp;
+      // Only a working medbay heals (powered, not wrecked or hacked), and only its own ship's crew: anyone in the
+      // room, standing, walking through, or waiting for a free tile when it's full.
+      c.healing = ownShip && c.drone === undefined && !!medbay && !medbay.hacked && medbay.room === room && heal > 0 && c.hp < c.maxHp;
       if (c.healing) c.hp = Math.min(c.maxHp, c.hp + heal * DT);
       // Drone units repair themselves in their own drone room, like crew in a medbay.
       const dr = ship.systems.drones;
@@ -1953,12 +1957,17 @@ export class Match {
     let moved: CrewState[] = [];
     if (out) {
       const going = ship.crew
-        .filter((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined && !c.beam && c.path.length === 0 && g.tiles.get(c.tile)?.room === ts.room)
+        // Everyone in the pad room goes, even if they're still shuffling between its tiles (they used to be
+        // left behind until they stood still).
+        .filter((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined && !c.beam && g.tiles.get(c.tile)?.room === ts.room)
         .slice(0, RULES.teleMax);
       const taken = held(enemy);
       const free = eg.roomTiles.get(room)!.filter((t) => !taken.has(t));
       moved = going.slice(0, free.length);
-      moved.forEach((c, i) => (c.beam = { t: RULES.teleportTime, phase: "out", ship: enemy.idx, tile: free[i] }));
+      moved.forEach((c, i) => {
+        c.path = [];
+        c.beam = { t: RULES.teleportTime, phase: "out", ship: enemy.idx, tile: free[i] };
+      });
     } else {
       // (Boarders stranded by a ship that's gone can't be pulled back: this teleporter isn't theirs.)
       const coming = enemy.crew.filter((c) => c.owner === ship.idx && c.drone === undefined && !c.dead && c.dying === undefined && !c.beam && !c.stranded && eg.tiles.get(c.tile)?.room === room);
@@ -2200,13 +2209,19 @@ export class Match {
 
   // ---------------------------------------------------------------- end of match
 
+  /** Every crew member dead and no clone on the way (what loses a match, outside autonomous-ship rules). */
+  crewLost(idx: 0 | 1): boolean {
+    const s = this.state.ships[idx];
+    return this.state.config.winCondition !== "auto" && !/^BOSS_/.test(s.bp) && !this.db.ships[s.bp]?.auto && !this.crewOf(idx).some((c) => !c.dead) && !this.canStillClone(s);
+  }
+
   private checkEnd(): void {
     const st = this.state;
     const lost = st.ships.map((s) => {
       if (s.hull <= 0) return "ship destroyed";
       // Autonomous ships fly on without crew: only destruction ends it.
       // (Nor is the Rebel flagship: its AI takes over when the crew are dead.)
-      if (st.config.winCondition !== "auto" && !/^BOSS_/.test(s.bp) && !this.db.ships[s.bp]?.auto && !this.crewOf(s.idx).some((c) => !c.dead) && !this.canStillClone(s)) return "crew lost";
+      if (this.crewLost(s.idx)) return "crew lost";
       return "";
     });
     if (lost[0] || lost[1]) {

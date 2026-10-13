@@ -25,6 +25,12 @@ export interface Loadout {
   /** Survival: each room's oxygen (%, by room id) and which doors stood open, carried from the last fight. */
   o2?: Record<number, number>;
   doorsOpen?: boolean[];
+  /** Survival: the power the player left each system on (bars wanted), and which guns and drones were on. */
+  power?: Partial<Record<SystemId, number>>;
+  weaponsOn?: boolean[];
+  dronesOn?: boolean[];
+  /** Survival: the teleporter's charge (seconds) carried from the last fight; omitted = ready. */
+  tele?: number;
   /** Survival: systems reinforced by reward cards, once per stack (each stack: 10% more health per bar). */
   reinforced?: SystemId[];
   /** Survival: enemy boarders still aboard after the last fight; they fight on for the next enemy. */
@@ -351,6 +357,8 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     drones: (l.drones ?? []).filter((d) => db.droneBPs?.[d]).map((bp, slot) => ({ slot, bp, powered: false, deployed: false, angle: slot * 2.1, cd: 1 })),
     droneParts: l.droneParts ?? 0,
     superShield: (l.augments ?? []).includes("ENERGY_SHIELD") ? RULES.zoltanShield : 0,
+    // The teleporter starts a fight ready (no warm-up); Survival carries a cooldown over from the last one.
+    tele: l.tele ?? 99,
     stats: { shotsFired: 0, hits: 0, misses: 0, blocked: 0, damageDealt: 0 },
   };
   // Stations first, in the order a captain would fill them; the rest stand in free tiles.
@@ -397,6 +405,7 @@ export function buildShip(db: GameDB, l: Loadout, idx: 0 | 1, player: string, pi
     });
   }
   autoPower(db, ship);
+  carriedPower(l, ship);
   // Weapon Pre-igniter: weapons start the battle charged.
   if (ship.augments?.includes("WEAPON_PREIGNITE"))
     for (const w of ship.weapons) if (w.powered && db.weapons[w.bp]) {
@@ -427,6 +436,31 @@ export function reactorUsed(ship: ShipState): number {
 }
 
 /** Opening power plan: shields, engines, one bar of oxygen, every weapon that fits, medbay. */
+/**
+ * Survival: the power the player left things on in the last fight. Each system wants its old bars back (it
+ * powers up to them once repaired, if there's reactor to spare), and guns and drones keep their on/off state.
+ */
+function carriedPower(l: Loadout, ship: ShipState): void {
+  if (l.power) {
+    for (const s of Object.values(ship.systems)) {
+      const want = s ? l.power[s.id] : undefined;
+      if (!s || want === undefined) continue;
+      s.want = want;
+      if (s.power > want) s.power = want;
+    }
+  }
+  l.weaponsOn?.forEach((on, i) => {
+    const w = ship.weapons[i];
+    if (!w) return;
+    w.want = on;
+    if (!on) w.powered = false;
+  });
+  l.dronesOn?.forEach((on, i) => {
+    const d = ship.drones?.[i];
+    if (d) d.want = on;
+  });
+}
+
 export function autoPower(db: GameDB, ship: ShipState): void {
   for (const s of Object.values(ship.systems)) if (s) s.power = isSubsystem(s.id) ? usable(s) : 0;
   const free = () => ship.reactor - reactorUsed(ship);

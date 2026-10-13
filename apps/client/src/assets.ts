@@ -176,6 +176,7 @@ export async function preload(db: GameDB, progress: (k: number) => void = () => 
   files.add("icons/s_hacked.png");
   files.add("icons/locking/s_lock.png");
   files.add("people/mindcontrol_strip8.png");
+  files.add("people/stun_strip5.png");
   files.add("systemUI/button_battery3_base.png");
   for (let i = 1; i <= 4; i++) files.add(`systemUI/button_artillery_${i}.png`);
   for (const id of ["battery", "mind", "artillery"]) for (const c of ["green", "grey", "orange", "red", "blue"]) files.add(`icons/s_${id}_${c}1.png`);

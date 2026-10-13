@@ -997,6 +997,37 @@ install.
 - **Not reproduced:** the "Kestrel/Bulwark exterior view" sprite note. The A/B/C hulls look right in the
   hangar and in battle (`tools/align/hulls.ts`), so it goes back to the user.
 
+## Round 53: sim fixes from the playtest notes
+- **Teleporter:**
+  - It starts each battle ready (`tele: 99`, clamped to the level's cooldown), and cools down only after a
+    send or retrieve (FTL's 20/15/10 s).
+  - Survival carries the charge between battles (`Loadout.tele`).
+  - Everyone in the pad room goes, even someone still stepping between its tiles. They used to be left
+    behind until they stood still, and their walk is now cut short on beam-out.
+- **Zoltan Shield Bypass:**
+  - The client refused a teleport against a super shield ("Super shields prevent teleporting") without
+    looking at the augment.
+  - The bot's boarding and mind-control checks did the same.
+  - The sim always allowed it.
+- **Stun:**
+  - A weapon with a stun time but no chance (Ion Stunner 5 s, Stun Bomb 15 s) now always stuns. Before, it
+    never did.
+  - Chances stay in tenths (a Heavy Laser's 2 is the wiki's 20%), and a new stun never shortens one already
+    running.
+  - Stunned crew show FTL's `people/stun_strip5` stars.
+- **Mind control reveals the room:** control hands `owner` to the controller, and `mind.owner` is who they
+  belong to. The fog rule read `mind.owner`, so an enemy under your command never showed you their room.
+  Your own mind-controlled crew still show to you.
+- **Medbay:** anyone in the room heals, whether standing, walking through, or waiting while every tile is
+  taken.
+- **Survival carries power over:** each system's wanted bars, and the guns' and drones' on/off state
+  (`Loadout.power/weaponsOn/dronesOn`). A system that was damaged comes back to its old power once repaired.
+- **Survival crew death after a battle:** if the whole crew dies in the aftermath (and no clone is coming),
+  the run is over as in a defeat (`Match.crewLost`).
+- **Repair bars:** progress fills at 1 px and is eased between snapshots (it was 3 px notches at 15 Hz). The
+  enemy's bars now fill partly too.
+- **Tests:** `round52.test.ts` (8). 198 passing.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

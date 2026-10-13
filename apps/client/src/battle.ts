@@ -1777,8 +1777,10 @@ export class Battle {
           const ion = !dmg && b >= cap;
           const on = !dmg && !ion && (SUBSYSTEMS.includes(id) ? b < cap : b < Math.min(cap, s.power + (s.bonus ?? 0)));
           const sab = !dmg && b === s.level - s.damage - 1 && (s.sabotage ?? 0) > 0;
-          const col = dmg ? (b === s.level - s.damage && s.repair > 0 ? 0xffe050 : 0xff3a2a) : sab ? 0xff8040 : ion ? 0x3a7fd0 : on ? 0x78ff78 : 0x40484a;
+          const col = dmg ? 0xff3a2a : sab ? 0xff8040 : ion ? 0x3a7fd0 : on ? 0x78ff78 : 0x40484a;
           g2.rect(bx, yy, 10, 3).fill({ color: col });
+          // The bar being repaired fills yellow as the repair goes (when their repairs can be seen).
+          if (dmg && b === s.level - s.damage && s.repair > 0) g2.rect(bx, yy, Math.max(1, Math.round(10 * this.eased(`e${id}`, s.repair))), 3).fill({ color: 0xffe050 });
         }
       }
     });
@@ -1935,13 +1937,13 @@ export class Battle {
       const powered = !damaged && !ion && b < (isSub ? cap : Math.min(cap, sys.power + bonus));
       if (damaged) {
         g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0xff3a2a });
-        if (b === sys.level - sys.damage && sys.repair > 0) g.rect(x, yy, Math.floor((BAR_W * sys.repair) / 3) * 3, BAR_H).fill({ color: 0xffe050 });
+        if (b === sys.level - sys.damage && sys.repair > 0) g.rect(x, yy, Math.round(BAR_W * this.eased(`r${sys.id}`, sys.repair)), BAR_H).fill({ color: 0xffe050 });
       } else if (ion) g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0x3a7fd0 });
       else if (b === sys.level - sys.damage - 1 && (sys.sabotage ?? 0) > 0) {
         // Boarders at work: the next bar to break fills red as they wreck it.
         if (powered) g.rect(x, yy, BAR_W, BAR_H).fill({ color: 0x78ff78 });
         else g.rect(x + 0.5, yy + 0.5, BAR_W - 1, BAR_H - 1).stroke({ color: 0xe8ece8, width: 1 });
-        g.rect(x, yy, Math.max(3, Math.floor((BAR_W * (sys.sabotage ?? 0)) / 3) * 3), BAR_H).fill({ color: 0xff3a2a });
+        g.rect(x, yy, Math.max(1, Math.round(BAR_W * this.eased(`s${sys.id}`, sys.sabotage ?? 0))), BAR_H).fill({ color: 0xff3a2a });
       } else if (powered) g.rect(x, yy, BAR_W, BAR_H).fill({ color: !isSub && b >= sys.power ? 0xd8ff50 : 0x78ff78 });
       else g.rect(x + 0.5, yy + 0.5, BAR_W - 1, BAR_H - 1).stroke({ color: 0xe8ece8, width: 1 });
     }
@@ -2972,6 +2974,22 @@ export class Battle {
     play(this.db, ["powerDownSystem"], 0.6);
   }
 
+  /** Progress shown on a bar (repairs, wrecking): eased toward each snapshot's value so it fills smoothly between
+   *  them (snapshots come 15 times a second); a drop (a new bar starting) shows at once. */
+  private easedFill = new Map<string, { v: number; t: number }>();
+  private eased(key: string, target: number): number {
+    const e = this.easedFill.get(key);
+    const now = performance.now();
+    if (!e || target < e.v - 0.05) {
+      this.easedFill.set(key, { v: target, t: now });
+      return target;
+    }
+    const k = Math.min(1, ((now - e.t) / 1000) * 10);
+    e.v += (target - e.v) * k;
+    e.t = now;
+    return e.v;
+  }
+
   /** Controller mode: switched on in Settings, and a pad in use. */
   private padUi(): boolean {
     return this.padSeen && controllerEnabled();
@@ -3144,7 +3162,8 @@ export class Battle {
       }
       // The server decides, but say why it would refuse (FTL's own warning for super shields).
       const enV2 = v.ships[1 - v.you];
-      if ((enV2.superShield ?? 0) > 0) return this.fail("Super shields prevent teleporting");
+      // (Zoltan Shield Bypass teleports through them.)
+      if ((enV2.superShield ?? 0) > 0 && !(v.ships[v.you].augments ?? []).includes("ZOLTAN_BYPASS")) return this.fail("Super shields prevent teleporting");
       if (out) {
         const eg = this.enemy.geo;
         const free = (eg.roomTiles.get(eh.room) ?? []).filter((t) => !enV2.crew.some((c) => c.owner === v.you && !c.dead && c.tile === t)).length;

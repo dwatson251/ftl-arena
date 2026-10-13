@@ -617,6 +617,20 @@ export class Lobby {
       this.pending[1].push(...m.state.events);
     }
     if (!paused) this.aftermathLeft -= 1 / TICK_HZ;
+    // The whole crew lost after the battle (boarders, fire, no air): the run is over, as in a defeat.
+    if (m.crewLost(h)) {
+      m.state.winner = (1 - h) as 0 | 1;
+      m.state.endReason = "crew lost";
+      m.state.events.push({ e: "end", winner: m.state.winner, reason: "crew lost" });
+      this.pending[0].push(...m.state.events.slice(-1));
+      this.pending[1].push(...m.state.events.slice(-1));
+      this.run.over = true;
+      this.phase = "over";
+      this.log(`survival: crew lost after battle ${this.run.battle}; run over after ${this.run.won} wins (score ${score(this.run)})`);
+      this.sendSnaps();
+      this.broadcast();
+      return;
+    }
     // The boarders are dealt with: no need to wait out the long clock (down to the usual one, if it's longer).
     if (this.aftermathBoarders && !m.state.ships[h].crew.some((c) => c.owner !== h && !c.dead && c.dying === undefined)) {
       this.aftermathBoarders = false;
