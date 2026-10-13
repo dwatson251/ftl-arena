@@ -143,6 +143,7 @@ ipcMain.handle("extract", async (e, folder) => {
 // ---------------------------------------------------------------- ship presets
 
 const PRESETS = () => path.join(DATA(), "presets.json");
+ipcMain.handle("quit", () => app.quit());
 ipcMain.handle("presets-load", () => {
   try {
     return JSON.parse(fs.readFileSync(PRESETS(), "utf8"));

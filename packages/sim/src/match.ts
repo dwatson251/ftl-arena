@@ -737,9 +737,14 @@ export class Match {
       if ((s.id === "sensors" || s.id === "doors") && s.station && usable(s) > 0) {
         if (this.manSkill(ship, s.id) !== undefined) s.manBonus = 1;
       }
-      for (const c of ship.crew) {
-        const p = raceOf(c.race).power;
-        if (p && !c.dead && c.owner === ship.idx && c.path.length === 0 && g.tiles.get(c.tile)?.room === s.room) s.bonus += p;
+      if (!isSubsystem(s.id)) {
+        for (const c of ship.crew) {
+          const p = raceOf(c.race).power;
+          if (!p || c.dead || c.owner !== ship.idx) continue;
+          // Standing in or walking through: judge by where they physically are, not the tile they're heading to.
+          const here = g.tiles.get(key(Math.round(c.x), Math.round(c.y))) ?? g.tiles.get(c.tile);
+          if (here?.room === s.room) s.bonus += p;
+        }
       }
       if (s.ion > 0) {
         s.ionTimer -= DT;

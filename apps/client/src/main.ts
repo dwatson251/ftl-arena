@@ -660,6 +660,11 @@ const MENU_LOGO = `<svg class="mm-logo" viewBox="0 0 1280 720" preserveAspectRat
  *  The "FTL" title is drawn over it by us. */
 const MENU_SPLASH = "/menu/main-menu-bg.webp";
 
+/** The desktop app's way to close itself (the preload bridge); undefined in a browser, where there is no Quit. */
+function desktopQuit(): (() => unknown) | undefined {
+  return (globalThis as unknown as { ftlArena?: { quit?: () => unknown } }).ftlArena?.quit;
+}
+
 /** The main menu: FTL's title screen with our four buttons; each opens its own panel (Back returns). */
 const MENU_ITEMS: [typeof mode, string][] = [["single", "Single player"], ["lan", "LAN"], ["online", "Online"], ["settings", "Settings"]];
 function renderMenu(): void {
@@ -698,7 +703,7 @@ function renderMenu(): void {
     <div class="mm-stage" style="background-image:url('${MENU_SPLASH}')">
       ${MENU_LOGO}
       <div class="mm-arena">ARENA</div>
-      <div class="mm-buttons">${MENU_ITEMS.map(([m, label]) => `<button class="mm-btn" data-open="${m}">${label}</button>`).join("")}</div>
+      <div class="mm-buttons">${MENU_ITEMS.map(([m, label]) => `<button class="mm-btn" data-open="${m}">${label}</button>`).join("")}${desktopQuit() ? `<button class="mm-btn" data-quit>Quit</button>` : ""}</div>
       ${db?.source === "ftl" && !hasArt ? `<div class="mm-note note">No local art found: drawing placeholders.</div>` : ""}
       ${!menuOpen && error ? `<div class="mm-note err">${esc(error)}</div>` : ""}
     </div>
@@ -732,6 +737,7 @@ function renderMenu(): void {
       openModePanel(m);
     }),
   );
+  ui.querySelector("[data-quit]")?.addEventListener("click", () => desktopQuit()?.());
   ui.querySelector("[data-back]")?.addEventListener("click", () => closeMenuPanel());
   const firstName = () => {
     name = val("#firstname") || "Captain";

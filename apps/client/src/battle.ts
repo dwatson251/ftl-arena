@@ -789,9 +789,10 @@ export class Battle {
     });
   }
 
-  /** The viewer's own crew wherever they are (boarders included), drone units excluded. */
+  /** The viewer's own crew wherever they are (boarders included), drone units and anyone mind controlled
+   *  (either way: yours under enemy control, or theirs under yours) excluded: they're not in the party. */
   private myCrew(v: MatchView): ShipView["crew"] {
-    return [...v.ships[v.you].crew, ...v.ships[1 - v.you].crew].filter((c) => (c.mind?.owner ?? c.owner) === v.you && c.drone === undefined);
+    return [...v.ships[v.you].crew, ...v.ships[1 - v.you].crew].filter((c) => !c.mind && c.owner === v.you && c.drone === undefined);
   }
 
   /**
@@ -1965,6 +1966,17 @@ export class Battle {
     return !!sys?.station && s.crew.some((c) => !c.dead && c.path.length === 0 && c.tile === sys.station);
   }
 
+  /**
+   * FTL's manning mark (three joined crew figures) on a system with a station: outlined while empty, filled
+   * white when manned, blue while ionised. It rides just above the top bar, whatever the system's level.
+   */
+  private manningMark(s: ShipView, sys: NonNullable<ShipView["systems"][SystemId]>, key: string, cx: number, bottom: number): void {
+    if (!sys.station) return;
+    const state = sys.ion > 0 ? "ion" : this.manned(s, sys.id) ? "on" : "off";
+    const top = bottom - Math.max(0, sys.level - 1) * this.pitch(sys.level);
+    this.hud.sprite(key, texNow(`systemUI/manning_bar_${state}.png`), cx, top - 2, { anchor: [0.5, 1] });
+  }
+
   /** Bottom left: reactor column on FTL's wire, then each main system's bars above its icon. */
   private systemsBar(s: ShipView): void {
     const h = this.hud;
@@ -2000,7 +2012,7 @@ export class Battle {
       const cx = ix + 32;
       g.moveTo(cx - 10, 704).lineTo(cx - 2, 696).stroke({ color: 0xe8ece8, width: 2 });
       this.bars(`b${sys.id}`, sys, cx, 657);
-      if (this.manned(s, sys.id)) h.sprite(`mn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 657 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
+      this.manningMark(s, sys, `mn${sys.id}`, cx, 657);
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`) ?? texNow(`icons/s_${sys.id}_green1.png`);
       if (icon) {
         if (sys.ion <= 0 && this.lockLeft(s, sys.id) <= 0) h.sprite(`si${sys.id}`, icon, ix, SYS_ICON_Y, { tint: sys.hacked ? 0xd070ff : 0xffffff });
@@ -2288,7 +2300,7 @@ export class Battle {
       const ix = SUB_X0 + (SUB_OFF[id] ?? 0);
       const cx = ix + 32;
       this.bars(`sb${sys.id}`, sys, cx, 639);
-      if (this.manned(s, sys.id)) h.sprite(`smn${sys.id}`, texNow("systemUI/manning_white.png"), cx, 639 - sys.level * this.pitch(sys.level) - 2, { anchor: [0.5, 1], scale: 0.7 });
+      this.manningMark(s, sys, `smn${sys.id}`, cx, 639);
       const icon = texNow(`icons/s_${sys.id}_${this.iconState(sys)}1.png`);
       if (sys.locked) h.sprite(`hk${sys.id}`, texNow("icons/s_hacked.png"), cx + 10, SUB_ICON_Y + 12, { anchor: 0.5 });
       if (sys.id === "battery") this.batteryPanel(s, sys, ix, SUB_ICON_Y);
