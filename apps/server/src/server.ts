@@ -3,6 +3,7 @@
  * extracted assets over HTTP, and the game over a WebSocket at /ws. `main.ts` is its command line; the desktop
  * app starts it in-process.
  */
+import { adminRoute, type AdminHooks, type LogLine } from "./admin.ts";
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
@@ -39,6 +40,8 @@ export interface ServerOptions {
   upnp?: boolean;
   /** Answer LAN "who has this code?" questions (default on). */
   lan?: boolean;
+  /** The admin page and API (admin.ts): what the program running this server lets them do. */
+  admin?: AdminHooks;
   /** Offer this machine's FTL save in progress to the hangar's "Load from FTL" (players' own app only). */
   ftlSave?: boolean;
 }
@@ -53,6 +56,8 @@ export interface ShareInfo {
 
 export interface RunningServer {
   port: number;
+  /** Log a line (also kept for the admin page). */
+  log(s: string): void;
   close(): Promise<void>;
 }
 
@@ -76,7 +81,16 @@ function serveFile(root: string, rel: string, res: import("node:http").ServerRes
 }
 
 export function startServer(opts: ServerOptions): Promise<RunningServer> {
-  const log = opts.log ?? ((s: string) => console.log(s));
+  const out = opts.log ?? ((s: string) => console.log(s));
+  // The last few hundred log lines, for the admin page.
+  const logs: LogLine[] = [];
+  let logN = 0;
+  const log = (s: string) => {
+    logs.push({ n: logN++, t: Date.now(), text: s });
+    if (logs.length > 500) logs.shift();
+    out(s);
+  };
+  const startedAt = Date.now();
   const ASSETS = opts.assets ? resolve(opts.assets) : "";
   const ALT = resolve(opts.altAssets ?? "packages/content/art");
   const CLIENT = opts.client ? resolve(opts.client) : "";
@@ -108,6 +122,13 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
     const head = req.method === "HEAD";
     const json = (v: unknown) => res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache" }).end(JSON.stringify(v));
     const query = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
+    if (adminRoute(req, res, url, query, {
+      lobbies, logs, startedAt, hooks: opts.admin ?? {},
+      port: () => (http.address() as AddressInfo).port,
+      online: () => wss.clients.size,
+      close: closeLobby,
+      shipTitle: (id) => db.ships[id]?.title ?? id,
+    })) return;
     if (url === "/api/share") {
       const port = (http.address() as AddressInfo).port;
       // Online: the public address too (and the UPnP attempt). LAN: just this computer's network addresses.
@@ -169,6 +190,19 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
     return { host: l.players.find((p) => p.id === l.host)?.name ?? "", players: l.players.length };
   }
   const sessions = new Map<string, Client>();
+  /** The admin closes a lobby: its players are told and go back to the menu. */
+  function closeLobby(code: string): boolean {
+    const l = lobbies.get(code);
+    if (!l) return false;
+    for (const c of l.clients.values()) {
+      c.lobby = null;
+      c.send({ t: "error", msg: "The server closed this match" });
+      c.send({ t: "lobby", lobby: null });
+    }
+    lobbies.delete(code);
+    log(`[${code}] closed by the admin`);
+    return true;
+  }
   const newCode = () => {
     const A = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     let c = "";
@@ -317,6 +351,7 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       log(`FTL Arena server on http://localhost:${port}  (ws at /ws)`);
       ok({
         port,
+        log,
         close: () =>
           new Promise<void>((done) => {
             void unforwardPort();

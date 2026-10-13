@@ -29,6 +29,12 @@ For installing, see the [README](../README.md).
   - **Options:** `--port 8787`, `--host`, `--upnp`, `--no-lan` and `--help`.
   - **Config file:** `ftl-arena-server.json` beside the program; `--write-config` makes one to edit.
     Arguments override the file.
+  - **Admin page:** `http://<server>:8787/admin` shows the status, lobbies and players (with a Close
+    button), the live log and the settings.
+    - From the server's own machine it just works.
+    - From anywhere else, set `adminToken` in the settings and open `/admin?token=<it>`.
+    - Its JSON API (`/api/admin/status`, `lobbies`, `logs`, `config`) is there for monitoring scripts, and
+      takes the token as `Authorization: Bearer <it>`.
 - **Host leaving:**
   - Mid-battle, the other captain wins by forfeit.
   - In the hangar, the other captain takes over as host.

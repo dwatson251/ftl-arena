@@ -15,6 +15,17 @@ import { basename, join, resolve } from "node:path";
 import { build } from "esbuild";
 
 const require = createRequire(import.meta.url);
+/** The build's version, as the client's: FTL_ARENA_VERSION (CI: the tag), else this commit's tag, else its short hash. */
+function appVersion() {
+  const git = (a) => {
+    try {
+      return execFileSync("git", a, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    } catch {
+      return "";
+    }
+  };
+  return (process.env.FTL_ARENA_VERSION || git(["describe", "--tags", "--exact-match"]) || git(["rev-parse", "HEAD"]).slice(-7) || "dev").replace(/^v/, "");
+}
 const root = resolve(".");
 const desktop = join(root, "apps/desktop");
 const args = process.argv.slice(2);
@@ -32,7 +43,7 @@ await build({
   external: ["bufferutil", "utf-8-validate", "electron"],
   logLevel: "warning",
   // No debug tools in a release (apps/server/src/lobby.ts).
-  define: { __RELEASE__: "true" },
+  define: { __RELEASE__: "true", __APP_VERSION__: JSON.stringify(appVersion()) },
 });
 
 if (args.includes("--run")) {

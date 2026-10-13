@@ -11,14 +11,17 @@ import { lanAddresses, publicAddress } from "./upnp.ts";
 const HELP = `FTL Arena dedicated server
 
   ftl-arena-server [--port 8787] [--host 0.0.0.0] [--upnp] [--no-lan] [--client <built web client>]
-                   [--config <file>] [--write-config]
+                   [--admin-token <secret>] [--config <file>] [--write-config]
 
 Runs as is: nothing to install or set up. Settings, each overriding the one before:
   1. built-in defaults (port 8787, every interface, LAN discovery on, UPnP off);
   2. ftl-arena-server.json next to the program (or --config <file>);
-  3. environment: PORT, FTL_ARENA_HOST, FTL_ARENA_UPNP=1, FTL_ARENA_LAN=0;
+  3. environment: PORT, FTL_ARENA_HOST, FTL_ARENA_UPNP=1, FTL_ARENA_LAN=0, FTL_ARENA_ADMIN_TOKEN;
   4. the arguments above.
---write-config writes the settings in force to the config file, to edit, and exits.`;
+--write-config writes the settings in force to the config file, to edit, and exits.
+
+Admin page and API: http://localhost:<port>/admin (status, lobbies and players, logs, settings). From other
+machines it needs the admin token (?token=... or Authorization: Bearer ...); without one it's this machine only.`;
 
 export interface DedicatedConfig {
   /** TCP port players connect to. */
@@ -31,9 +34,28 @@ export interface DedicatedConfig {
   lan: boolean;
   /** A built web client to serve at / (optional: players normally use the app). */
   client: string;
+  /** The admin page and API from other machines need this (http://<server>/admin?token=...). Empty: this
+   *  machine only. */
+  adminToken: string;
 }
 
-export const DEFAULTS: DedicatedConfig = { port: 8787, host: "0.0.0.0", upnp: false, lan: true, client: "" };
+export const DEFAULTS: DedicatedConfig = { port: 8787, host: "0.0.0.0", upnp: false, lan: true, client: "", adminToken: "" };
+
+/** Settings as given (a config file, the admin page): known keys only, each checked; null where it's wrong. */
+export function cleanConfig(j: Partial<Record<keyof DedicatedConfig, unknown>>): { cfg: Partial<DedicatedConfig>; error?: string } {
+  const cfg: Partial<DedicatedConfig> = {};
+  if (j.port !== undefined) {
+    const p = Number(j.port);
+    if (!Number.isInteger(p) || p < 0 || p > 65535) return { cfg, error: "port must be 0-65535" };
+    cfg.port = p;
+  }
+  if (j.host !== undefined) cfg.host = String(j.host);
+  if (j.upnp !== undefined) cfg.upnp = !!j.upnp;
+  if (j.lan !== undefined) cfg.lan = !!j.lan;
+  if (j.client !== undefined) cfg.client = String(j.client);
+  if (j.adminToken !== undefined) cfg.adminToken = String(j.adminToken);
+  return { cfg };
+}
 
 /** Folder of the packaged program (its config sits beside it), else the working folder. */
 const home = (process as unknown as { isSea?: () => boolean }).isSea?.() || /ftl-arena-server(\.exe)?$/i.test(process.execPath) ? dirname(process.execPath) : process.cwd();
@@ -60,12 +82,9 @@ export function resolveConfig(
   const raw = readFile(file);
   if (raw !== null) {
     try {
-      const j = JSON.parse(raw) as Partial<Record<keyof DedicatedConfig, unknown>>;
-      if (j.port !== undefined) set("port", Number(j.port), "config");
-      if (typeof j.host === "string") set("host", j.host, "config");
-      if (j.upnp !== undefined) set("upnp", !!j.upnp, "config");
-      if (j.lan !== undefined) set("lan", !!j.lan, "config");
-      if (typeof j.client === "string") set("client", j.client, "config");
+      const c = cleanConfig(JSON.parse(raw));
+      if (c.error) fileError = `${file}: ${c.error} (that setting uses its default)`;
+      for (const [k, v] of Object.entries(c.cfg)) set(k as keyof DedicatedConfig, v as never, "config");
     } catch (e) {
       fileError = `couldn't read ${file}: ${(e as Error).message} (using the defaults)`;
     }
@@ -79,6 +98,8 @@ export function resolveConfig(
   if (args.includes("--upnp")) set("upnp", true, "argument");
   if (args.includes("--no-lan")) set("lan", false, "argument");
   if (arg("--client")) set("client", arg("--client")!, "argument");
+  if (env.FTL_ARENA_ADMIN_TOKEN) set("adminToken", env.FTL_ARENA_ADMIN_TOKEN, "env");
+  if (arg("--admin-token")) set("adminToken", arg("--admin-token")!, "argument");
   return { cfg, from, file, fileError };
 }
 
@@ -94,8 +115,35 @@ async function main(): Promise<void> {
     return void console.log(`wrote ${file}`);
   }
   if (fileError) log(fileError);
-  const server = await startServer({ port: cfg.port, host: cfg.host, upnp: cfg.upnp, lan: cfg.lan, client: cfg.client || undefined, log });
-  log(`settings: ${Object.entries(cfg).map(([k, v]) => `${k}=${JSON.stringify(v)} (${from[k as keyof DedicatedConfig]})`).join(", ")}`);
+  const live = { ...cfg };
+  // (The admin's saves are logged through the server, once it's up, so they show on the admin page.)
+  let say = log;
+  const server = await startServer({
+    port: cfg.port, host: cfg.host, upnp: cfg.upnp, lan: cfg.lan, client: cfg.client || undefined, log,
+    admin: {
+      token: () => live.adminToken,
+      // (The token itself is never sent back; leave it blank in the form to keep it.)
+      getConfig: () => ({ ...live, adminToken: "" }),
+      setConfig: (raw) => {
+        const c = cleanConfig(raw as never);
+        if (c.error) return { ok: false, error: c.error };
+        if (c.cfg.adminToken === "") delete c.cfg.adminToken;
+        const next = { ...live, ...c.cfg };
+        try {
+          writeFileSync(file, JSON.stringify(next, null, 2) + "\n");
+        } catch (e) {
+          return { ok: false, error: `couldn't write ${file}: ${(e as Error).message}` };
+        }
+        const restart = (["port", "host", "upnp", "lan", "client"] as const).some((k) => next[k] !== live[k]);
+        live.adminToken = next.adminToken;
+        say(`settings saved to ${file}${restart ? " (restart to apply)" : ""}`);
+        return { ok: true, restart };
+      },
+    },
+  });
+  say = server.log;
+  server.log(`settings: ${Object.entries(cfg).map(([k, v]) => `${k}=${k === "adminToken" ? (v ? '"(set)"' : '""') : JSON.stringify(v)} (${from[k as keyof DedicatedConfig]})`).join(", ")}`);
+  server.log(`admin page: http://localhost:${server.port}/admin${cfg.adminToken ? " (remote: add ?token=<adminToken>)" : " (this machine only; set adminToken for remote)"}`);
   const pub = await publicAddress();
   console.log("");
   console.log("  FTL Arena dedicated server is running. Players put one of these in \"Server address\":");

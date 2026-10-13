@@ -1175,6 +1175,23 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
 - **On a server with no FTL:** crew names and descriptions are FTL's own now, not stand-ins.
 - **Tests:** the equivalence test checks the bare DB carries the words and names.
 
+## Round 62: the server's admin page and API
+- **`admin.ts`:** a JSON API.
+  - `status`: version, uptime, players, online, lobbies, battles.
+  - `lobbies`: mode, modifiers, phase, players with connection, ready and ship, and battle time and hulls.
+  - `logs?since=n`: a 500-line ring buffer.
+  - `config` (GET/PUT through the host program's hooks), and `close?code=`, which tells the players and drops
+    the lobby.
+  - Plus `/admin`, a self-contained page over it, polling every 2 s.
+- **Access:** this machine always. From elsewhere only with the `adminToken` (Bearer or `?token=`); with none
+  set, remote admin is off. Unit-tested.
+- **Dedicated server:**
+  - `adminToken` setting (file, `FTL_ARENA_ADMIN_TOKEN` or `--admin-token`).
+  - The admin page edits `ftl-arena-server.json`. The token applies at once, and port and network changes
+    need a restart. The token is never sent back to the page.
+- **Version stamp:** the server bundles carry `__APP_VERSION__`, the same as the client's.
+- **Tests:** 3 more in `dedicated.test.ts`. Page checked with `tools/align/admin.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

@@ -10,6 +10,17 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync }
 import { join, resolve } from "node:path";
 import { build } from "esbuild";
 
+/** The build's version, as the client's: FTL_ARENA_VERSION (CI: the tag), else this commit's tag, else its short hash. */
+function appVersion() {
+  const git = (a) => {
+    try {
+      return execFileSync("git", a, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    } catch {
+      return "";
+    }
+  };
+  return (process.env.FTL_ARENA_VERSION || git(["describe", "--tags", "--exact-match"]) || git(["rev-parse", "HEAD"]).slice(-7) || "dev").replace(/^v/, "");
+}
 const root = resolve(".");
 const out = join(root, "release/server");
 const cache = join(root, "release/.cache");
@@ -26,7 +37,7 @@ await build({
   outfile: bundle, bundle: true, platform: "node", format: "cjs", target: "node22",
   external: ["bufferutil", "utf-8-validate"], logLevel: "warning",
   // No debug tools in a release (apps/server/src/lobby.ts).
-  define: { __RELEASE__: "true" },
+  define: { __RELEASE__: "true", __APP_VERSION__: JSON.stringify(appVersion()) },
 });
 
 console.log("· SEA blob");
