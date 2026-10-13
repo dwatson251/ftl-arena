@@ -399,17 +399,20 @@ export class Match {
     for (const s of Object.values(ship.systems)) if (s && s.level > 0 && (ion ? s.ion < s.level : s.damage < s.level) && !(hurt && crewRooms.has(s.room))) wanted.add(s.room);
     wanted.delete(-1);
     if (here !== undefined) wanted.delete(here);
-    let best = -1;
-    let bestLen = Infinity;
-    for (const r of wanted) {
-      const t = g.roomTiles.get(r)?.[0];
-      const p = t ? findPath(g, c.tile, t) : null;
-      if (p && p.length < bestLen) {
-        bestLen = p.length;
-        best = r;
-      }
+    // Nearest first; a room with no free tile turns the move away, so on to the next one (a boarder used to
+    // stand idle when its nearest choice was full).
+    const options = [...wanted]
+      .map((r) => {
+        const t = g.roomTiles.get(r)?.[0];
+        const p = t ? findPath(g, c.tile, t) : null;
+        return { r, len: p ? p.length : Infinity };
+      })
+      .filter((o) => o.len < Infinity)
+      .sort((a, b) => a.len - b.len);
+    for (const o of options) {
+      this.sendCrew(ship, g, c, o.r);
+      if (c.path.length) return;
     }
-    if (best >= 0) this.sendCrew(ship, g, c, best);
   }
 
   private sendCrew(ship: ShipState, g: Geometry, c: CrewState, room: number): void {

@@ -509,6 +509,11 @@ export class Lobby {
     const as = this.assistFor(idx);
     if (as) {
       if ((cmd.c === "weaponPower" || cmd.c === "target") && Number.isInteger(cmd.slot)) as.a.ownedWeapons.add(cmd.slot);
+      // Crew the player moves are theirs until that room's work is done (the AI's crew tasks, CREW_TASKS).
+      if (cmd.c === "moveCrew" && Array.isArray(cmd.crew)) {
+        as.a.orders ??= new Map();
+        for (const id of cmd.crew.slice(0, 16)) as.a.orders.set(Number(id), { room: Number(cmd.room), enemy: !!cmd.enemy });
+      }
       if (cmd.c === "power") {
         as.a.ownedSystems.add(cmd.system);
         // The teleporter powered down: whoever the player had claimed goes back to the AI.

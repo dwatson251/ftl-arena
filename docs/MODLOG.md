@@ -1028,6 +1028,39 @@ install.
   enemy's bars now fill partly too.
 - **Tests:** `round52.test.ts` (8). 198 passing.
 
+## Round 54: the crew AI as a task system
+- **Persistent tasks** (`Bot.crew`, `CREW_TASKS` in `bot.ts`):
+  - Each crew member keeps a task (heal, fight, fire, breach, repair, or a player's order) until it's
+    complete. A room task is complete when the room has no fire, breach, damage or boarders left; healing is
+    complete at full health.
+  - What may take someone off a task is one table, `CREW_TASKS.interrupts` (e.g. a repair gives way to
+    healing or a fight). Being in peril always does.
+  - Manning stays a free choice, re-planned each think as before.
+- **Healing:**
+  - Below 25% crew go to the medbay and stay until full.
+  - A patient doesn't flee the medbay because of boarders, only if the air's going.
+  - While someone's that low, the medbay's own repair comes first of all (priority 5).
+- **Boarders by strength:**
+  - Defenders go until their strength (HP × race combat × mind boost) is 1.2× the boarders' (one human
+    boarder draws two humans).
+  - They leave the least critical stations first (`abandonOrder`: doors … pilot, weapons, shields).
+- **No skill gate on defence:** the bot's crew AI used to switch off entirely below level 0.2, so Survival's
+  first enemies ignored boarders and damage. Defence and repairs now always run; firefighting and the
+  medbay keep their skill gates.
+- **A controller player's own moves:** the lobby records them as `Assist.orders`. The AI leaves that crew
+  member alone until the room they were sent to is sorted (aboard the enemy ship: its system wrecked and
+  nobody left to fight), then takes them back.
+- **Boarders on the enemy ship:**
+  - The bot's boarders go for shields, weapons and piloting first, skipping rooms with no free tile (a move
+    into a full room is turned away).
+  - The sim's own `seekWork` now tries rooms in order until one has space; a boarder used to stand idle when
+    its nearest choice was full.
+- **Aftermath:**
+  - Crew a hair short of full health (99.9) no longer trek to the medbay.
+  - Anyone without a saved station goes to man a system, most important first.
+- **Engine bar → medbay:** the existing swap was verified with a test, so no change was needed.
+- **Tests:** `crew-tasks.test.ts` (8). 206 passing. Bot-vs-bot benches play out as before.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
