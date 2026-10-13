@@ -3,6 +3,17 @@
 The full player's guide: hosting and joining, the hangar, presets, the game modes and rules, and the controls.
 For installing, see the [README](../README.md).
 
+## The menus
+- **Main menu:** FTL's title screen, with **Single player**, **LAN**, **Online** and **Settings** under the
+  logo. Each opens its own panel, and **Back** (or Escape, or B on a pad) returns. On a pad, **LB / RB** step
+  between the panels.
+- **Your captain's name:** asked once on first launch, and changed any time in **Settings**.
+- **In the lobby:**
+  - **The bar along the top:** the match code (click it for the addresses to share), who's in (a green dot
+    when ready), and **Leave lobby**.
+  - **Rules:** everyone can open the Rules step. The host changes them there; everyone else sees a summary.
+  - **Chat:** sits in the bottom-left corner and folds down to its title bar.
+
 ## Hosting and joining
 - **First start:** pick your FTL folder (the one with `ftl.dat`; on Linux and the Steam Deck it's in `data/`).
   The app finds Steam installs by itself, including other Steam libraries and SD cards. Its data is unpacked

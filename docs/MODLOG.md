@@ -1205,6 +1205,28 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
 - **Checked:** the packaged Linux app saved its settings, started the server (the admin API answered),
   showed the embedded page and stopped cleanly.
 
+## Round 64: an FTL-style main menu, and the lobby without its sidebar
+- **Main menu:**
+  - FTL's title screen (`main_menus/main_base2.png`), with "ARENA" set under its logo in HL2 and the four
+    buttons beneath, white turning FTL's yellow on hover or the pad's ring.
+  - The stage is the art's 16:9 box covering the window, so placements are shares of the art.
+  - Each button opens its panel with Back. Escape and pad B go back, and pad LB/RB step between panels.
+  - The captain's name is asked once on first launch, and lives in Settings.
+  - Without FTL's art: a dark backdrop with a drawn "FTL" in the same spot.
+- **Lobby:**
+  - The sidebar is gone. Its place is a bar over the steps: the code (it opens the invite popover with the
+    addresses and Copy), player chips (★ host, pad icon, a green dot when ready, "Waiting for an
+    opponent"), and Leave.
+  - Rules is a step for everyone: the form for the host, a plain summary for the rest. The guard that
+    bounced guests off Rules is gone.
+  - Chat is docked in the bottom-left over the panel, folds to its title bar (remembered, with an unread
+    count), and the main panel keeps room under its content.
+- **Hangar art:** FTL's hangar (`customizeUI/custom_background.png`) fills the screen behind the builder
+  under a dark vignette. The panels are 70% dark glass with a 3 px blur (82% without backdrop-filter), and
+  there's no art without an install.
+- **Checked:** `tools/align/menu-lobby.ts`, the reworked `menu-shoulders.ts` (pad: D-pad through the
+  buttons, A, RB/LB, B; hangar steps), and the no-art fallback. The README screenshots are regenerated.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

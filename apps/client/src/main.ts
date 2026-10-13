@@ -2,7 +2,7 @@ import { Application } from "pixi.js";
 import { baseSystemId, type GameDB } from "@ftl/data";
 import { PROTOCOL_VERSION, type DebugInfo, type DebugOp, type LobbyState, type ServerMsg } from "@ftl/protocol";
 import { parseUpgraded, type Card, type MatchView } from "@ftl/sim";
-import { artReady, BACKDROPS, loadPresentation, PLANETS, preload, registerOfflineCache } from "./assets.ts";
+import { artReady, BACKDROPS, hasImg, loadPresentation, PLANETS, preload, registerOfflineCache } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
 import { music, play, preloadSounds } from "./audio.ts";
 import { presets } from "./presets.ts";
@@ -13,7 +13,7 @@ import { Battle, LOGICAL } from "./battle.ts";
 import { Hangar, hangarAfterBattle } from "./hangar.ts";
 import { Net } from "./net.ts";
 import { BTN, controllerEnabled, onPad, pad, setControllerEnabled, startPad } from "./controller.ts";
-import { focusOn, menuNav } from "./menunav.ts";
+import { focusOn, isEditing, menuNav } from "./menunav.ts";
 import { Chat } from "./chat.ts";
 import { droneArtHtml, portraitHtml, sysIconHtml, weaponArtHtml } from "./art.ts";
 import { applyPresentation } from "@ftl/content";
@@ -637,32 +637,54 @@ function render(): void {
   hangar?.el.remove();
   hangar = null;
   share = null;
+  renderMenu();
+}
+
+/** The main menu: FTL's title screen with our four buttons; each opens its own panel (Back returns). */
+const MENU_ITEMS: [typeof mode, string][] = [["single", "Single player"], ["lan", "LAN"], ["online", "Online"], ["settings", "Settings"]];
+function renderMenu(): void {
   const lan = mode === "lan";
-  const tab = (m: typeof mode, label: string) => `<button class="tab ${mode === m ? "on" : ""}" data-mode="${m}">${label}</button>`;
-  ui.innerHTML = `<div class="screen"><div class="menu">
-    <h1>FTL ARENA</h1>
-    <div class="note">1v1 real-time FTL combat${db?.source === "ftl" && !hasArt ? " (no local art found: drawing placeholders)" : ""}.</div>
-    <div class="row"><input id="name" placeholder="Captain name" maxlength="24" value="${esc(name)}"></div>
-    <div class="tabs">${tab("single", "Single player")}${tab("lan", "LAN")}${tab("online", "Online")}${tab("settings", "Settings")}</div>
-    <div class="tab-body">
-    ${mode === "settings" ? settingsBody() : mode === "single" ? `<div class="note">Play against the computer on this machine: Arena against a bot (pick its ship and difficulty in the rules), or a Survival run.</div>
-    <div class="row"><button class="primary" id="practice" ${busy ? "disabled" : ""}>Create a match</button></div>` : `${lan
-      ? `<div class="note">Same network (home Wi-Fi, LAN party). Create a match and tell your friend the code; they only need the code.</div>`
-      : `<label class="note" for="server">Server address</label>
+  const art = hasArt && hasImg("main_menus/main_base2.png");
+  const titles: Record<string, string> = { single: "Single player", lan: "LAN", online: "Online", settings: "Settings" };
+  // First launch: ask the captain's name once (it lives in Settings afterwards).
+  const askName = !nameAsked && !name;
+  const body =
+    mode === "settings"
+      ? `<label class="note" for="name">Captain name</label><div class="row"><input id="name" placeholder="Captain" maxlength="24" value="${esc(name)}"></div>${settingsBody()}`
+      : mode === "single"
+        ? `<div class="note">Play against the computer on this machine: Arena against a bot (pick its ship and difficulty in the rules), or a Survival run.</div>
+    <div class="row"><button class="primary" id="practice" ${busy ? "disabled" : ""}>Create a match</button></div>`
+        : `${lan
+          ? `<div class="note">Same network (home Wi-Fi, LAN party). Create a match and tell your friend the code; they only need the code.</div>`
+          : `<label class="note" for="server">Server address</label>
     <div class="row"><input id="server" placeholder="IP:port (blank = host on this computer)" value="${esc(serverAddr)}"></div>
     <div class="note">For a dedicated server, or a friend hosting over the internet. Leave it blank to host here yourself.</div>`}
     <div class="row"><button class="primary" id="create" ${busy ? "disabled" : ""}>Create match</button></div>
     <h2 style="margin-top:14px">Join a match</h2>
     <div class="row"><input id="code" placeholder="CODE" maxlength="4" value="${esc(joinCode)}" style="text-transform:uppercase;max-width:110px"><button class="primary" id="join" ${busy ? "disabled" : ""}>Join</button></div>
-    <div class="note">${lan ? "Enter the host's code: the game finds their match on your network." : "Enter the server address above and the match code."}</div>`}
+    <div class="note">${lan ? "Enter the host's code: the game finds their match on your network." : "Enter the server address above and the match code."}</div>`;
+  const panel = askName
+    ? `<div class="mm-panel menu"><h1>Captain</h1><div class="note">What should your crew call you? (You can change it in Settings.)</div>
+        <div class="row"><input id="firstname" placeholder="Captain" maxlength="24"><button class="primary" id="nameok">OK</button></div></div>`
+    : menuOpen
+      ? `<div class="mm-panel menu"><div class="mm-head"><h1>${titles[mode]}</h1><button class="small" data-back>Back</button></div>
+        <div class="tab-body">${body}</div>
+        <div class="note">${esc(busyNote)}</div><div class="err">${esc(error)}</div></div>`
+      : "";
+  ui.innerHTML = `<div class="mainmenu ${art ? "art" : ""} ${menuOpen || askName ? "dim" : ""}">
+    <div class="mm-stage" ${art ? `style="background-image:url('/assets/img/main_menus/main_base2.png')"` : ""}>
+      ${art ? "" : `<div class="mm-logo">FTL</div>`}
+      <div class="mm-arena">ARENA</div>
+      <div class="mm-buttons">${MENU_ITEMS.map(([m, label]) => `<button class="mm-btn" data-open="${m}">${label}</button>`).join("")}</div>
+      ${db?.source === "ftl" && !hasArt ? `<div class="mm-note note">No local art found: drawing placeholders.</div>` : ""}
+      ${!menuOpen && error ? `<div class="mm-note err">${esc(error)}</div>` : ""}
     </div>
-    <div class="note">${esc(busyNote)}</div>
-    <div class="err">${esc(error)}</div>
-  </div></div>`;
+    ${panel}
+  </div>`;
   const val = (id: string) => ui.querySelector<HTMLInputElement>(id)?.value.trim();
   const keep = () => {
-    name = val("#name") || "Captain";
-    if (!lan) serverAddr = val("#server") ?? "";
+    if (ui.querySelector("#name")) name = val("#name") || "";
+    if (!lan && ui.querySelector("#server")) serverAddr = val("#server") ?? "";
     joinCode = (val("#code") ?? "").toUpperCase();
     try {
       localStorage.setItem("ftl-arena-name", name);
@@ -670,16 +692,19 @@ function render(): void {
     } catch {}
   };
   for (const id of ["#name", "#server", "#code"]) ui.querySelector(id)?.addEventListener("input", keep);
-  ui.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
-    b.addEventListener("click", () => {
-      mode = b.dataset.mode as typeof mode;
-      error = "";
-      try {
-        localStorage.setItem("ftl-arena-mode", mode);
-      } catch {}
-      render();
-    }),
-  );
+  ui.querySelectorAll<HTMLButtonElement>("[data-open]").forEach((b) => b.addEventListener("click", () => openModePanel(b.dataset.open as typeof mode)));
+  ui.querySelector("[data-back]")?.addEventListener("click", () => closeMenuPanel());
+  const firstName = () => {
+    name = val("#firstname") || "Captain";
+    nameAsked = true;
+    try {
+      localStorage.setItem("ftl-arena-name", name);
+    } catch {}
+    render();
+  };
+  ui.querySelector("#nameok")?.addEventListener("click", firstName);
+  ui.querySelector("#firstname")?.addEventListener("keydown", (e) => (e as KeyboardEvent).key === "Enter" && firstName());
+  if (askName) queueMicrotask(() => ui.querySelector<HTMLInputElement>("#firstname")?.focus());
   const go = (kind: "create" | "practice" | "join") => () => void act(kind);
   ui.querySelector("#create")?.addEventListener("click", go("create"));
   ui.querySelector("#practice")?.addEventListener("click", go("practice"));
@@ -692,6 +717,31 @@ function render(): void {
     render();
   });
 }
+
+// Escape backs out of a main-menu panel.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !battle && !lobby && menuOpen) closeMenuPanel();
+});
+
+/** Open a mode's panel from the main menu. */
+function openModePanel(m: typeof mode): void {
+  mode = m;
+  menuOpen = true;
+  error = "";
+  try {
+    localStorage.setItem("ftl-arena-mode", mode);
+  } catch {}
+  render();
+}
+/** Back to the main menu's buttons. */
+function closeMenuPanel(): void {
+  menuOpen = false;
+  error = "";
+  render();
+}
+/** The main menu shows a mode's panel (else just the buttons); the first-launch name prompt has been answered. */
+let menuOpen = false;
+let nameAsked = false;
 
 /** The Settings tab: experimental controller support, what pad is connected, and the button map. */
 function settingsBody(): string {
@@ -879,6 +929,13 @@ onPad((p) => {
     });
     if (p.down(BTN.RB)) reward.querySelector<HTMLButtonElement>("#reroll:not(:disabled)")?.click();
     return;
+  }
+  // The main menu: B goes back from a panel; LB / RB step through the four.
+  if (!battle && !lobby && menuOpen && !isEditing()) {
+    if (p.down(BTN.B)) return closeMenuPanel();
+    const i = MENU_ITEMS.findIndex(([m]) => m === mode);
+    if (p.down(BTN.LB) && i > 0) return openModePanel(MENU_ITEMS[i - 1][0]);
+    if (p.down(BTN.RB) && i < MENU_ITEMS.length - 1) return openModePanel(MENU_ITEMS[i + 1][0]);
   }
   if (!battle || ui.querySelector(".overlay")) menuNav(p, ui);
 });

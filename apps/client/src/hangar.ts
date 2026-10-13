@@ -10,6 +10,7 @@ import { copyName, isSame, presets } from "./presets.ts";
 import { drawSnapshot } from "./snapshot.ts";
 import { HangarBay } from "./bay.ts";
 import { DEV_TOOLS } from "./version.ts";
+import { hasImg } from "./assets.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buildShip, buyableDrones, reactorUsed, usable, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
@@ -167,8 +168,6 @@ export class Hangar {
       this.step = backFromBattle ? "Launch" : lobby.host === this.me() ? "Rules" : presets.list(lobby.config.costs ?? "none").length ? "Presets" : "Ship";
       backFromBattle = false;
     }
-    // Lost the host's chair (or never had it): the Rules step isn't yours.
-    if (this.step === "Rules" && lobby.host !== this.me()) this.step = "Presets";
     const mine = lobby.players.find((p) => p.id === this.me());
     // "Bring your own ship" just switched on: the server cleared everyone else's build; start over on Presets.
     const ftlOnly = !!lobby.config.ftlOnly;
@@ -257,12 +256,14 @@ export class Hangar {
         });
     } else if (this.step !== "Presets") this.ftlAsked = false;
     const body = { Rules: () => this.stepRules(lobby), Presets: () => this.stepPresets(), Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
+    // FTL's hangar behind the builder (with the player's art), under a dark veil.
+    this.el.classList.toggle("hangar-art", this.hasArt() && hasImg("customizeUI/custom_background.png"));
     this.el.innerHTML = `
       <div class="hg">
+        ${this.lobbyBar(lobby)}
         <div class="hg-steps">${this.steps().map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""} ${this.stepOpen(s) ? "" : "locked"}" data-step="${s}" ${this.stepOpen(s) ? "" : `disabled title="${cfg.survival ? "Off in Survival: you fly the stock ship and earn upgrades between battles" : this.lockedBy(s) ? `Off with ${this.lockedBy(s)} on` : s === "Launch" ? "Load your ship from an FTL save first (Presets)" : "Off in Bring your own ship: ships come from FTL saves"}"`}><b>${i + 1}</b> ${s}</button>`).join("")}
           <div class="hg-scrap">${cfg.survival ? `<span class="note">Survival: the stock ship, upgraded by rewards after each win</span>` : cfg.ftlOnly ? `<span class="note">Bring your own ship: FTL saves only, no scrap limit</span>` : `${this.scrapIcon()}<span class="scrap">${cfg.scrap - priced.total}</span> <span class="note">scrap left of ${cfg.scrap}</span>`}</div></div>
         <div class="hg-body ${BUILD_STEPS.includes(this.step) ? "" : "wide"} step-${this.step.toLowerCase()}">
-          <div class="panel hg-side">${this.sidebar(lobby)}</div>
           <div class="panel hg-main">${body}</div>
           ${BUILD_STEPS.includes(this.step) ? `<div class="panel hg-summary">${this.summary(l, priced, me?.ready ?? false)}</div>` : ""}
         </div>
@@ -283,16 +284,23 @@ export class Hangar {
     }
   }
 
-  /** The lobby: code, how to invite, who's here, a one-glance rules summary, and the way out. */
-  private sidebar(lobby: LobbyState): string {
-    const players = lobby.players
-      .map((p) => `<div class="p"><span>${h(p.name)}${p.id === lobby.host ? " ★" : ""}${p.controller ? ` ${PAD_ICON}` : ""}${p.connected ? "" : " (offline)"}</span><span class="${p.ready ? "ready" : "notready"}">${p.ready ? "READY" : "building"}</span></div>`)
-      .join("") + (lobby.players.length < 2 ? `<div class="note">Waiting for an opponent: share the code.</div>` : "");
-    return `
-      <h2>Lobby</h2><div class="code">${lobby.code}</div>${this.sharePanel(lobby)}<div class="players">${players}</div>
-      <h2 style="margin-top:14px">Rules</h2>${this.rulesSummary(lobby, true)}
-      <div style="margin-top:14px"><button data-leave>Leave lobby</button></div>`;
+  /** The lobby bar over the steps: the code (it opens the invite: addresses to share), who's here, the way out. */
+  private lobbyBar(lobby: LobbyState): string {
+    const chips = lobby.players
+      .map((p) => `<span class="pchip ${p.ready ? "ready" : ""} ${p.connected ? "" : "offline"}" title="${p.ready ? "Ready" : "Building"}${p.connected ? "" : " (offline)"}"><i></i>${h(p.name)}${p.id === lobby.host ? " ★" : ""}${p.controller ? ` ${PAD_ICON}` : ""}</span>`)
+      .join("") + (lobby.players.length < 2 ? `<span class="pchip waiting"><i></i>Waiting for an opponent</span>` : "");
+    const share = this.sharePanel(lobby);
+    return `<div class="hg-bar">
+      <button class="lobby-code" data-invite title="${share ? "Invite: the addresses to share" : "The match code"}">${h(lobby.code)}</button>
+      <div class="pchips">${chips}</div>
+      <span style="flex:1"></span>
+      <button class="small" data-leave>Leave lobby</button>
+      ${this.inviteOpen && share ? `<div class="invite-pop">${share}</div>` : ""}
+    </div>`;
   }
+
+  /** The invite popover (the lobby code's addresses) is open. */
+  private inviteOpen = false;
 
   /** The rules in a few small read-only lines (the host can jump to the Rules step to change them). */
   private rulesSummary(lobby: LobbyState, link: boolean): string {
@@ -327,6 +335,14 @@ export class Hangar {
   private stepRules(lobby: LobbyState): string {
     const cfg = lobby.config;
     const pc = lobby.practice;
+    // Everyone else sees the rules, plainly: a summary, nothing that looks like it can be changed.
+    if (lobby.host !== this.me()) {
+      const host = lobby.players.find((p) => p.id === lobby.host)?.name ?? "the host";
+      return `<h2>${this.num("Rules")} · Rules</h2>
+        <div class="note">Set by ${h(host)}.</div>
+        <div class="rules-read">${this.rulesSummary(lobby, false)}</div>
+        ${this.nav(null, cfg.survival ? "Ship" : "Presets")}`;
+    }
     return `<h2>${this.num("Rules")} · Rules</h2>
       <div class="note">You're the host: set the match up, then everyone builds a ship. Changing a rule unreadies both captains.</div>
       <div class="rules-form">
@@ -572,7 +588,7 @@ export class Hangar {
 
   /** This viewer's steps: Rules is the host's alone. */
   private steps(): Step[] {
-    return ALL_STEPS.filter((s) => s !== "Rules" || this.lobby?.host === this.me());
+    return [...ALL_STEPS];
   }
 
   /** A step's number as the tabs show it. */
@@ -1186,6 +1202,10 @@ export class Hangar {
       return this.render();
     }
     else if ("leave" in d) return this.hooks.leave();
+    else if ("invite" in d) {
+      this.inviteOpen = !this.inviteOpen;
+      return this.render();
+    }
     else return;
     const down = !!(d.sell || d.fire || d.unaug || d.undrone || (d.parts && Number(d.parts) < 0) || (d.d && Number(d.d) < 0) || (d.reactor && Number(d.reactor) < 0) || (d.msl && Number(d.msl) < 0));
     // Renaming costs nothing: just a blip. Everything else spends or refunds scrap.

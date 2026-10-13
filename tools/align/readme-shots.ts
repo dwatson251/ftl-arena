@@ -14,6 +14,7 @@ const b = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-requ
 async function page(pad = false): Promise<Page> {
   const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
   p.setDefaultTimeout(30000);
+  await p.addInitScript(() => localStorage.setItem("ftl-arena-name", "Captain"));
   p.on("pageerror", (e) => console.log("pageerror:", e.message));
   if (pad)
     await p.addInitScript(() => {
@@ -46,6 +47,7 @@ async function noDebug(p: Page): Promise<void> {
 // Menu, Rules (Tournament), the hangar.
 let p = await page();
 await shot(p, "menu");
+await p.click('[data-open="single"]');
 await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
@@ -59,6 +61,7 @@ await p.close();
 
 // A battle in full swing.
 p = await page();
+await p.click('[data-open="single"]');
 await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
@@ -72,6 +75,7 @@ await p.close();
 p = await page(true);
 const set = (btn: number, on: boolean) => p.evaluate(([i, v]) => ((window as any).__pad.buttons[i as number] = v), [btn, on] as const);
 const stick = (x: number, y: number) => p.evaluate(([a, c]) => ((window as any).__pad.axes = [a, c, 0, 0]), [x, y] as const);
+await p.click('[data-open="single"]');
 await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
@@ -89,6 +93,7 @@ await p.close();
 
 // Survival: win the first battle (debug), then the reward cards.
 p = await page();
+await p.click('[data-open="single"]');
 await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(600);

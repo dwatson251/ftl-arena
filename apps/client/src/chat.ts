@@ -1,6 +1,7 @@
 /**
  * Chat: one widget outside #ui (so the screens re-rendering under it don't wipe it).
- * - In the hangar: a small log and an input in the lobby sidebar's corner; Enter sends.
+ * - In the hangar: a panel docked in the bottom-left corner (the log and an input; Enter sends), which
+ *   collapses to its title bar (remembered).
  * - In battle: Enter opens the input, Enter sends (Escape closes); messages show for a while and fade.
  * Hotkeys never see what's typed (the input stops its own keys).
  */
@@ -11,6 +12,10 @@ const SHOW_MS = 8000;
 export class Chat {
   readonly el = document.createElement("div");
   private log = document.createElement("div");
+  private head = document.createElement("button");
+  /** The hangar's panel folded to its title bar; lines that came in since. */
+  private collapsed = false;
+  private unread = 0;
   private input = document.createElement("input");
   private lines: { from: string; text: string; at: number }[] = [];
   private mode: ChatMode = "off";
@@ -22,7 +27,19 @@ export class Chat {
     this.input.className = "chat-input";
     this.input.maxLength = 200;
     this.input.placeholder = "Say something (Enter)";
-    this.el.append(this.log, this.input);
+    this.head.className = "chat-head";
+    this.head.addEventListener("click", () => {
+      this.collapsed = !this.collapsed;
+      if (!this.collapsed) this.unread = 0;
+      try {
+        localStorage.setItem("ftl-arena-chat-collapsed", this.collapsed ? "1" : "0");
+      } catch {}
+      this.render();
+    });
+    try {
+      this.collapsed = localStorage.getItem("ftl-arena-chat-collapsed") === "1";
+    } catch {}
+    this.el.append(this.head, this.log, this.input);
     document.body.appendChild(this.el);
     this.input.addEventListener("keydown", (e) => {
       e.stopPropagation();
@@ -55,6 +72,7 @@ export class Chat {
   add(from: string, text: string): void {
     this.lines.push({ from, text, at: Date.now() });
     if (this.lines.length > 40) this.lines.shift();
+    if (this.mode === "lobby" && this.collapsed) this.unread++;
     this.render();
   }
 
@@ -78,7 +96,11 @@ export class Chat {
   }
 
   private render(): void {
-    this.el.className = `chat chat-${this.mode}${this.open ? " open" : ""}`;
+    this.el.className = `chat chat-${this.mode}${this.open ? " open" : ""}${this.mode === "lobby" && this.collapsed ? " collapsed" : ""}`;
+    document.body.classList.toggle("chat-docked", this.mode === "lobby" && !this.collapsed);
+    document.body.classList.toggle("chat-docked-min", this.mode === "lobby" && this.collapsed);
+    this.head.textContent = `Chat ${this.collapsed ? "▸" : "▾"}${this.collapsed && this.unread ? ` (${this.unread} new)` : ""}`;
+    this.head.style.display = this.mode === "lobby" ? "" : "none";
     const now = Date.now();
     // The hangar shows the last few lines; a battle only recent ones (or all, while typing).
     const shown = this.mode === "lobby" ? this.lines.slice(-6) : this.lines.filter((l) => this.open || now - l.at < SHOW_MS).slice(-6);
@@ -94,6 +116,7 @@ export class Chat {
         return d;
       }),
     );
-    this.input.style.display = this.mode === "lobby" || this.open ? "" : "none";
+    this.input.style.display = (this.mode === "lobby" && !this.collapsed) || this.open ? "" : "none";
+    this.log.style.display = this.mode === "lobby" && this.collapsed ? "none" : "";
   }
 }

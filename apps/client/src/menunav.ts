@@ -46,6 +46,11 @@ function mark(el: HTMLElement | null): void {
   lastSig = sig(el);
 }
 
+/** A number or list is being edited with the pad (B then puts the old value back, rather than going back). */
+export function isEditing(): boolean {
+  return editing !== null;
+}
+
 /** Put the focus ring on an element straight away (an overlay that wants the pad's attention). */
 export function focusOn(el: HTMLElement | null): void {
   mark(el);
