@@ -22,9 +22,10 @@ const set = (btn: number, on: boolean) => p.evaluate(([i, v]) => ((window as any
 const stick = (x: number, y: number) => p.evaluate(([a, c]) => ((window as any).__pad.axes = [a, c, 0, 0]), [x, y] as const);
 const tap = async (btn: number) => { await set(btn, true); await p.waitForTimeout(80); await set(btn, false); await p.waitForTimeout(250); };
 const own = () => p.evaluate("(() => { const v = window.__arena.view(); return v.ships[v.you]; })()") as Promise<any>;
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(600);
 // SHIP=<hull id> flies that hull instead (one with a teleporter and hacking shows every icon).

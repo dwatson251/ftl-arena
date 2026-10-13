@@ -21,7 +21,7 @@ console.log("game at", win.url());
 await win.waitForSelector("#practice:not([disabled])", { timeout: 60000 });
 await win.waitForTimeout(800);
 await win.screenshot({ path: "traces/desktop/03-menu.png" });
-await win.click("#practice");
+await win.click('[data-open="single"]');
 await win.waitForSelector(".hg-step", { timeout: 20000 });
 await win.waitForTimeout(800);
 await win.screenshot({ path: "traces/desktop/04-hangar.png" });

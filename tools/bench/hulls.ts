@@ -3,9 +3,10 @@ import { chromium } from "playwright";
 const URL = process.argv[2] ?? "http://localhost:5173";
 const browser = await chromium.launch();
 const p = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#practice:not([disabled])");
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector("select[data-ship]");
 const ids = await p.$$eval("select[data-ship] option", (o) => o.map((x) => (x as HTMLOptionElement).value));
 for (const id of ids) {

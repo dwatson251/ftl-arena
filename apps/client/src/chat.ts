@@ -1,21 +1,28 @@
 /**
- * Chat: one widget outside #ui (so the screens re-rendering under it don't wipe it).
- * - In the hangar: a panel docked in the bottom-left corner (the log and an input; Enter sends), which
- *   collapses to its title bar (remembered).
- * - In battle: Enter opens the input, Enter sends (Escape closes); messages show for a while and fade.
+ * Chat, in battle only, and out of sight until it's used: no buttons, nothing on screen.
+ * - Messages show for a moment in the lower middle of the view (above the weapons bar) and fade.
+ * - Enter opens the entry line (a single subtle underline), Enter sends, Escape cancels. While it's open the
+ *   recent messages show above it, on a translucent black box with soft edges.
+ * - Text is in FTL's font; characters it can't draw are stripped before sending and again on arrival.
  * Hotkeys never see what's typed (the input stops its own keys).
  */
-export type ChatMode = "off" | "lobby" | "battle";
+export type ChatMode = "off" | "battle";
 
-const SHOW_MS = 8000;
+const SHOW_MS = 7000;
+const FADE_MS = 1200;
+
+/** What FTL's bitmap fonts can draw: printable ASCII (anything else is dropped), spaces collapsed, 200 at most. */
+export function cleanChat(s: string): string {
+  return String(s ?? "")
+    .replace(/[^\x20-\x7e]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+}
 
 export class Chat {
   readonly el = document.createElement("div");
   private log = document.createElement("div");
-  private head = document.createElement("button");
-  /** The hangar's panel folded to its title bar; lines that came in since. */
-  private collapsed = false;
-  private unread = 0;
   private input = document.createElement("input");
   private lines: { from: string; text: string; at: number }[] = [];
   private mode: ChatMode = "off";
@@ -26,37 +33,26 @@ export class Chat {
     this.log.className = "chat-log";
     this.input.className = "chat-input";
     this.input.maxLength = 200;
-    this.input.placeholder = "Say something (Enter)";
-    this.head.className = "chat-head";
-    this.head.addEventListener("click", () => {
-      this.collapsed = !this.collapsed;
-      if (!this.collapsed) this.unread = 0;
-      try {
-        localStorage.setItem("ftl-arena-chat-collapsed", this.collapsed ? "1" : "0");
-      } catch {}
-      this.render();
-    });
-    try {
-      this.collapsed = localStorage.getItem("ftl-arena-chat-collapsed") === "1";
-    } catch {}
-    this.el.append(this.head, this.log, this.input);
+    this.input.spellcheck = false;
+    this.input.autocomplete = "off";
+    this.el.append(this.log, this.input);
     document.body.appendChild(this.el);
     this.input.addEventListener("keydown", (e) => {
       e.stopPropagation();
       if (e.key === "Enter") {
-        const t = this.input.value.trim();
+        const t = cleanChat(this.input.value);
         if (t) this.send(t);
         this.input.value = "";
-        if (this.mode === "battle") this.close();
+        this.close();
         e.preventDefault();
       } else if (e.key === "Escape") {
         this.input.value = "";
-        if (this.mode === "battle") this.close();
-        else this.input.blur();
+        this.close();
+        e.preventDefault();
       }
     });
     this.input.addEventListener("keyup", (e) => e.stopPropagation());
-    // In battle, Enter (outside any field, no menu open) opens the input.
+    // Enter (outside any field, no menu open) opens the entry line.
     window.addEventListener("keydown", (e) => {
       if (this.mode !== "battle" || this.open || e.key !== "Enter") return;
       const t = e.target as HTMLElement | null;
@@ -65,21 +61,22 @@ export class Chat {
       e.preventDefault();
       this.openInput();
     });
-    setInterval(() => this.mode === "battle" && this.render(), 500);
+    setInterval(() => this.mode === "battle" && this.render(), 250);
     this.render();
   }
 
   add(from: string, text: string): void {
-    this.lines.push({ from, text, at: Date.now() });
+    const t = cleanChat(text);
+    if (!t) return;
+    this.lines.push({ from: cleanChat(from) || "?", text: t, at: Date.now() });
     if (this.lines.length > 40) this.lines.shift();
-    if (this.mode === "lobby" && this.collapsed) this.unread++;
     this.render();
   }
 
   setMode(mode: ChatMode): void {
     if (mode === this.mode) return;
     this.mode = mode;
-    this.open = false;
+    if (mode !== "battle") this.close();
     this.render();
   }
 
@@ -96,27 +93,23 @@ export class Chat {
   }
 
   private render(): void {
-    this.el.className = `chat chat-${this.mode}${this.open ? " open" : ""}${this.mode === "lobby" && this.collapsed ? " collapsed" : ""}`;
-    document.body.classList.toggle("chat-docked", this.mode === "lobby" && !this.collapsed);
-    document.body.classList.toggle("chat-docked-min", this.mode === "lobby" && this.collapsed);
-    this.head.textContent = `Chat ${this.collapsed ? "▸" : "▾"}${this.collapsed && this.unread ? ` (${this.unread} new)` : ""}`;
-    this.head.style.display = this.mode === "lobby" ? "" : "none";
     const now = Date.now();
-    // The hangar shows the last few lines; a battle only recent ones (or all, while typing).
-    const shown = this.mode === "lobby" ? this.lines.slice(-6) : this.lines.filter((l) => this.open || now - l.at < SHOW_MS).slice(-6);
+    // While typing: the last few lines; otherwise only fresh ones, fading out.
+    const shown = this.mode !== "battle" ? [] : this.lines.filter((l) => this.open || now - l.at < SHOW_MS).slice(this.open ? -6 : -4);
+    this.el.className = `chat${this.open ? " open" : ""}`;
+    this.el.style.display = this.mode === "battle" && (this.open || shown.length) ? "" : "none";
     this.log.replaceChildren(
       ...shown.map((l) => {
         const d = document.createElement("div");
         d.className = "chat-line";
         const age = now - l.at;
-        if (this.mode === "battle" && !this.open && age > SHOW_MS - 1500) d.style.opacity = String(Math.max(0, (SHOW_MS - age) / 1500));
+        if (!this.open && age > SHOW_MS - FADE_MS) d.style.opacity = String(Math.max(0, (SHOW_MS - age) / FADE_MS));
         const b = document.createElement("b");
         b.textContent = `${l.from}: `;
         d.append(b, document.createTextNode(l.text));
         return d;
       }),
     );
-    this.input.style.display = (this.mode === "lobby" && !this.collapsed) || this.open ? "" : "none";
-    this.log.style.display = this.mode === "lobby" && this.collapsed ? "none" : "";
+    this.input.style.display = this.open ? "" : "none";
   }
 }

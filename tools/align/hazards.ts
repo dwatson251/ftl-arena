@@ -9,9 +9,10 @@ for (const hz of ["sun", "pulsar", "asteroids", "storm", "asb"]) {
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
   p.setDefaultTimeout(15000);
   p.on("pageerror", (e) => console.log(hz, "pageerror:", e.message));
+  await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
   await p.goto(URL);
   await p.waitForSelector("#practice:not([disabled])");
-  await p.click("#practice");
+  await p.click('[data-open="single"]');
   await p.waitForSelector(".hg-step");
   await p.waitForTimeout(1000);
   await p.selectOption('select[data-cfg="hazard"]', hz);

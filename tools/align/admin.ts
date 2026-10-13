@@ -16,6 +16,7 @@ await new Promise<void>((ok) => {
 });
 const b = await chromium.launch();
 const p = await (await b.newContext({ viewport: { width: 1200, height: 800 } })).newPage();
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(`http://${HOST}/admin`);
 await p.waitForTimeout(2500);
 console.log("stats:", await p.$eval("#stats", (e) => e.textContent));

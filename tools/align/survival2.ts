@@ -14,9 +14,10 @@ const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } }))
 p.setDefaultTimeout(20000);
 p.on("pageerror", (e) => console.log("pageerror:", e.message));
 const hit = (sel: string, n: number) => p.evaluate(([s, k]) => { const el = document.querySelector<HTMLButtonElement>(s as string); for (let i = 0; i < (k as number); i++) el?.click(); return !!el; }, [sel, n] as const);
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(500);
 await p.selectOption('select[data-cfg="winCondition"]', "survival");

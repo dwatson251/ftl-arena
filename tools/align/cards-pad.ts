@@ -15,9 +15,10 @@ await p.addInitScript(() => {
   navigator.getGamepads = () => [{ id: "Scripted pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard", timestamp: performance.now(), buttons: st.buttons.map((x) => ({ pressed: x, touched: x, value: x ? 1 : 0 })), axes: st.axes } as unknown as Gamepad];
 });
 const tap = async (btn: number) => { await p.evaluate((i) => ((window as any).__pad.buttons[i] = true), btn); await p.waitForTimeout(80); await p.evaluate((i) => ((window as any).__pad.buttons[i] = false), btn); await p.waitForTimeout(300); };
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(600);
 await p.selectOption('select[data-cfg="winCondition"]', "survival");

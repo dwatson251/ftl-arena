@@ -7,11 +7,12 @@ p.on("pageerror", (e) => console.log("pageerror:", e.message));
 let loaded = false;
 const start = async (pause: string) => {
   if (!loaded) {
+    await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
     await p.goto(URL);
     await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
     loaded = true;
   }
-  await p.click("#practice");
+  await p.click('[data-open="single"]');
   await p.waitForSelector(".hg-step");
   await p.waitForTimeout(400);
   await p.selectOption('select[data-cfg="pause"]', pause);

@@ -20,9 +20,10 @@ await p.addInitScript(() => {
     return orig.call(this);
   };
 });
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#practice:not([disabled])");
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(1500);
 // A fixed opponent (a random one may carry a Zoltan shield, which blocks teleporting).

@@ -11,7 +11,7 @@ p.setDefaultTimeout(15000);
 p.on("pageerror", (e) => console.log("pageerror:", e.message));
 const on = (pg: Page) => pg.$eval(".hg-step.on", (e) => e.textContent?.replace(/\d/g, "").trim());
 const practice = async () => {
-  await p.click("#practice");
+  await p.click('[data-open="single"]');
   await p.waitForSelector(".hg-step");
   await p.waitForTimeout(400);
 };
@@ -24,6 +24,7 @@ const bump = async () => {
   await p.click('button[data-d="1"]:not(:disabled)');
   await p.waitForTimeout(250);
 };
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
 await p.evaluate(() => localStorage.removeItem("ftl-arena-presets"));

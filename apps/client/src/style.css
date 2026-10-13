@@ -58,7 +58,7 @@ input, select { font: inherit; color: var(--text); background: #11141a; border: 
 .hg-step.on, .hg-step.on:hover:not(:disabled) { background: var(--ok); }
 .hg-step.on::before { background: #2f5e3a; }
 .hg-scrap { margin-left: auto; white-space: nowrap; }
-.hg-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; height: calc(100vh - 136px); }
+.hg-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; height: calc(100vh - 160px); }
 /* Rules, Presets and Launch have no ship summary column: the step takes the room. */
 .hg-body.wide { grid-template-columns: minmax(0, 1fr); }
 .hg-side, .hg-main, .hg-summary { overflow: auto; }
@@ -309,18 +309,15 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .rcard .padbtn.pb0 { background: #3fae49; } .rcard .padbtn.pb1 { background: #d0453a; } .rcard .padbtn.pb2 { background: #2f6fd6; } .rcard .padbtn.pb3 { background: #e0b520; }
 .share-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
 .share-label { font-size: 11px; color: var(--dim); min-width: 56px; }
-/* Chat: the lobby sidebar's corner in the hangar; above the weapons bar in battle. */
-.chat { position: fixed; z-index: 60; display: none; font: 12px system-ui, sans-serif; }
-.chat.chat-lobby { display: block; left: 24px; bottom: 20px; width: 320px; padding: 6px 8px 8px; background: rgba(17, 20, 27, 0.85); border: 1px solid var(--edge); backdrop-filter: blur(3px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
-.chat.chat-lobby.collapsed { width: auto; padding: 0; }
-.chat-head { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--dim); font: 12px system-ui, sans-serif; padding: 2px 4px 4px; cursor: pointer; }
-.chat.collapsed .chat-head { padding: 6px 12px; color: var(--text); }
-.chat.chat-battle { display: block; left: 300px; bottom: 150px; width: 360px; pointer-events: none; }
-.chat.chat-battle.open { pointer-events: auto; }
-.chat-log { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
-.chat-line { color: var(--text); text-shadow: 0 0 3px #000, 0 0 2px #000; word-break: break-word; }
-.chat-line b { color: var(--accent); }
-.chat-input { width: 100%; box-sizing: border-box; padding: 4px 6px; background: #12151b; border: 1px solid var(--edge); color: var(--text); }
+/* Chat (battle only): the lower middle of the view, above the weapons bar; a soft black box, FTL's font. */
+.chat { position: fixed; z-index: 60; left: 50%; bottom: 17vh; transform: translateX(-50%); width: min(560px, 80vw); padding: 10px 18px; text-align: center; pointer-events: none;
+  background: rgba(0, 0, 0, 0.5); border-radius: 14px; box-shadow: 0 0 24px 14px rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); }
+.chat.open { pointer-events: auto; }
+.chat-log { display: flex; flex-direction: column; gap: 3px; }
+.chat-line { color: var(--text); font: 15px 'FTL-JustinFont12Bold', system-ui, sans-serif; text-shadow: 0 0 3px #000; word-break: break-word; }
+.chat-line b { color: #9fd0ff; font-weight: 400; }
+.chat-input { width: 100%; margin-top: 8px; padding: 2px 0; background: transparent; border: none; border-bottom: 1px solid rgba(160, 168, 180, 0.6); border-radius: 0; color: var(--text); text-align: center; outline: none; font: 15px 'FTL-JustinFont12Bold', system-ui, sans-serif; }
+body.ftl-fonts .chat-line, body.ftl-fonts .chat-input { font-size: 19px; }
 /* The main menu: FTL's title screen (main_base2.png, its logo top right) with our buttons under the logo.
    The stage is the art's 16:9 box covering the window, so positions are shares of the art. */
 .mainmenu { position: fixed; inset: 0; overflow: hidden; background: radial-gradient(ellipse at 30% 60%, #1c2230, #07080b 70%); --u: max(1vw, 1.7778vh); }
@@ -339,8 +336,8 @@ body .mainmenu .mm-btn { white-space: nowrap; background: none; border: none; pa
 
 /* The lobby bar over the steps: the code (opens the invite), who's here, the way out. */
 .hg-bar { position: relative; display: flex; align-items: center; gap: 10px; margin-bottom: 8px; min-height: 34px; }
-.lobby-code { font: 800 18px system-ui, sans-serif; letter-spacing: 0.2em; color: var(--accent); background: rgba(17, 20, 27, 0.7); border: 1px solid var(--edge); padding: 3px 10px; }
-body.ftl-fonts .lobby-code { font-family: 'FTL-HL2', Consolas, monospace; font-size: 24px; font-weight: 400; letter-spacing: 0.08em; }
+.lobby-code { font: 800 28px system-ui, sans-serif; letter-spacing: 0.2em; color: var(--accent); background: rgba(17, 20, 27, 0.7); border: 1px solid var(--edge); padding: 3px 10px; }
+body.ftl-fonts .lobby-code { font-family: 'FTL-HL2', Consolas, monospace; font-size: 48px; font-weight: 400; letter-spacing: 0.08em; }
 .pchips { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .pchip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 3px 10px; border: 1px solid var(--edge); background: rgba(17, 20, 27, 0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pchip i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
@@ -356,6 +353,24 @@ body.ftl-fonts .lobby-code { font-family: 'FTL-HL2', Consolas, monospace; font-s
 .hangar-screen.hangar-art .panel { background: rgba(17, 20, 27, 0.7); border-color: rgba(140, 150, 170, 0.45); backdrop-filter: blur(3px); }
 @supports not (backdrop-filter: blur(3px)) { .hangar-screen.hangar-art .panel { background: rgba(17, 20, 27, 0.82); } }
 .hangar-screen.hangar-art input, .hangar-screen.hangar-art select { background-color: #12151b; }
-/* Room under the main panel's content for the docked chat (it sits over the panel's bottom-left). */
-body.chat-docked .hg-main { padding-bottom: 150px; }
-body.chat-docked-min .hg-main { padding-bottom: 48px; }
+
+/* Wide screens: the rules in two columns. */
+@media (min-width: 1200px) {
+  .rules-form { max-width: none; columns: 2 480px; column-gap: 28px; }
+  .rules-form > * { break-inside: avoid; }
+}
+.hg-bar [data-leave], .mm-head [data-back] { padding: 8px 18px; }
+/* The lobby header: "<A> vs <B>", icons over the names, the status under them. */
+.pchips { align-items: center; gap: 14px; flex-wrap: nowrap; }
+.pslot { display: flex; flex-direction: column; align-items: center; min-width: 90px; max-width: 220px; line-height: 1.1; }
+.pslot .picons { height: 14px; display: flex; gap: 4px; align-items: center; color: var(--warn); font-size: 12px; }
+.pslot .pname { font-size: 18px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.pslot .pstatus { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--dim); }
+.pslot .pstatus i { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.pslot.ready .pstatus { color: var(--ok); } .pslot.ready .pstatus i { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.pslot.offline { opacity: 0.55; }
+.pslot.open .pname { font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: var(--dim); letter-spacing: 0.04em; }
+.pchips .vs { color: var(--dim); font-size: 14px; text-transform: lowercase; }
+body.ftl-fonts .pslot .pname { font-size: 24px; } body.ftl-fonts .pslot.open .pname { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; }
+body.ftl-fonts .pslot .pstatus { font-family: 'FTL-JustinFont10', Consolas, monospace; font-size: 16px; }
+body.ftl-fonts .pchips .vs { font-family: 'FTL-HL2', Consolas, monospace; font-size: 20px; }

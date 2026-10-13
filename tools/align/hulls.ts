@@ -9,9 +9,10 @@ const b = await chromium.launch();
 for (const id of ships) {
   const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
   p.on("pageerror", (e) => console.log("pageerror:", e.message));
+  await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
   await p.goto(URL);
   await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
-  await p.click("#practice");
+  await p.click('[data-open="single"]');
   await p.waitForSelector(".hg-step");
   await p.waitForTimeout(500);
   // The bot flies this hull too, so it shows in the target window.

@@ -1,5 +1,5 @@
-/** Chat in the lobby (the sidebar box) and in battle (Enter, type, Enter), plus the share panel and
- *  the preset overwrite prompt (traces/chat/).  Usage: ARENA_URL=... npx tsx tools/align/chat.ts */
+/** Chat (battle only: Enter, type, Enter; what FTL's font can't draw is stripped), plus the preset
+ *  overwrite prompt (traces/chat/).  Usage: ARENA_URL=... npx tsx tools/align/chat.ts */
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright";
 const URL = process.env.ARENA_URL ?? "http://localhost:5173";
@@ -7,18 +7,13 @@ mkdirSync("traces/chat", { recursive: true });
 const b = await chromium.launch();
 const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
 p.on("pageerror", (e) => console.log("pageerror:", e.message));
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(500);
-const step = () => p.$eval(".hg-step.on", (e) => e.textContent?.replace(/\d/g, "").trim());
-const before = await step();
-await p.fill(".chat-input", "hello from the hangar");
-await p.press(".chat-input", "Enter");
-await p.waitForTimeout(500);
-console.log("lobby chat:", await p.$$eval(".chat-line", (es) => es.map((e) => e.textContent).join(" | ")), "| step unchanged:", (await step()) === before);
-await p.screenshot({ path: "traces/chat/1-lobby.png" });
+console.log("lobby has no chat:", await p.$eval("#chat", (e) => getComputedStyle(e).display === "none"));
 // Preset overwrite prompt: save twice under the same name.
 await p.click('button[data-step="Launch"]');
 await p.waitForTimeout(300);
@@ -47,7 +42,7 @@ await p.waitForTimeout(1500);
 await p.keyboard.press("Enter");
 await p.waitForTimeout(200);
 console.log("battle input open:", await p.$eval(".chat-input", (e) => (e as HTMLElement).style.display !== "none" && document.activeElement === e));
-await p.keyboard.type("fire at will");
+await p.keyboard.type("fire at will \u00e9\u2603\u{1F680}!");
 await p.keyboard.press("Enter");
 await p.waitForTimeout(500);
 console.log("battle chat:", await p.$$eval(".chat-line", (es) => es.map((e) => e.textContent).join(" | ")), "| input closed:", await p.$eval(".chat-input", (e) => (e as HTMLElement).style.display === "none"));

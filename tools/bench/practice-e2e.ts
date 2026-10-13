@@ -22,10 +22,11 @@ const click = async (x: number, y: number, button: "left" | "right" = "left") =>
   const s = await p.evaluate(([a, b]) => (window as unknown as { __arena: { toScreen(x: number, y: number): { x: number; y: number } } }).__arena.toScreen(a, b), [x, y]);
   await p.mouse.click(s.x, s.y, { button });
 };
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#practice:not([disabled])");
 await p.fill("#name", "Tester");
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
 await shot("01-ship");

@@ -13,9 +13,10 @@ const state = () => p.evaluate(() => {
   return { tick: v.tick, pause: v.pause, bank: v.pauseBank, next: v.nextTactical, mode: v.config.pause };
 });
 for (const mode of ["clock", "tactical"]) {
+  await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
   await p.goto(URL);
   await p.waitForSelector("#practice:not([disabled])");
-  await p.click("#practice");
+  await p.click('[data-open="single"]');
   await p.waitForSelector(".hg-step");
   await p.waitForTimeout(1200);
   if (mode === "tactical") {

@@ -28,7 +28,6 @@ await tap(4); console.log("LB →", await panel());
 await tap(1); console.log("B →", await panel());
 // Into the hangar: LB / RB step the build steps.
 await p.click('[data-open="single"]');
-await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(600);
 const step = () => p.$eval(".hg-step.on", (e) => e.textContent?.replace(/\d/g, "").trim());

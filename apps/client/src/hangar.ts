@@ -286,9 +286,13 @@ export class Hangar {
 
   /** The lobby bar over the steps: the code (it opens the invite: addresses to share), who's here, the way out. */
   private lobbyBar(lobby: LobbyState): string {
-    const chips = lobby.players
-      .map((p) => `<span class="pchip ${p.ready ? "ready" : ""} ${p.connected ? "" : "offline"}" title="${p.ready ? "Ready" : "Building"}${p.connected ? "" : " (offline)"}"><i></i>${h(p.name)}${p.id === lobby.host ? " ★" : ""}${p.controller ? ` ${PAD_ICON}` : ""}</span>`)
-      .join("") + (lobby.players.length < 2 ? `<span class="pchip waiting"><i></i>Waiting for an opponent</span>` : "");
+    // "<Player A> vs <Player B>": host and pad icons over each name, the status under it; an empty seat is an
+    // open position.
+    const slot = (p: LobbyState["players"][number] | undefined) =>
+      p
+        ? `<div class="pslot ${p.ready ? "ready" : ""} ${p.connected ? "" : "offline"}"><div class="picons">${p.id === lobby.host ? `<span title="Host">★</span>` : ""}${p.controller ? PAD_ICON : ""}</div><div class="pname">${h(p.name)}</div><div class="pstatus"><i></i>${p.ready ? "Ready" : p.connected ? "Building" : "Offline"}</div></div>`
+        : `<div class="pslot open"><div class="picons"></div><div class="pname">Open position</div><div class="pstatus"><i></i>Waiting</div></div>`;
+    const chips = `${slot(lobby.players[0])}<span class="vs">vs</span>${slot(lobby.players[1])}`;
     const share = this.sharePanel(lobby);
     return `<div class="hg-bar">
       <button class="lobby-code" data-invite title="${share ? "Invite: the addresses to share" : "The match code"}">${h(lobby.code)}</button>

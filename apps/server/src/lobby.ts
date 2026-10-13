@@ -169,7 +169,8 @@ export class Lobby {
   chat(c: Client, text: unknown): string | null {
     const p = this.players.find((q) => q.id === c.id);
     if (!p) return "not in this lobby";
-    const line = String(text ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 200);
+    // What FTL's fonts can draw (printable ASCII), as the client also cleans it.
+    const line = String(text ?? "").replace(/[^\x20-\x7e]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
     if (!line) return null;
     const now = Date.now();
     const recent = (this.chatAt.get(c.id) ?? []).filter((t) => now - t < 2000);

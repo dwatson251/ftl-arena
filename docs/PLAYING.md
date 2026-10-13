@@ -5,14 +5,17 @@ For installing, see the [README](../README.md).
 
 ## The menus
 - **Main menu:** FTL's title screen, with **Single player**, **LAN**, **Online** and **Settings** under the
-  logo. Each opens its own panel, and **Back** (or Escape, or B on a pad) returns. On a pad, **LB / RB** step
-  between the panels.
+  logo.
+  - **Single player** goes straight to a practice lobby.
+  - The others open their own panel, and **Back** (or Escape, or B on a pad) returns. On a pad, **LB / RB**
+    step between the panels.
 - **Your captain's name:** asked once on first launch, and changed any time in **Settings**.
 - **In the lobby:**
-  - **The bar along the top:** the match code (click it for the addresses to share), who's in (a green dot
-    when ready), and **Leave lobby**.
+  - **The bar along the top:** the match code (click it for the addresses to share), "Player vs Player"
+    with each one's Ready or Building status (an empty seat reads "Open position", Waiting), and **Leave
+    lobby**.
   - **Rules:** everyone can open the Rules step. The host changes them there; everyone else sees a summary.
-  - **Chat:** sits in the bottom-left corner and folds down to its title bar.
+  - **Chat** is in battle only (see Chat).
 
 ## Hosting and joining
 - **First start:** pick your FTL folder (the one with `ftl.dat`; on Linux and the Steam Deck it's in `data/`).
@@ -75,9 +78,9 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
    at its blueprint price. Rename them or roll a name from FTL's name list.
 
 ## Chat
-- **In the lobby:** type in the box at the bottom of the lobby panel and press Enter.
-- **In battle:** press **Enter**, type, and press Enter again (Escape cancels). Messages fade after a few
-  seconds.
+In battle only: press **Enter**, type, and press Enter again (Escape cancels).
+- **Messages** show for a few seconds in the lower middle of the screen, above the weapons.
+- **Characters:** only what FTL's font can draw (plain letters, digits and punctuation) is sent.
 
 ## Ship presets
 - **Saving:** save a finished build from the hangar's **Launch** step, under a name of your choice. Saving

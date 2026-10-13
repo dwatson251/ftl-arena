@@ -2,9 +2,10 @@
 import { chromium } from "playwright";
 const b = await chromium.launch();
 const p = await (await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })).newPage();
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(process.env.ARENA_URL ?? "http://localhost:5173");
 await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(400);
 await p.locator(".hg-step", { hasText: "Launch" }).click();

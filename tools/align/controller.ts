@@ -19,6 +19,7 @@ const set = (btn: number, on: boolean) => p.evaluate(([i, v]) => ((window as any
 const stick = (x: number, y: number) => p.evaluate(([a, c]) => ((window as any).__pad.axes = [a, c, 0, 0]), [x, y] as const);
 const tap = async (btn: number) => { await set(btn, true); await p.waitForTimeout(80); await set(btn, false); await p.waitForTimeout(120); };
 const focused = (pg: Page) => pg.evaluate(() => { const e = document.activeElement as HTMLElement | null; return e ? `${e.tagName}${e.id ? "#" + e.id : ""} ${(e.textContent ?? (e as HTMLInputElement).value ?? "").trim().slice(0, 20)} ring=${e.classList.contains("pad-focus")}` : "none"; });
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
 await p.click('[data-mode="settings"]');
@@ -31,7 +32,7 @@ await tap(13); await tap(13);
 console.log("after ↓↓:", await focused(p));
 await p.screenshot({ path: `${out}/2-menu-focus.png` });
 await p.click('[data-mode="lan"]');
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
 console.log("lobby icon:", !!(await p.$(".players .pad-icon")));

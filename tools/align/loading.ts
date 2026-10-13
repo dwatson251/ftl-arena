@@ -11,6 +11,7 @@ for (const run of ["cold", "warm", "warm2"]) {
   const p = ctx.pages()[0] ?? (await ctx.newPage());
   p.on("pageerror", (e) => console.log("pageerror:", e.message));
   const t0 = Date.now();
+  await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
   await p.goto(URL);
   if (run === "cold") {
     await p.waitForTimeout(1500);

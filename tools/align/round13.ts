@@ -16,9 +16,10 @@ p.on("pageerror", (e) => console.log("pageerror:", e.message));
 p.on("console", (m) => {
   if (m.type() === "error") console.log("console:", m.text());
 });
+await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await p.goto(URL);
 await p.waitForSelector("#practice:not([disabled])");
-await p.click("#practice");
+await p.click('[data-open="single"]');
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(1500);
 await p.fill('input[data-cfg="scrap"]', "5000");

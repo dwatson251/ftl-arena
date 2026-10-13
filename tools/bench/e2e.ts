@@ -24,7 +24,10 @@ const a = await ctx("A");
 const b = await ctx("B");
 const shot = (p: Page, name: string) => p.screenshot({ path: `${out}/${name}.png` });
 
+await a.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
+
 await a.goto(URL);
+await b.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
 await b.goto(URL);
 await a.waitForSelector("#create:not([disabled])");
 await a.fill("#name", "Alice");

@@ -1227,6 +1227,26 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
 - **Checked:** `tools/align/menu-lobby.ts`, the reworked `menu-shoulders.ts` (pad: D-pad through the
   buttons, A, RB/LB, B; hangar steps), and the no-art fallback. The README screenshots are regenerated.
 
+## Round 65: lobby header, rules in two columns, quiet battle chat
+- **Menus:**
+  - Single player goes straight to a practice lobby.
+  - Back and Leave lobby get more padding.
+  - The lobby code is back to its sidebar size (48 px in FTL's font).
+- **Lobby header:** "A vs B".
+  - Host ★ and pad icons sit above each name, and the status (Ready / Building / Offline, with a dot)
+    below in a smaller font.
+  - An empty seat reads "Open position" in a serif italic, unlike any player's name, and its status is
+    Waiting.
+- **Rules:** two columns on screens 1200 px and up (CSS columns, rows kept whole).
+- **Chat** (`chat.ts` rewritten): battle only, invisible until used.
+  - Messages show for 7 s, centred above the weapons bar, in FTL's font, on a translucent black box with
+    soft edges.
+  - Enter opens the entry: a single subtle grey underline. Enter sends; Escape cancels.
+  - `cleanChat` keeps what FTL's fonts draw (printable ASCII) before sending and on arrival, and the server
+    filters the same way.
+- **Tooling:** 55 `tools/align`/`bench` scripts now seed a captain's name (the first-launch prompt) and use
+  the new Single player button. Scripts that used the old LAN/Online tabs need the panels when next run.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

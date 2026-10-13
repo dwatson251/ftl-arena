@@ -30,6 +30,7 @@ const page = async (name: string, host: string) => {
   }
   p.setDefaultTimeout(20000);
   p.on("pageerror", (e) => console.log(name, "pageerror:", e.message));
+  await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
   await p.goto(`http://${host}:8792/`);
   await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
   await p.click('[data-mode="online"]');

@@ -7,6 +7,7 @@ const page = async (name: string) => {
   const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
   p.setDefaultTimeout(15000);
   p.on("pageerror", (e) => console.log(name, "pageerror:", e.message));
+  await p.addInitScript(() => localStorage.getItem("ftl-arena-name") || localStorage.setItem("ftl-arena-name", "Captain"));
   await p.goto(URL);
   await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
   await p.click('[data-mode="online"]');

@@ -1,7 +1,7 @@
 /**
  * The FTL-style main menu and the lobby (traces/menu-lobby/): first-launch name prompt, the title screen,
  * each mode's panel and Back; the lobby with no sidebar (host and a joined player), the code's share popover,
- * chat docked, and the build steps over the hangar art.  Usage: ARENA_URL=<vite dev> npx tsx tools/align/menu-lobby.ts
+ * no chat (it's battle only), and the build steps over the hangar art.  Usage: ARENA_URL=<vite dev> npx tsx tools/align/menu-lobby.ts
  */
 import { mkdirSync } from "node:fs";
 import { chromium, type Page } from "playwright";
@@ -27,7 +27,7 @@ await f.fill("#firstname", "Bea");
 await f.press("#firstname", "Enter");
 await f.waitForTimeout(300);
 await shot(f, "1-title");
-for (const m of ["single", "lan", "online", "settings"]) {
+for (const m of ["lan", "online", "settings"]) {
   await f.click(`[data-open="${m}"]`);
   await f.waitForTimeout(300);
   await shot(f, `2-${m}`);
@@ -58,16 +58,11 @@ await guest.waitForTimeout(800);
 await guest.click('button[data-step="Rules"]');
 await guest.waitForTimeout(400);
 console.log("guest rules inputs:", await guest.$$eval(".hg-main input, .hg-main select", (es) => es.length), "| chips:", await guest.$$eval(".pchip", (es) => es.map((e) => e.textContent?.trim()).join(" / ")));
-await guest.fill(".chat-input", "gl hf");
-await guest.press(".chat-input", "Enter");
-await guest.waitForTimeout(400);
 await shot(guest, "5-guest-rules");
 for (const st of ["Presets", "Ship", "Systems", "Weapons", "Crew", "Launch"]) {
   await host.click(`button[data-step="${st}"]`);
   await host.waitForTimeout(600);
   await shot(host, `6-${st.toLowerCase()}`);
 }
-await host.click(".chat-head");
-await host.waitForTimeout(200);
-await shot(host, "7-chat-collapsed");
+console.log("chat in the lobby:", await host.$eval("#chat", (e) => getComputedStyle(e).display));
 await b.close();

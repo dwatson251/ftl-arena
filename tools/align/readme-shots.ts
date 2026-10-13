@@ -48,7 +48,6 @@ async function noDebug(p: Page): Promise<void> {
 let p = await page();
 await shot(p, "menu");
 await p.click('[data-open="single"]');
-await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
 await p.selectOption('select[data-cfg="costs"]', "tournament");
@@ -62,7 +61,6 @@ await p.close();
 // A battle in full swing.
 p = await page();
 await p.click('[data-open="single"]');
-await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
 await launch(p);
@@ -76,7 +74,6 @@ p = await page(true);
 const set = (btn: number, on: boolean) => p.evaluate(([i, v]) => ((window as any).__pad.buttons[i as number] = v), [btn, on] as const);
 const stick = (x: number, y: number) => p.evaluate(([a, c]) => ((window as any).__pad.axes = [a, c, 0, 0]), [x, y] as const);
 await p.click('[data-open="single"]');
-await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(800);
 await launch(p);
@@ -94,7 +91,6 @@ await p.close();
 // Survival: win the first battle (debug), then the reward cards.
 p = await page();
 await p.click('[data-open="single"]');
-await p.click("#practice");
 await p.waitForSelector(".hg-step");
 await p.waitForTimeout(600);
 await p.selectOption('select[data-cfg="winCondition"]', "survival");

@@ -548,7 +548,7 @@ function renderDebug(): void {
 }
 
 function render(): void {
-  chat.setMode(battle ? "battle" : lobby && db ? "lobby" : "off");
+  chat.setMode(battle ? "battle" : "off");
   if (battle) {
     for (const n of [...ui.children]) if (n.id !== "debug") n.remove();
     const v = lastView;
@@ -692,7 +692,17 @@ function renderMenu(): void {
     } catch {}
   };
   for (const id of ["#name", "#server", "#code"]) ui.querySelector(id)?.addEventListener("input", keep);
-  ui.querySelectorAll<HTMLButtonElement>("[data-open]").forEach((b) => b.addEventListener("click", () => openModePanel(b.dataset.open as typeof mode)));
+  ui.querySelectorAll<HTMLButtonElement>("[data-open]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const m = b.dataset.open as typeof mode;
+      // Single player needs no introduction: straight into a practice lobby.
+      if (m === "single") {
+        mode = "single";
+        return void act("practice");
+      }
+      openModePanel(m);
+    }),
+  );
   ui.querySelector("[data-back]")?.addEventListener("click", () => closeMenuPanel());
   const firstName = () => {
     name = val("#firstname") || "Captain";
