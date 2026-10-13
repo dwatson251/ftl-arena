@@ -21,6 +21,7 @@
     "desktop:dev": "node tools/build-desktop.mjs --run",
     "desktop:win": "node tools/build-desktop.mjs --win",
     "server:dist": "node tools/build-server.mjs",
+    "server:app": "node tools/build-server-app.mjs --run",
     "desktop:mac": "node tools/build-desktop.mjs --mac"
   },
   "devDependencies": {

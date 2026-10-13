@@ -21,8 +21,10 @@ For installing, see the [README](../README.md).
     and LAN addresses to give your friend.
   - If your friend can't connect, forward TCP port 8787 on your router to your computer.
   - The address can also be a dedicated server.
-- **Dedicated server:** a headless console program that hosts any number of matches (the
-  `FTL-Arena-Server-*` downloads).
+- **Dedicated server:** hosts any number of matches. It comes in two forms, and neither needs FTL:
+  - **`FTL-Arena-Server-App-*`:** a window with the settings, Start and Stop, and the players, lobbies and
+    log. `--start` starts the server straight away.
+  - **`FTL-Arena-Server-*`:** the same server as a headless console program, for a machine with no screen.
   - **Grab and go:** unzip it and run it. It needs no FTL and no setup, because each player's own app draws
     the game.
   - **Joining:** everyone types its address on the Online tab.

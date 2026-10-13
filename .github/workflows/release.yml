@@ -32,11 +32,13 @@ jobs:
       - run: npm ci
       - run: node tools/build-desktop.mjs --win
       - run: node tools/build-server.mjs --win
+      - run: node tools/build-server-app.mjs --win
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             release/FTL-Arena-win-x64.zip
+            release/FTL-Arena-Server-App-win-x64.zip
             release/server/FTL-Arena-Server-win-x64.zip
           if-no-files-found: error
 
@@ -55,12 +57,14 @@ jobs:
           echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
       - run: node tools/build-desktop.mjs --linux
       - run: node tools/build-server.mjs --linux
+      - run: node tools/build-server-app.mjs --linux
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
             release/FTL-Arena-linux-x64.tar.gz
             release/FTL-Arena-x86_64.AppImage
+            release/FTL-Arena-Server-App-linux-x64.tar.gz
             release/server/FTL-Arena-Server-linux-x64.tar.gz
           if-no-files-found: error
 

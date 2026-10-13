@@ -1,0 +1,8 @@
+{
+  "name": "ftl-arena-server-app",
+  "productName": "FTL Arena Server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FTL Arena dedicated server with a window: settings, start and stop, players and logs. Needs no FTL.",
+  "main": "main.cjs"
+}

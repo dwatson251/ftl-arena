@@ -1192,6 +1192,19 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
 - **Version stamp:** the server bundles carry `__APP_VERSION__`, the same as the client's.
 - **Tests:** 3 more in `dedicated.test.ts`. Page checked with `tools/align/admin.ts`.
 
+## Round 63: the desktop server app
+- **`apps/server-app`:** "FTL Arena Server", an Electron window running the dedicated server in-process.
+  - **Settings** (port, interface, UPnP, LAN discovery, admin token) are saved in its data folder, the same
+    file the admin page edits. A new token applies at once; port and network changes say to restart.
+  - **Running:** Start and Stop, with the addresses to share in the title bar, and the server's admin page
+    embedded for players, lobbies and the log (`?embedded=1` hides the page's own title and settings).
+  - `--start` starts the server at launch. It never touches FTL.
+- **Settings code** moved to `apps/server/src/config.ts`, shared by the headless program and the app.
+- **Build and release:** `tools/build-server-app.mjs` (`--run`, `--win`, `--linux`). The release workflow
+  adds `FTL-Arena-Server-App-win-x64.zip` and `…-linux-x64.tar.gz`.
+- **Checked:** the packaged Linux app saved its settings, started the server (the admin API answered),
+  showed the embedded page and stopped cleanly.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

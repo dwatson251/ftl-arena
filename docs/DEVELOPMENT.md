@@ -60,6 +60,11 @@ In practice lobbies, they add a drawer on the right in battle:
 - **The game data a server sends is content only** (`buildDb()`, no presentation). Each client lays its own
   install's presentation over it (`applyPresentation`, with the XMLs fetched from its own `/assets/`), so a
   server never needs FTL, and what's drawn (FTL art, backup art, flat shapes) is up to the client.
+- **Server app** (`apps/server-app`): an Electron window over the same server: settings (saved in its data
+  folder as `ftl-arena-server.json`), Start and Stop, and the server's admin page embedded
+  (`/admin?embedded=1`).
+  - `npm run server:app` runs it from source.
+  - `node tools/build-server-app.mjs --win|--linux` packages `release/FTL-Arena-Server-App-*`.
 - **Dedicated server:** `node tools/build-server.mjs [--win|--linux]` makes
   `release/server/FTL-Arena-Server-win-x64.zip` and `…-linux-x64.tar.gz`. These are Node single-executable
   applications, so the machine running them needs nothing installed.

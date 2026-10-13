@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanConfig, DEFAULTS, resolveConfig } from "../apps/server/src/dedicated.ts";
+import { cleanConfig, DEFAULTS, resolveConfig } from "../apps/server/src/config.ts";
 import { startServer } from "../apps/server/src/server.ts";
 import { authorised } from "../apps/server/src/admin.ts";
 import { WebSocket } from "ws";

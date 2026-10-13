@@ -72,7 +72,8 @@ Don't have it? [Buy FTL from Subset Games](https://subsetgames.com/ftl.html). It
    | Windows | `FTL-Arena-win-x64.zip` |
    | Linux | `FTL-Arena-linux-x64.tar.gz` |
    | Steam Deck (or any Linux) | `FTL-Arena-x86_64.AppImage` |
-   | Dedicated server | `FTL-Arena-Server-*` |
+   | Dedicated server (with a window) | `FTL-Arena-Server-App-*` |
+   | Dedicated server (headless) | `FTL-Arena-Server-*` |
 2. **Run it:**
    - **Windows:** unzip the folder anywhere and run `FTL Arena.exe`. The app isn't signed, so Windows may
      warn you: choose *More info → Run anyway*.

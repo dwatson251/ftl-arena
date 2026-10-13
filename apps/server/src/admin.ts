@@ -138,16 +138,19 @@ label { display:flex; justify-content:space-between; gap:8px; margin:6px 0; } in
 button { background:#262b33; color:var(--text); border:1px solid var(--edge); padding:4px 10px; cursor:pointer; } button:hover { border-color:var(--accent); }
 .wide { grid-column: 1 / -1; } .note { color:var(--dim); font-size:12px; } #msg { color:var(--accent); }
 @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+/* Inside the server app's window: its own settings and title are there already. */
+body.embedded header, body.embedded #cfgsec { display: none; } body.embedded main { grid-template-columns: 1fr; }
 </style></head><body>
 <header><h1>FTL Arena server</h1><span class="dim" id="ver"></span><span style="flex:1"></span><span id="msg"></span></header>
 <main>
 <section><h2>Status</h2><div class="stats" id="stats"></div></section>
-<section><h2>Settings</h2><form id="cfg"></form><div class="note" id="cfgnote"></div></section>
+<section id="cfgsec"><h2>Settings</h2><form id="cfg"></form><div class="note" id="cfgnote"></div></section>
 <section class="wide"><h2>Lobbies and players</h2><table><thead><tr><th>Code</th><th>Mode</th><th>Phase</th><th>Players</th><th>Battle</th><th></th></tr></thead><tbody id="lobbies"></tbody></table></section>
 <section class="wide"><h2>Log</h2><div id="log"></div></section>
 </main>
 <script>
 const params = new URLSearchParams(location.search);
+if (params.get("embedded")) document.body.classList.add("embedded");
 let token = params.get("token") || localStorage.getItem("ftl-arena-admin-token") || "";
 const api = async (path, opts = {}) => {
   const r = await fetch("/api/admin/" + path, { ...opts, headers: { ...(opts.headers || {}), ...(token ? { authorization: "Bearer " + token } : {}) } });

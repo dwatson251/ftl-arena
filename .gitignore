@@ -6,3 +6,4 @@ traces/
 .idea/
 release/
 apps/desktop/dist/
+apps/server-app/dist/
