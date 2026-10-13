@@ -643,6 +643,10 @@ function render(): void {
 /** The main menu: FTL's title screen with our four buttons; each opens its own panel (Back returns). */
 const MENU_ITEMS: [typeof mode, string][] = [["single", "Single player"], ["lan", "LAN"], ["online", "Online"], ["settings", "Settings"]];
 function renderMenu(): void {
+  // FTL's title theme on the main menu, as in the lobby (it starts on the first click or key if the browser
+  // holds autoplay back).
+  const title = db?.music.find((t) => t.name === "title")?.explore;
+  if (title) music(title);
   const lan = mode === "lan";
   const art = hasArt && hasImg("main_menus/main_base2.png");
   const titles: Record<string, string> = { single: "Single player", lan: "LAN", online: "Online", settings: "Settings" };
@@ -692,8 +696,14 @@ function renderMenu(): void {
     } catch {}
   };
   for (const id of ["#name", "#server", "#code"]) ui.querySelector(id)?.addEventListener("input", keep);
+  // FTL's menu feel: a beep as the highlight moves onto a button (mouse or pad), a click when it's pressed.
+  ui.querySelectorAll<HTMLButtonElement>(".mm-btn").forEach((b) => {
+    b.addEventListener("mouseenter", () => db && play(db, ["hoverBeep"], 0.7));
+    b.addEventListener("focus", () => db && !b.matches(":hover") && play(db, ["hoverBeep"], 0.7));
+  });
   ui.querySelectorAll<HTMLButtonElement>("[data-open]").forEach((b) =>
     b.addEventListener("click", () => {
+      if (db) play(db, ["acceptUpgrades"], 0.8);
       const m = b.dataset.open as typeof mode;
       // Single player needs no introduction: straight into a practice lobby.
       if (m === "single") {

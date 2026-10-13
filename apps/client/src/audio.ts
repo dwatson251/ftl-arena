@@ -98,12 +98,14 @@ export function music(file: string | null): void {
   current = { file, el };
   if (musicOn) {
     void el.play().catch(() => {
-      // Autoplay is blocked until the first click; start then.
+      // Autoplay is blocked until the first click or key press; start then.
       const go = () => {
         if (current?.el === el && musicOn) void el.play().then(() => fade(el, MUSIC_VOL)).catch(() => {});
         window.removeEventListener("pointerdown", go);
+        window.removeEventListener("keydown", go);
       };
       window.addEventListener("pointerdown", go);
+      window.addEventListener("keydown", go);
     });
     fade(el, MUSIC_VOL);
   }

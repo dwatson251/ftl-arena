@@ -1247,6 +1247,15 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
 - **Tooling:** 55 `tools/align`/`bench` scripts now seed a captain's name (the first-launch prompt) and use
   the new Single player button. Scripts that used the old LAN/Online tabs need the panels when next run.
 
+## Round 66: the main menu's theme, sounds and hover colour
+- **Theme:** the menu now starts FTL's title theme (it played only in the lobby). If the browser holds
+  autoplay back, it starts on the first click or key press (a key press counts now too).
+- **Sounds:** the buttons beep (FTL's `hoverBeep`) as the highlight moves onto them, by mouse or by the pad's
+  ring, and play `acceptUpgrades` when pressed.
+- **Hover colour:** the yellow highlight was lost to the higher-specificity rule that set the buttons' FTL
+  font. It now matches that specificity.
+- **Checked:** `tools/align/menu-sound.ts` (title track requested; colour on hover goes white to FTL yellow).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,
