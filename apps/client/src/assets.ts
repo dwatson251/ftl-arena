@@ -3,7 +3,7 @@
  * anything missing returns null and the renderer draws flat shapes instead.
  */
 import { Assets, Rectangle, Texture } from "pixi.js";
-import type { GameDB } from "@ftl/data";
+import { buildPresentation, type GameDB, type Presentation } from "@ftl/data";
 
 const BASE = "/assets/img/";
 const cache = new Map<string, Promise<Texture | null>>();
@@ -26,6 +26,28 @@ export function loadManifest(): Promise<void> {
     }
   })();
   return manifestLoaded;
+}
+
+/** The data files that dress the game up (FTL's words, animation sheets, sounds, names), from this player's own
+ *  extract: the server sends only the game's data. */
+const PRESENTATION_FILES = ["data/text_blueprints.xml", "data/text_misc.xml", "data/animations.xml", "data/dlcAnimations.xml", "data/sounds.xml", "data/dlcSounds.xml", "data/names.xml"];
+let presentationLoaded: Promise<Presentation | null> | null = null;
+/** This player's presentation (null with no install: flat shapes, or backup art). Fetched once. */
+export function loadPresentation(): Promise<Presentation | null> {
+  presentationLoaded ??= (async () => {
+    await loadManifest();
+    const files = new Map<string, string>();
+    await Promise.all(
+      PRESENTATION_FILES.filter((f) => !manifest || manifest.has(f)).map(async (f) => {
+        try {
+          const r = await fetch(`/assets/${f}`);
+          if (r.ok) files.set(f, await r.text());
+        } catch {}
+      }),
+    );
+    return buildPresentation((p) => files.get(p));
+  })();
+  return presentationLoaded;
 }
 
 const CACHE_KEY = "ftl-arena-assets-version";

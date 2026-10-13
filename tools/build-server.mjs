@@ -40,13 +40,13 @@ const inject = (exe, macho = false) =>
 const readme = `FTL ARENA - dedicated server
 =============================
 
-A headless server that hosts any number of FTL Arena matches. You need your own copy of FTL (1.6+): on
-first run it asks for your FTL folder (or finds Steam's) and unpacks the game's rules next to itself.
+A headless server that hosts any number of FTL Arena matches. Nothing to install or set up: run it, then
+give players the address it prints (IP:port). Players put that in "Server address" in the game and press
+Create match or Join. (It doesn't need FTL: each player's own app draws the game from their own copy.)
 
-Run it, then give players the address it prints (IP:port). Players put that in "Server address" in the
-game and press Create match or Join.
-
-Options:  --port 8787   --ftl "C:\\path\\to\\FTL Faster Than Light"   --data <folder>   --upnp (open the port on your router)
+Options:  --port 8787   --host 0.0.0.0   --upnp (open the port on your router)   --no-lan   --help
+Settings can also live in ftl-arena-server.json next to this program: run it once with --write-config to
+create one, then edit it. Arguments override the file.
 Players on the internet: forward TCP 8787 on your router to this machine (or try --upnp).
 `;
 

@@ -28,39 +28,68 @@ export function shipBlueprint(s: ShipConfig): ShipBP {
   return bp;
 }
 
+/**
+ * The game's data: everything a match needs, from the content classes alone. This is what a server sends;
+ * nothing in it depends on FTL being installed. `pres` (the player's own install) is laid over it for display.
+ */
 export function buildDb(pres: Presentation | null = null): GameDB {
-  const text = pres?.text ?? {};
-  const say = (id: string | undefined) => (id ? text[id] : undefined);
   const db: GameDB = {
-    source: pres ? "ftl" : "placeholder",
+    source: "placeholder",
     weapons: {}, systems: {}, crew: {}, ships: {}, layouts: {}, augments: {}, droneBPs: {},
-    animSheets: pres?.animSheets ?? {}, weaponAnims: pres?.weaponAnims ?? {}, anims: pres?.anims ?? {},
-    sounds: pres?.sounds ?? {}, music: pres?.music ?? [], names: pres?.names.length ? pres.names : FALLBACK_NAMES,
+    animSheets: {}, weaponAnims: {}, anims: {}, sounds: {}, music: [], names: FALLBACK_NAMES,
     hangar: [...HANGAR], enemies: [...ENEMIES],
   };
-  if (pres) db.femaleNames = pres.femaleNames;
-  if (say("reactor_desc")) db.reactorDesc = say("reactor_desc");
   for (const w of WEAPONS) db.weapons[w.id] = plain(w);
   for (const d of DRONES) db.droneBPs[d.id] = plain(d);
   for (const c of CREW) db.crew[c.id] = plain(c, ["traits"]) as CrewBP;
+  // Without FTL's words an augment describes itself by what it does in the arena.
+  for (const a of AUGMENTS) db.augments[a.id] = { ...(plain(a, ["effect", "text"]) as Omit<AugmentBP, "desc">), desc: a.effect };
+  for (const s of SYSTEMS) {
+    const bp = plain(s, ["text", "title", "desc"]) as SystemBP;
+    db.systems[s.id] = { ...bp, title: s.title, desc: s.desc, levels: undefined };
+  }
+  for (const s of SHIPS) {
+    db.ships[s.id] = shipBlueprint(s);
+    db.layouts[s.layout.id] ??= structuredClone(s.layout);
+  }
+  return pres ? applyPresentation(db, pres) : db;
+}
+
+/**
+ * Lays a player's own install over the game's data, for display only: FTL's animation sheets, sounds, music,
+ * crew names and words (titles, descriptions, level lines, looked up by the content classes' text ids). A
+ * client does this with the data a server sent, so the server never needs (or sends) any of it.
+ */
+export function applyPresentation(db: GameDB, pres: Presentation): GameDB {
+  const text = pres.text;
+  const say = (id: string | undefined) => (id ? text[id] : undefined);
+  db.source = "ftl";
+  db.animSheets = pres.animSheets;
+  db.weaponAnims = pres.weaponAnims;
+  db.anims = pres.anims;
+  db.sounds = pres.sounds;
+  db.music = pres.music;
+  if (pres.names.length) db.names = pres.names;
+  db.femaleNames = pres.femaleNames;
+  if (say("reactor_desc")) db.reactorDesc = say("reactor_desc");
   for (const a of AUGMENTS) {
+    const bp = db.augments[a.id];
     const t = (a as unknown as { text?: { desc?: string } }).text;
-    db.augments[a.id] = { ...(plain(a, ["effect", "text"]) as Omit<AugmentBP, "desc">), desc: (pres ? say(t?.desc) : undefined) ?? (pres ? "" : a.effect) };
+    if (bp) bp.desc = say(t?.desc) ?? "";
   }
   for (const s of SYSTEMS) {
+    const bp = db.systems[s.id];
+    if (!bp) continue;
     const t = (s as unknown as { text?: { title?: string; desc?: string } }).text;
-    const bp = plain(s, ["text", "title", "desc"]) as SystemBP;
     const pick = LEVEL_TEXT[s.id];
     const levels = Array.from({ length: s.maxPower }, (_, i) => {
       const k = pick?.(i + 1);
       return (k && text[k]) || "";
     });
-    const word = (id: string | undefined, own: string | undefined) => (id ? (text[id] ?? (pres ? id : undefined)) : own);
-    db.systems[s.id] = { ...bp, title: word(t?.title, s.title), desc: word(t?.desc, s.desc), levels: levels.some(Boolean) ? levels : undefined };
-  }
-  for (const s of SHIPS) {
-    db.ships[s.id] = shipBlueprint(s);
-    db.layouts[s.layout.id] ??= structuredClone(s.layout);
+    const word = (id: string | undefined, own: string | undefined) => (id ? (text[id] ?? id) : own);
+    bp.title = word(t?.title, s.title);
+    bp.desc = word(t?.desc, s.desc);
+    bp.levels = levels.some(Boolean) ? levels : undefined;
   }
   return db;
 }

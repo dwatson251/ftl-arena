@@ -1144,6 +1144,29 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
     `tools/align/dying.ts`.
 - **Tests:** one more in `round52.test.ts`.
 
+## Round 60: servers send only the game's data; a grab-and-go dedicated server
+- **The data a server sends** (the welcome's GameDB) is now content only: `buildDb()`, with no animation
+  sheets, sounds, music or FTL text. How it's drawn is each client's business.
+  - The client fetches its own install's presentation XMLs from its own `/assets/` (`loadPresentation`) and
+    lays them over the server's data (`applyPresentation`, split out of `buildDb`).
+  - With no install it draws flat shapes or backup art.
+  - Without FTL's words, augments describe themselves with our effect text, and crew names come from a
+    built-in list.
+- **Dedicated server** (`dedicated.ts`):
+  - No FTL, no prompt, no data folder: it runs straight from the unpacked download.
+  - **Settings**, each overriding the one before: defaults; `ftl-arena-server.json` next to the program (or
+    `--config`); environment (`PORT`, `FTL_ARENA_HOST`, `FTL_ARENA_UPNP`, `FTL_ARENA_LAN`); arguments
+    (`--port`, `--host`, `--upnp`, `--no-lan`, `--client`).
+  - `--write-config` makes the file to edit, and `--help` lists it all.
+  - It logs each setting and where it came from.
+  - `startServer`'s assets folder is optional. With none, it never serves files from where it runs.
+- **Protocol version 2:** an old client would have expected the server's presentation. The client's hello
+  now uses the constant (it was a hard-coded 1).
+- **Checked:**
+  - The Linux single-executable server ran from an empty folder with no setup.
+  - Two browser players had a battle on it, each drawn in their own FTL art (`tools/align/dedicated.ts`).
+  - Tests: `dedicated.test.ts` (settings order; a no-FTL welcome carries no presentation).
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

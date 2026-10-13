@@ -22,8 +22,13 @@ For installing, see the [README](../README.md).
   - If your friend can't connect, forward TCP port 8787 on your router to your computer.
   - The address can also be a dedicated server.
 - **Dedicated server:** a headless console program that hosts any number of matches (the
-  `FTL-Arena-Server-*` downloads). Its options are `--port 8787`, `--ftl <FTL folder>`, `--data <folder>` and
-  `--upnp`. Everyone types its address on the Online tab.
+  `FTL-Arena-Server-*` downloads).
+  - **Grab and go:** unzip it and run it. It needs no FTL and no setup, because each player's own app draws
+    the game.
+  - **Joining:** everyone types its address on the Online tab.
+  - **Options:** `--port 8787`, `--host`, `--upnp`, `--no-lan` and `--help`.
+  - **Config file:** `ftl-arena-server.json` beside the program; `--write-config` makes one to edit.
+    Arguments override the file.
 - **Host leaving:**
   - Mid-battle, the other captain wins by forfeit.
   - In the hangar, the other captain takes over as host.

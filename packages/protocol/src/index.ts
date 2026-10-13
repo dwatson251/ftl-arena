@@ -2,7 +2,7 @@
 import type { GameDB, WeaponBP } from "@ftl/data";
 import type { Card, Command, Loadout, MatchConfig, MatchView, Priced } from "@ftl/sim";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 /** Server tick rate and snapshot rate (every SNAP_EVERY ticks). */
 export const SNAP_EVERY = 2;
 

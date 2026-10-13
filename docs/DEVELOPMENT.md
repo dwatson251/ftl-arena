@@ -57,6 +57,9 @@ In practice lobbies, they add a drawer on the right in battle:
   `?deck=1`, which turns controller support on until the player switches it off.
 - **macOS:** `npm run desktop:mac`, built on a Mac. Then run
   `hdiutil create -volname "FTL Arena" -srcfolder "release/FTL Arena-darwin-x64" FTL-Arena.dmg`.
+- **The game data a server sends is content only** (`buildDb()`, no presentation). Each client lays its own
+  install's presentation over it (`applyPresentation`, with the XMLs fetched from its own `/assets/`), so a
+  server never needs FTL, and what's drawn (FTL art, backup art, flat shapes) is up to the client.
 - **Dedicated server:** `node tools/build-server.mjs [--win|--linux]` makes
   `release/server/FTL-Arena-Server-win-x64.zip` and `…-linux-x64.tar.gz`. These are Node single-executable
   applications, so the machine running them needs nothing installed.

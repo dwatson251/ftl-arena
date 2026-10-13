@@ -20,8 +20,11 @@ import { importFtlSave } from "./ftlsave.ts";
 export interface ServerOptions {
   /** TCP port (0 picks a free one). */
   port: number;
-  /** The extracted FTL assets folder (the placeholder set is used when it has none). */
-  assets: string;
+  /**
+   * Files served at /assets/ to a browser on this machine (the desktop app's own window: its owner's
+   * extracted FTL art and sound). Optional; the game data the server sends never depends on it.
+   */
+  assets?: string;
   /**
    * Backup art for files the player's install doesn't have, at the same paths (img/ship/<img>_base.png...):
    * art a modder (or we) made without FTL's copyright. Default packages/content/art when it exists.
@@ -74,11 +77,12 @@ function serveFile(root: string, rel: string, res: import("node:http").ServerRes
 
 export function startServer(opts: ServerOptions): Promise<RunningServer> {
   const log = opts.log ?? ((s: string) => console.log(s));
-  const ASSETS = resolve(opts.assets);
+  const ASSETS = opts.assets ? resolve(opts.assets) : "";
   const ALT = resolve(opts.altAssets ?? "packages/content/art");
   const CLIENT = opts.client ? resolve(opts.client) : "";
-  const db = loadDb(ASSETS);
-  log(`game data: ${db.source} (${db.hangar.length} hulls, ${Object.keys(db.weapons).length} weapons)`);
+  // The game's data only: how it's drawn (FTL's art, custom sprites, flat shapes) is each client's business.
+  const db = loadDb();
+  log(`game data: ${db.hangar.length} hulls, ${Object.keys(db.weapons).length} weapons (how it looks is up to each player's app)`);
 
   // The addresses to share, worked out once (on the first ask): LAN, public, and a UPnP port forward.
   let share: Promise<ShareInfo> | null = null;
@@ -138,7 +142,7 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (url === "/assets/manifest.json" && existsSync(ALT)) {
       let m: { files: string[] } = { files: [] };
       try {
-        m = JSON.parse(readFileSync(join(ASSETS, "manifest.json"), "utf8"));
+        if (ASSETS) m = JSON.parse(readFileSync(join(ASSETS, "manifest.json"), "utf8"));
       } catch {}
       const have = new Set(m.files);
       const walk = (d: string, rel = ""): string[] =>
@@ -147,7 +151,8 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache" });
       return void res.end(head ? undefined : body);
     }
-    if (url.startsWith("/assets/") && (serveFile(ASSETS, url.slice(8), res, head) || (existsSync(ALT) && serveFile(ALT, url.slice(8), res, head)))) return;
+    // (No assets folder, a dedicated server: only backup art, never files from wherever it's running.)
+    if (url.startsWith("/assets/") && ((ASSETS && serveFile(ASSETS, url.slice(8), res, head)) || (existsSync(ALT) && serveFile(ALT, url.slice(8), res, head)))) return;
     if (!url.startsWith("/assets/") && CLIENT && existsSync(CLIENT)) {
       if (serveFile(CLIENT, url === "/" ? "index.html" : url.slice(1), res, head)) return;
       if (serveFile(CLIENT, "index.html", res, head)) return;

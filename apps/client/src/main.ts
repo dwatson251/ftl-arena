@@ -1,8 +1,8 @@
 import { Application } from "pixi.js";
 import { baseSystemId, type GameDB } from "@ftl/data";
-import type { DebugInfo, DebugOp, LobbyState, ServerMsg } from "@ftl/protocol";
+import { PROTOCOL_VERSION, type DebugInfo, type DebugOp, type LobbyState, type ServerMsg } from "@ftl/protocol";
 import { parseUpgraded, type Card, type MatchView } from "@ftl/sim";
-import { artReady, BACKDROPS, PLANETS, preload, registerOfflineCache } from "./assets.ts";
+import { artReady, BACKDROPS, loadPresentation, PLANETS, preload, registerOfflineCache } from "./assets.ts";
 import { loadFtlFonts } from "./ftlfonts.ts";
 import { music, play, preloadSounds } from "./audio.ts";
 import { presets } from "./presets.ts";
@@ -16,6 +16,7 @@ import { BTN, controllerEnabled, onPad, pad, setControllerEnabled, startPad } fr
 import { focusOn, menuNav } from "./menunav.ts";
 import { Chat } from "./chat.ts";
 import { droneArtHtml, portraitHtml, sysIconHtml, weaponArtHtml } from "./art.ts";
+import { applyPresentation } from "@ftl/content";
 import { APP_VERSION, DEV_TOOLS } from "./version.ts";
 
 const ui = document.getElementById("ui")!;
@@ -96,25 +97,34 @@ const chat = new Chat((text) => net.send({ t: "chat", text }));
 artReady.push(() => render());
 net.on(onMsg);
 
+/** The game's data has come (with our own presentation laid over it): load what it needs, then the menus. */
+function welcomed(d: GameDB): void {
+  db = d;
+  // Survival: upgraded guns the run has fitted (a reconnect mid-run).
+  if (lobby?.survival) Object.assign(db.weapons, lobby.survival.weapons);
+  if (document.getElementById("loading")) {
+    // Everything (art, fonts, sound effects) loads behind FTL's loading bar before the first menu.
+    let fonts = false;
+    loadingProgress(0, "");
+    void preload(db, (k) => loadingProgress(k), [async () => (fonts = await loadFtlFonts()), () => presets.init().then(() => true), ...preloadSounds(db)]).then((ok) => {
+      hasArt = ok;
+      document.body.classList.toggle("ftl-fonts", fonts);
+      loadingProgress(1);
+      loadingDone();
+      render();
+    });
+  } else render();
+}
+
 function onMsg(m: ServerMsg): void {
   switch (m.t) {
     case "welcome":
-      db = m.db;
       token = m.token;
       // Controller play is per player: the server shows the icon and runs our crew and reactor.
       if (controllerEnabled()) net.send({ t: "controller", on: true });
-      if (document.getElementById("loading")) {
-        // Everything (art, fonts, sound effects) loads behind FTL's loading bar before the first menu.
-        let fonts = false;
-        loadingProgress(0, "");
-        void preload(db, (k) => loadingProgress(k), [async () => (fonts = await loadFtlFonts()), () => presets.init().then(() => true), ...preloadSounds(db)]).then((ok) => {
-          hasArt = ok;
-          document.body.classList.toggle("ftl-fonts", fonts);
-          loadingProgress(1);
-          loadingDone();
-          render();
-        });
-      }
+      // The server sends only the game's data; how it looks is ours: FTL's art and words from our own
+      // install when there is one, else flat shapes (or backup art).
+      void loadPresentation().then((pres) => welcomed(pres ? applyPresentation(m.db, pres) : m.db));
       break;
     case "lobby": {
       const was = lobby?.phase;
@@ -763,7 +773,7 @@ async function act(kind: "create" | "practice" | "join"): Promise<void> {
   busy = false;
   busyNote = "";
   matchAddr = addr;
-  net.send({ t: "hello", v: 1, name, token });
+  net.send({ t: "hello", v: PROTOCOL_VERSION, name, token });
   if (kind === "join") net.send({ t: "join", code: joinCode });
   else net.send({ t: "create", practice: kind === "practice" });
   share = null;
