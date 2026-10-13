@@ -1278,6 +1278,12 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
 - **Tests:** 4 in `crew-tasks.test.ts` (on the way; computer for 5 s; no computer; a fire held past 5 s,
   then released). 226 passing.
 
+## Round 69: the server says where it is
+- **Start-up log** (`startServer`): the web server's address on this computer and on the network, the admin
+  page (and whether it can be reached from other machines), and the address players type. It shows in
+  the console and in the admin page's log, so in the server app's window too. The dedicated program's own
+  admin-page line is gone.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

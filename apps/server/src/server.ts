@@ -348,7 +348,12 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     http.listen(opts.port, opts.host ?? "0.0.0.0", () => {
       const port = (http.address() as AddressInfo).port;
-      log(`FTL Arena server on http://localhost:${port}  (ws at /ws)`);
+      // Where to find it: the web address (this computer and the network), the admin page, and what players type.
+      const nets = opts.host && opts.host !== "0.0.0.0" ? [opts.host] : lanAddresses();
+      const token = opts.admin?.token?.() ?? "";
+      log(`Web server started at http://localhost:${port} (this computer)${nets.length ? ` and ${nets.map((a) => `http://${a}:${port}`).join(", ")} (your network)` : ""}`);
+      log(`Admin page: http://localhost:${port}/admin${token ? "; from other machines add ?token=<admin token>" : " (this computer only until an admin token is set)"}`);
+      log(`Players connect to: ${nets.length ? nets.map((a) => `${a}:${port}`).join(" or ") : `this computer's address, port ${port}`}`);
       ok({
         port,
         log,

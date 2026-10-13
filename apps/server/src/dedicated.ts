@@ -67,7 +67,6 @@ async function main(): Promise<void> {
   });
   say = server.log;
   server.log(`settings: ${Object.entries(cfg).map(([k, v]) => `${k}=${k === "adminToken" ? (v ? '"(set)"' : '""') : JSON.stringify(v)} (${from[k as keyof DedicatedConfig]})`).join(", ")}`);
-  server.log(`admin page: http://localhost:${server.port}/admin${cfg.adminToken ? " (remote: add ?token=<adminToken>)" : " (this machine only; set adminToken for remote)"}`);
   const pub = await publicAddress();
   console.log("");
   console.log("  FTL Arena dedicated server is running. Players put one of these in \"Server address\":");
