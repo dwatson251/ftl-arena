@@ -3,6 +3,7 @@ import { baseSystemId, SUBSYSTEMS, V1_SYSTEMS, type GameDB, type SystemId } from
 import { geometry, key } from "./geometry.ts";
 import { raceOf, RACES, RULES, SKILLS, type SkillId } from "./rules.ts";
 import type { CrewState, ShipState, SystemState } from "./state.ts";
+import { modErrors } from "./modifiers.ts";
 import { crewPrice, itemPrice, obtainable, PRICING, reactorBarPrice, shipPrice, systemStepPrice, type PriceRules } from "./pricing.ts";
 
 export interface Loadout {
@@ -299,6 +300,7 @@ export function priceLoadout(db: GameDB, l: Loadout, scrap: number, pool: string
     if (i >= 0) freeAugs.splice(i, 1);
     else lines.push({ item: `augment ${bp.title}`, scrap: itemPrice(db, "augment", a, costs, augsBought++) });
   }
+  errors.push(...modErrors(db, l, rules.mods ?? []));
   const total = lines.reduce((a, b) => a + b.scrap, 0);
   if (total > scrap) errors.push(`costs ${total} scrap, budget is ${scrap}`);
   return { ok: errors.length === 0, total, lines, errors };

@@ -13,7 +13,7 @@ import { DEV_TOOLS } from "./version.ts";
 import type { LobbyState, PracticeConfig } from "@ftl/protocol";
 import {
   baseLoadout, buildShip, buyableDrones, reactorUsed, usable, fullPowerNeed, reactorCap, buyableWeapons, difficultyToBot, hireableRaces, hullSystems, MAX_AUGMENTS, priceLoadout, RACES, randomCrewName, RULES, type Loadout,
-  type MatchConfig, stockLoadout, SURVIVAL, itemPrice, obtainable, shipPrice, crewPrice, PRICING, reactorBarPrice, systemStepPrice,
+  type MatchConfig, stockLoadout, SURVIVAL, MODIFIERS, applyMods, modBlocked, hasMod, type ModId, itemPrice, obtainable, shipPrice, crewPrice, PRICING, reactorBarPrice, systemStepPrice,
 } from "@ftl/sim";
 
 const h = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -184,6 +184,8 @@ export class Hangar {
     if (this.loadout && lobby.config.shipPool.length && !lobby.config.shipPool.includes(this.loadout.ship) && mine?.loadout) this.loadout = mine.loadout;
     // Survival: the server flies the stock ship, so take its copy (it replaces any build when the mode starts).
     if (lobby.config.survival && mine?.loadout && (!this.loadout || !isSame(mine.loadout, this.loadout))) this.loadout = mine.loadout;
+    // Rule modifiers: the server fits the build to them (Bare's stock fit, the "No ..." ones' removals).
+    if (lobby.config.mods?.length && mine?.loadout && this.loadout && !isSame(mine.loadout, this.loadout) && isSame(applyMods(this.db, this.loadout, lobby.config.mods), mine.loadout)) this.loadout = mine.loadout;
     // A step this rule closes (e.g. Launch before a save's ship is loaded): back to Presets (Survival: Ship).
     if (this.loadout && !this.stepOpen(this.step)) this.step = lobby.config.survival ? "Ship" : "Presets";
     this.render();
@@ -257,7 +259,7 @@ export class Hangar {
     const body = { Rules: () => this.stepRules(lobby), Presets: () => this.stepPresets(), Ship: () => this.stepShip(l), Systems: () => this.stepSystems(l), Weapons: () => this.stepWeapons(l), Drones: () => this.stepDrones(l), Crew: () => this.stepCrew(l), Augments: () => this.stepAugments(l), Launch: () => this.stepLaunch(l, priced) }[this.step]();
     this.el.innerHTML = `
       <div class="hg">
-        <div class="hg-steps">${this.steps().map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""} ${this.stepOpen(s) ? "" : "locked"}" data-step="${s}" ${this.stepOpen(s) ? "" : `disabled title="${cfg.survival ? "Off in Survival: you fly the stock ship and earn upgrades between battles" : s === "Launch" ? "Load your ship from an FTL save first (Presets)" : "Off in Bring your own ship: ships come from FTL saves"}"`}><b>${i + 1}</b> ${s}</button>`).join("")}
+        <div class="hg-steps">${this.steps().map((s, i) => `<button class="hg-step ${s === this.step ? "on" : ""} ${this.stepOpen(s) ? "" : "locked"}" data-step="${s}" ${this.stepOpen(s) ? "" : `disabled title="${cfg.survival ? "Off in Survival: you fly the stock ship and earn upgrades between battles" : this.lockedBy(s) ? `Off with ${this.lockedBy(s)} on` : s === "Launch" ? "Load your ship from an FTL save first (Presets)" : "Off in Bring your own ship: ships come from FTL saves"}"`}><b>${i + 1}</b> ${s}</button>`).join("")}
           <div class="hg-scrap">${cfg.survival ? `<span class="note">Survival: the stock ship, upgraded by rewards after each win</span>` : cfg.ftlOnly ? `<span class="note">Bring your own ship: FTL saves only, no scrap limit</span>` : `${this.scrapIcon()}<span class="scrap">${cfg.scrap - priced.total}</span> <span class="note">scrap left of ${cfg.scrap}</span>`}</div></div>
         <div class="hg-body ${BUILD_STEPS.includes(this.step) ? "" : "wide"} step-${this.step.toLowerCase()}">
           <div class="panel hg-side">${this.sidebar(lobby)}</div>
@@ -304,6 +306,7 @@ export class Hangar {
     }
     const lines = [
       cfg.winCondition === "auto" ? "Arena · autonomous ships" : "Arena (destroy the ship or its crew)",
+      ...(cfg.mods?.length ? [MODIFIERS.filter((m) => cfg.mods!.includes(m.id)).map((m) => m.label).join(" · ")] : []),
       ...(cfg.costs === "ships" ? ["Ship expenses: hulls cost scrap"] : cfg.costs === "tournament" ? ["Tournament: hull and rarity prices, normal-run items only"] : []),
       ...(cfg.unobtainable === false && cfg.costs !== "tournament" ? ["No unobtainable items"] : []),
       cfg.ftlOnly ? "Bring your own ship (FTL saves only)" : `${cfg.scrap} scrap${cfg.unlimited ? " · unrestricted systems" : ""}`,
@@ -369,6 +372,13 @@ export class Hangar {
       <label class="kv"><span>Allow unobtainable crew, weapons and augments</span><input type="checkbox" data-cfg="unobtainable" ${cfg.unobtainable !== false ? "checked" : ""} ${cfg.costs === "tournament" ? "disabled" : ""}></label>
       ${cfg.costs === "tournament" ? `<div class="note">Tournament: normal-run items only.</div>` : ""}
       <label class="kv"><span>Unrestricted systems</span><input type="checkbox" data-cfg="unlimited" ${cfg.unlimited ? "checked" : ""}></label>
+      <div class="kv"><span>Modifiers</span></div>
+      <div class="mods">${MODIFIERS.map((m) => {
+        const mods = cfg.mods ?? [];
+        const on = mods.includes(m.id);
+        const why = on ? null : modBlocked(m.id, cfg, mods);
+        return `<button class="mod ${on ? "on" : ""}" data-mod="${m.id}" ${why ? `disabled title="${h(why)}"` : `title="${h(m.tip)}"`}>${h(m.label)}</button>`;
+      }).join("")}</div>
       <div class="kv"><span>Ships</span><select data-cfg="ftlOnly">
         <option value="" ${cfg.ftlOnly ? "" : "selected"}>Build in the hangar</option>
         <option value="1" ${cfg.ftlOnly ? "selected" : ""}>Bring your own ship (FTL saves only)</option></select></div>
@@ -509,6 +519,8 @@ export class Hangar {
   /** Off-limits to buy now: unobtainable items are off, a normal run can't give you this, and the fit already
    *  has as many as the hull came with (stock ones can always be put back). */
   private banned(kind: "weapons" | "augments" | "crew", id: string, have: string[], stock: string[]): boolean {
+    // No missiles: missile weapons and bombs are out altogether.
+    if (kind === "weapons" && hasMod(this.lobby?.config, "noMissiles") && (this.db.weapons[id]?.missiles ?? 0) > 0) return true;
     const atStock = have.filter((x) => x === id).length >= stock.filter((x) => x === id).length;
     // Tournament: some races (Crystal) only come with a hull's own crew.
     if (kind === "crew" && this.priceRules().costs === "tournament" && PRICING.tournament.stockOnlyCrew.includes(id)) return atStock;
@@ -537,9 +549,16 @@ export class Hangar {
   private stepOpen(s: Step): boolean {
     // Survival flies the stock ship: pick a hull and go.
     if (this.lobby?.config.survival) return s === "Rules" || s === "Ship" || s === "Launch";
+    if (this.lockedBy(s)) return false;
     if (!this.lobby?.config.ftlOnly) return true;
     if (s === "Rules" || s === "Presets") return true;
     return s === "Launch" && this.loadout?.origin === "ftl";
+  }
+
+  /** The rule modifier that closes a build step (Bare closes all but Rules, Ship and Launch). */
+  private lockedBy(s: Step): string | null {
+    const mods = this.lobby?.config.mods ?? [];
+    return MODIFIERS.find((m) => mods.includes(m.id) && m.locks?.includes(s))?.label ?? null;
   }
 
   /** Has anyone else in the lobby started on a ship (or readied)? Turning the save-only rule on clears theirs. */
@@ -839,7 +858,7 @@ export class Hangar {
       <div class="wslots-sticky"><div class="wslots">${slots}</div>
       <div class="sys-row"><span class="sysicon ph">⦿</span><span class="sys-name">missiles</span><span><b>${l.missiles}</b></span>
         <button class="small" data-msl="-1" ${l.missiles <= 0 ? "disabled" : ""}>−</button>
-        <button class="small" data-msl="1">+</button><span class="note">${RULES.missilePrice} scrap each</span></div>
+        <button class="small" data-msl="1" ${hasMod(this.lobby?.config, "noMissiles") ? `disabled title="No missiles is on"` : ""}>+</button><span class="note">${RULES.missilePrice} scrap each</span></div>
       ${this.powerNote(l)}
       <div class="note">Drag weapons onto a slot (or click a price). Drag an equipped weapon to another slot to reorder, or back to the store to sell it for half price.</div></div>
       <div class="shop-drop">${shop}</div>${this.nav("Systems", "Drones")}`;
@@ -1017,6 +1036,13 @@ export class Hangar {
     const l = structuredClone(this.loadout);
     const d = b.dataset;
     const ship = this.db.ships[l.ship];
+    if (d.mod) {
+      // A rule modifier on or off (the server drops any another one switches off).
+      const mods = this.lobby?.config.mods ?? [];
+      const id = d.mod as ModId;
+      this.sfx("hoverBeep");
+      return this.hooks.setConfig({ mods: mods.includes(id) ? mods.filter((x) => x !== id) : [...mods, id] });
+    }
     if (d.step) {
       if (!this.stepOpen(d.step as Step)) return this.sfx("powerUpFail");
       this.step = d.step as Step;

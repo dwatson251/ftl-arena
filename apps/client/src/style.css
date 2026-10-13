@@ -297,3 +297,8 @@ button.danger { border-color: var(--bad); color: #ffd0d0; background: #4a1c1c; }
 .rcard .rbox b { position: absolute; left: 44px; top: 11px; color: #fff; font-size: 14px; }
 .rcard .rreactor { display: inline-flex; flex-direction: column; gap: 3px; }
 .rcard .rreactor i { display: block; width: 26px; height: 8px; background: #7bd47b; box-shadow: 0 0 4px #7bd47b; }
+/* Rule modifiers: one row of boxed toggles (Rules step). */
+.mods { display: flex; flex-wrap: nowrap; gap: 4px; margin: 2px 0 10px; max-width: 560px; }
+.mods .mod { flex: 1 1 auto; padding: 4px 6px; font-size: 12px; white-space: nowrap; border: 2px solid var(--edge); background: #1b1f27; color: var(--dim); }
+.mods .mod.on { border-color: var(--ok); background: #1d2b1f; color: var(--text); }
+.mods .mod:disabled { opacity: 0.4; cursor: not-allowed; }

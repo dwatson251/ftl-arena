@@ -78,6 +78,19 @@ Ship creation runs in steps: **Ship → Systems → Weapons → Drones → Crew 
   ban in any Arena match.
 - **Tuning:** all the numbers are in `packages/sim/src/pricing.ts`.
 
+## Rule modifiers (Arena)
+A row of switches on the Rules step, combined with any Arena match. A modifier that can't be picked is
+greyed out, and its tooltip says why.
+- **Bare:** every captain flies their hull's stock loadout. Only Rules, Ship and Launch are open, and it
+  switches the "No …" modifiers off.
+- **No drones / No augments / No missiles:** none on any ship. Missile weapons and bombs count as missiles.
+  Existing builds lose them when the switch goes on.
+- **Crew combat only:** every ship gets a teleporter (and a reactor bar for it), and hulls take no damage.
+  You win by killing the crew. Stun, fire, bombs and system damage all still work. With a time limit, the
+  crew's remaining health decides it.
+- **When modifiers are off:** Survival switches them all off, Bring your own ship switches off Bare, and
+  Autonomous ships switch off Crew combat only.
+
 ## Survival (single player)
 - **Starting a run:** in a practice lobby, set **Game mode** to *Survival* on the Rules step. Pick a ship
   on the Ship step and you go straight to Launch. You fly its stock FTL loadout: no building and no

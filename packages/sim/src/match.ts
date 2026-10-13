@@ -5,7 +5,7 @@
 import { ARTILLERY_IDS, SPACE_DRONES, UNIT_DRONES, type GameDB, type SystemId, type WeaponBP } from "@ftl/data";
 import type { Command } from "./commands.ts";
 import { findPath, geometry, key, roomAt, roomCentre, unkey, type Geometry } from "./geometry.ts";
-import { augCount, autoPower, blockedTiles, buildShip, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
+import { augCount, autoPower, blockedTiles, buildShip, hullSystems, isSubsystem, reactorUsed, usable, type Loadout } from "./loadout.ts";
 import { Rng } from "./rng.ts";
 import { DT, flightTime, raceOf, RACES, RULES, SKILLS, TICK_HZ, TILE, type SkillId } from "./rules.ts";
 import type {
@@ -47,6 +47,13 @@ export class Match {
       used.add(name);
       return name;
     };
+    // Crew combat only: every ship gets a teleporter (and a reactor bar to run it) where its hull has the room.
+    if (config.mods?.includes("crewOnly")) {
+      loadouts = loadouts.map((l) => {
+        if ((l.systems.teleporter ?? 0) > 0 || !hullSystems(db, l.ship, true).some((h) => h.id === "teleporter")) return l;
+        return { ...l, systems: { ...l.systems, teleporter: 1 }, reactor: l.reactor + 1 };
+      }) as [Loadout, Loadout];
+    }
     const ships: [ShipState, ShipState] = [
       buildShip(db, loadouts[0], 0, players[0], pick, config.unlimited),
       buildShip(db, loadouts[1], 1, players[1], pick, config.unlimited),
@@ -803,7 +810,7 @@ export class Match {
   /** A system wrecked by something other than a weapon hit (boarders, fire) also costs the ship 1 hull (FTL). */
   private wrecked(ship: ShipState, sys: SystemState): void {
     if (sys.damage < sys.level || this.god.has(ship.idx)) return;
-    ship.hull = Math.max(0, ship.hull - 1);
+    if (!this.crewOnly) ship.hull = Math.max(0, ship.hull - 1);
     // A system taken out from inside (fire, boarders) goes with a small explosion in its room.
     this.state.events.push({ e: "systemDown", ship: ship.idx, room: sys.room });
   }
@@ -1099,7 +1106,8 @@ export class Match {
       st.events.push({ e: "hit", ship: T.idx, room, damage: 0, px, py });
       return;
     }
-    let hullDmg = bp.type === "BOMB" ? 0 : dmg;
+    // (Crew combat only: hulls take no damage; systems, crew, fire, breaches and stun still do.)
+    let hullDmg = bp.type === "BOMB" || this.crewOnly ? 0 : dmg;
     if (bp.hullBust && !sys) hullDmg *= 2;
     // Rock Plating: a chance to negate hull damage (systems are still hit).
     if (hullDmg > 0 && augCount(T, "ROCK_ARMOR") && this.rng.chance(this.db.augments?.ROCK_ARMOR?.value ?? 0.15)) hullDmg = 0;
@@ -1620,7 +1628,7 @@ export class Match {
         rs.fires[t] = RULES.fireHp;
       }
       if (this.god.has(ship.idx) || !this.rng.chance(n === 1 ? 0.33 : 0.66)) continue;
-      ship.hull = Math.max(0, ship.hull - 1);
+      if (!this.crewOnly) ship.hull = Math.max(0, ship.hull - 1);
       const sys = Object.values(ship.systems).find((s) => s && s.room === rs.id);
       if (sys) this.hurtSystem(sys, 1);
     }
@@ -2212,6 +2220,11 @@ export class Match {
 
   // ---------------------------------------------------------------- end of match
 
+  /** Crew combat only (a rule modifier): hulls take no damage, so the crew is all there is to win by. */
+  get crewOnly(): boolean {
+    return !!this.state?.config.mods?.includes("crewOnly");
+  }
+
   /** Every crew member dead and no clone on the way (what loses a match, outside autonomous-ship rules). */
   crewLost(idx: 0 | 1): boolean {
     const s = this.state.ships[idx];
@@ -2231,7 +2244,8 @@ export class Match {
       st.winner = lost[0] && lost[1] ? -1 : lost[0] ? 1 : 0;
       st.endReason = lost[0] && lost[1] ? `both: ${lost[0]} / ${lost[1]}` : (lost[0] || lost[1]);
     } else if (st.config.timeLimit > 0 && st.tick >= st.config.timeLimit * TICK_HZ) {
-      const score = (s: ShipState) => s.hull / s.maxHull;
+      // Crew combat only: the crew's remaining health decides it (hulls never drop).
+      const score = (s: ShipState) => (this.crewOnly ? this.crewOf(s.idx).filter((c) => !c.dead).reduce((a, c) => a + c.hp / c.maxHp, 0) : s.hull / s.maxHull);
       const a = score(st.ships[0]);
       const b = score(st.ships[1]);
       st.winner = a === b ? -1 : a > b ? 0 : 1;

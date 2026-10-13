@@ -18,6 +18,7 @@ import type { Command } from "./commands.ts";
 import { findPath, geometry, roomCentre, type Geometry } from "./geometry.ts";
 import { baseLoadout, buyableWeapons, hullSystems, priceLoadout, randomCrewName, usable, type Loadout } from "./loadout.ts";
 import type { PriceRules } from "./pricing.ts";
+import { applyMods } from "./modifiers.ts";
 import type { Match } from "./match.ts";
 import { Rng } from "./rng.ts";
 import { DT, raceOf, RACES } from "./rules.ts";
@@ -854,7 +855,9 @@ const MAN_PRIORITY: [SystemId, number][] = [["pilot", 64], ["shields", 65], ["we
  */
 export function botLoadout(db: GameDB, shipId: string, scrap: number, level: number, seed = 1, rules: PriceRules = {}): Loadout {
   const rng = new Rng(seed);
-  const l = baseLoadout(db, shipId);
+  // Rule modifiers: Bare is the stock fit as it is; the "No ..." ones start from the fit without those things.
+  if (rules.mods?.includes("bare")) return applyMods(db, baseLoadout(db, shipId), rules.mods);
+  const l = applyMods(db, baseLoadout(db, shipId), rules.mods ?? []);
   const ship = db.ships[shipId];
   const hs = hullSystems(db, shipId);
   const lv = (x: Loadout, id: SystemId) => x.systems[id] ?? hs.find((s) => s.id === id)?.base ?? 0;

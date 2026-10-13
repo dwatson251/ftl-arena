@@ -1084,6 +1084,26 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
   `priceLoadout` and the hangar's buy buttons (which show the next one's price), so the two always agree.
 - **Tests:** 3 in `pricing.test.ts`.
 
+## Round 57: rule modifiers
+- **The table** (`packages/sim/src/modifiers.ts`, `MODIFIERS`): each modifier has a label and a tip, the
+  modifiers it `disables`, `offBy(config)` for when the lobby's own rules switch it off, and the hangar steps
+  it `locks`.
+  - `cleanMods` keeps known ones in table order, dropping any that something kept before it disables.
+    `sanitizeConfig` uses it.
+  - `modBlocked` gives the reason for the hangar's greyed-out toggles.
+- **Fits:** `applyMods` gives Bare's stock fit and strips what the "No …" ones ban. The lobby runs it over
+  every build when the rules change and on each loadout, and the bot builds from it. `modErrors` in
+  `priceLoadout` is the safety net.
+- **Crew combat only:** a free teleporter (and a reactor bar) at match start where the hull has room for
+  one. No hull damage from hits, wrecked systems or flares (`Match.crewOnly`). The time-limit tiebreak goes
+  by the crew's health.
+- **Hangar:**
+  - one row of boxed toggles under "Unrestricted systems";
+  - steps locked with "Off with Bare on";
+  - missile weapons banned in the store, with the missile "+" off;
+  - the lobby summary lists them.
+- **Tests:** `modifiers.test.ts` (5). Checked in the browser with `tools/align/mods.ts`.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

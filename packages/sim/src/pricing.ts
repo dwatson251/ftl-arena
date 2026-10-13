@@ -47,6 +47,8 @@ export interface PriceRules {
   costs?: CostMode;
   /** Unobtainable crew, weapons and augments allowed (true unless the rule's off, or Tournament). */
   unobtainable?: boolean;
+  /** Arena rule modifiers in force (modifiers.ts). */
+  mods?: ("bare" | "noDrones" | "noAugments" | "noMissiles" | "crewOnly")[];
 }
 
 /** A hull's family and layout from its id: PLAYER_SHIP_FED_2 → FED, B. */

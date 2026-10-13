@@ -1,0 +1,30 @@
+/** The rule modifiers row (traces/mods/): off, then Bare on (the "No ..." ones greyed, build steps locked),
+ *  then No missiles on its own.  Usage: ARENA_URL=... npx tsx tools/align/mods.ts */
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+const URL = process.env.ARENA_URL ?? "http://localhost:5173";
+mkdirSync("traces/mods", { recursive: true });
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+p.on("pageerror", (e) => console.log("pageerror:", e.message));
+await p.goto(URL);
+await p.waitForSelector("#loading", { state: "detached", timeout: 60000 });
+await p.click("#practice");
+await p.waitForSelector(".hg-step");
+await p.waitForTimeout(600);
+await p.locator(".mods").scrollIntoViewIfNeeded();
+await p.screenshot({ path: "traces/mods/1-off.png" });
+await p.click('[data-mod="bare"]');
+await p.waitForTimeout(600);
+console.log("with Bare:", await p.$$eval(".mods .mod", (es) => es.map((e) => `${e.textContent}${e.classList.contains("on") ? "(on)" : ""}${(e as HTMLButtonElement).disabled ? "(off: " + e.getAttribute("title") + ")" : ""}`).join(" | ")));
+console.log("steps:", await p.$$eval(".hg-step", (es) => es.map((e) => `${e.textContent?.replace(/\d/g, "").trim()}${(e as HTMLButtonElement).disabled ? "(locked)" : ""}`).join(" ")));
+await p.locator(".mods").scrollIntoViewIfNeeded();
+await p.screenshot({ path: "traces/mods/2-bare.png" });
+await p.click('[data-mod="bare"]');
+await p.click('[data-mod="noMissiles"]');
+await p.waitForTimeout(600);
+await p.click('button[data-step="Weapons"]');
+await p.waitForTimeout(600);
+console.log("weapons slots:", await p.$$eval(".wslot b", (es) => es.map((e) => e.textContent).join(", ")));
+await p.screenshot({ path: "traces/mods/3-nomissiles.png" });
+await b.close();

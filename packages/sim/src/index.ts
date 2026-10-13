@@ -9,3 +9,4 @@ export * from "./view.ts";
 export { AFTERMATH, Bot, type Assist, botCommands, botLoadout, botSkills, enemyLoadout, difficultyToBot, type BotSkills } from "./bot.ts";
 export * from "./survival.ts";
 export * from "./pricing.ts";
+export * from "./modifiers.ts";

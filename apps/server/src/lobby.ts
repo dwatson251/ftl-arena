@@ -5,7 +5,7 @@ import {
   type SurvivalState,
 } from "@ftl/protocol";
 import {
-  applyCard, baseLoadout, Bot, type Assist, botLoadout, carryOver, DEFAULT_CONFIG, difficultyToBot, drawCards, enemyLoadout, Match, newRun, nextEnemy,
+  applyCard, applyMods, cleanMods, hasMod, baseLoadout, Bot, type Assist, botLoadout, carryOver, DEFAULT_CONFIG, difficultyToBot, drawCards, enemyLoadout, Match, newRun, nextEnemy,
   priceLoadout, registerWeapons, RULES, score, stockLoadout, SURVIVAL, TICK_HZ, viewFor, type Card, type Command, type Loadout, type MatchConfig,
   type MatchEvent, type SurvivalEnemy, type SurvivalRun, PRICING,
 } from "@ftl/sim";
@@ -213,7 +213,7 @@ export class Lobby {
       const pick = pc.botShip === "@enemy" ? ordinary[seed % ordinary.length] : pc.botShip;
       // Above 70 difficulty the flagship flies Hard mode's layout (corridors to its laser and missile rooms).
       const ship = pc.difficulty > 70 && this.db.ships[`${pick}_HARD`] ? `${pick}_HARD` : pick;
-      p.loadout = enemyLoadout(this.db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14), Math.round(this.config.scrap * (1 + scrapBonus)));
+      p.loadout = applyMods(this.db, enemyLoadout(this.db, ship, level, seed, Math.round(level * 6 + scrapBonus * 14), Math.round(this.config.scrap * (1 + scrapBonus))), (this.config.mods ?? []).filter((m) => m !== "bare"));
       p.priced = { ok: true, total: 0, lines: [], errors: [] };
     } else {
       const ship = pc.botShip && pool.includes(pc.botShip) ? pc.botShip : pool[seed % pool.length];
@@ -440,7 +440,7 @@ export class Lobby {
 
   /** The pricing rules in force (Scrap costs, unobtainable items). */
   private rules() {
-    return { costs: this.config.costs ?? "none", unobtainable: this.config.unobtainable !== false };
+    return { costs: this.config.costs ?? "none", unobtainable: this.config.unobtainable !== false, mods: this.config.mods ?? [] };
   }
 
   setConfig(c: Client, cfg: Partial<MatchConfig>): string | null {
@@ -459,6 +459,8 @@ export class Lobby {
       if (this.config.ftlOnly && !wasFtl && p.id !== this.host && p.loadout?.origin !== "ftl") p.loadout = baseLoadout(this.db, this.config.shipPool[0] ?? this.db.hangar[0]);
       // Survival flies the stock ship.
       if (this.config.survival && p.loadout) p.loadout = stockLoadout(this.db, p.loadout.ship);
+      // Rule modifiers: Bare puts the stock fit back; the "No ..." ones take their things out.
+      else if (p.loadout && this.config.mods?.length) p.loadout = applyMods(this.db, p.loadout, this.config.mods);
       p.priced = p.loadout ? this.price(p.loadout) : null;
       p.ready = false;
     }
@@ -474,6 +476,7 @@ export class Lobby {
     if (!this.db.ships[l.ship]) return "unknown ship";
     // Survival flies the stock ship: only the hull is a choice.
     if (this.config.survival && !p.bot) l = stockLoadout(this.db, l.ship);
+    else if (this.config.mods?.length) l = applyMods(this.db, l, this.config.mods);
     p.loadout = l;
     p.priced = this.price(l);
     p.ready = false;
@@ -760,7 +763,7 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
   // An unlimited pause clock (0) is for practice only: against a person it would stop the game for good.
   const bank = clamp(Math.round(Number(c.pauseBank ?? RULES.pauseBank) || 0), 0, 600);
   const hazards = ["none", "sun", "pulsar", "asteroids", "nebula", "storm", "asb", "random"];
-  return {
+  const out: MatchConfig = {
     hazard: hazards.includes(String(c.hazard)) ? c.hazard : "none",
     pause,
     tacticalEvery: clamp(Math.round(Number(c.tacticalEvery ?? RULES.tacticalEvery) || RULES.tacticalEvery), 15, 600),
@@ -781,6 +784,8 @@ export function sanitizeConfig(db: GameDB, c: MatchConfig, practice = false): Ma
     costs: practice && c.survival ? "none" : c.costs === "ships" || c.costs === "tournament" ? c.costs : "none",
     unobtainable: practice && c.survival ? true : c.costs === "tournament" ? false : c.unobtainable !== false,
   };
+  // Rule modifiers: known ones only, and none that the rules or another pick switch off.
+  return { ...out, mods: cleanMods({ ...out, survival: out.survival }, c.mods) };
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));

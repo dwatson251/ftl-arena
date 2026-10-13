@@ -42,6 +42,8 @@ export interface MatchConfig {
    */
   pause?: PauseMode;
   hazard?: HazardKind | "random";
+  /** Arena rule modifiers (modifiers.ts): Bare, No drones, No augments, No missiles, Crew combat only. */
+  mods?: ("bare" | "noDrones" | "noAugments" | "noMissiles" | "crewOnly")[];
   tacticalEvery?: number;
   tacticalLength?: number;
   pauseBank?: number;
