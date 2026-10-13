@@ -95,7 +95,7 @@ export class Chat {
   private render(): void {
     const now = Date.now();
     // While typing: the last few lines; otherwise only fresh ones, fading out.
-    const shown = this.mode !== "battle" ? [] : this.lines.filter((l) => this.open || now - l.at < SHOW_MS).slice(this.open ? -6 : -4);
+    const shown = this.mode !== "battle" ? [] : this.lines.filter((l) => this.open || now - l.at < SHOW_MS).slice(-4);
     this.el.className = `chat${this.open ? " open" : ""}`;
     this.el.style.display = this.mode === "battle" && (this.open || shown.length) ? "" : "none";
     this.log.replaceChildren(
