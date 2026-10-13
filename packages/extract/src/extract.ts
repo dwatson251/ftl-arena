@@ -16,10 +16,11 @@ export interface ExtractOptions {
 /** Folders the arena never uses. */
 const SKIP = [/^img\/loc-/, /^img\/ipad\//, /^img\/achievements\//, /^img\/map\//, /^fonts\/(ja|zh)/, /^data\/text-/];
 /**
- * The game's rules, ships and layouts are the arena's own (packages/content). From data/ only what presents
- * them is unpacked: FTL's text, its animation sheets, sound names and the crew name pool.
+ * The game's rules, ships, layouts, words and names are the arena's own (packages/content). From data/ only
+ * what goes with the art and sound is unpacked: the animation sheets (how the art is cut into frames) and
+ * the sound and music names.
  */
-const PRESENTATION = /^data\/(text_blueprints|text_misc|animations|dlcAnimations|sounds|dlcSounds|names)\.xml$/;
+const PRESENTATION = /^data\/(animations|dlcAnimations|sounds|dlcSounds)\.xml$/;
 const wanted = (path: string, o: ExtractOptions) =>
   !SKIP.some((r) => r.test(path)) && !(o.music === false && path.startsWith("audio/music/")) && (!path.startsWith("data/") || o.allData || PRESENTATION.test(path));
 

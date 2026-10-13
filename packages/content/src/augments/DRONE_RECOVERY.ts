@@ -8,8 +8,8 @@ export default class DRONE_RECOVERY implements AugmentConfig {
   readonly value = 0;
   readonly stackable = false;
   readonly rarity = 2;
+  /** FTL's description. */
+  readonly desc = "Non-destroyed drones will be retrieved when jumping, allowing their parts to be reused.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_DRONE_RECOVERY_desc" };
 }

@@ -34,7 +34,6 @@ export default class CIRCLE_BOMBER implements ShipConfig {
   readonly sprites: ShipConfig["sprites"] = { dir: "ships_glow", img: "circle_bomber", cloak: "circle_bomber" };
   readonly enemy: ShipConfig["enemy"] = {
     scale: 1,
-    // The bubble read high by eye (playtest, tuned from 2x close-ups).
     shieldNudge: { y: 10 },
     single: true,
     weaponPool: [

@@ -28,9 +28,9 @@ export function loadManifest(): Promise<void> {
   return manifestLoaded;
 }
 
-/** The data files that dress the game up (FTL's words, animation sheets, sounds, names), from this player's own
- *  extract: the server sends only the game's data. */
-const PRESENTATION_FILES = ["data/text_blueprints.xml", "data/text_misc.xml", "data/animations.xml", "data/dlcAnimations.xml", "data/sounds.xml", "data/dlcSounds.xml", "data/names.xml"];
+/** The data files that go with the art and sound (animation sheets, sound and music names), from this player's
+ *  own extract: the server sends only the game's data. */
+const PRESENTATION_FILES = ["data/animations.xml", "data/dlcAnimations.xml", "data/sounds.xml", "data/dlcSounds.xml"];
 let presentationLoaded: Promise<Presentation | null> | null = null;
 /** This player's presentation (null with no install: flat shapes, or backup art). Fetched once. */
 export function loadPresentation(): Promise<Presentation | null> {

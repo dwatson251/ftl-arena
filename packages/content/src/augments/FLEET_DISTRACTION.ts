@@ -8,8 +8,8 @@ export default class FLEET_DISTRACTION implements AugmentConfig {
   readonly value = 1;
   readonly stackable = false;
   readonly rarity = 3;
+  /** FTL's description. */
+  readonly desc = "Leaves a false signal at sector start to delay Rebels 1 jump.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_FLEET_DISTRACTION_desc" };
 }

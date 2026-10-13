@@ -3,8 +3,8 @@
  * layouts and stock loadouts, weapons, drones, augments, crew, systems) plus registry.ts. A one-off bootstrap:
  * the generated files are committed and edited by hand from then on (re-running overwrites them).
  *   npx tsx tools/content/generate.ts [assets-local]
- * FTL's prose (descriptions, level lines) isn't copied: classes keep the text ids, and the player's install
- * supplies the words at runtime (packages/data/src/presentation.ts).
+ * FTL's words (descriptions, level lines) and the crew name pool go in too (public information, the user's
+ * call), so only art and sound come from the player's install.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -125,16 +125,15 @@ ${Object.entries(omit(d, [])).map(([k, v]) => `  readonly ${k}${typeof v === "st
 
 // Augments: our effect text; FTL's description comes from the install by text id.
 for (const a of Object.values(db.augments)) {
-  const descId = textId(node("augBlueprint", a.id), "desc") ?? `aug_${a.id}_desc`;
   write(file("augments", a.id), `/** ${comment(a.title)}. */
 import type { AugmentConfig } from "../types.ts";
 
 export default class ${cls(a.id)} implements AugmentConfig {
 ${Object.entries(omit(a, ["desc"])).map(([k, v]) => `  readonly ${k} = ${lit(v)};`).join("\n")}
+  /** FTL's description. */
+  readonly desc = ${lit(a.desc ?? "")};
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = ${lit(AUGMENT_EFFECTS_V1[a.id] ?? "")};
-  /** FTL's description, from the player's install. */
-  readonly text = ${lit({ desc: descId })};
 }`);
   reg.push({ kind: "augment", id: a.id, path: `./augments/${a.id}.ts` });
 }
@@ -167,13 +166,20 @@ import type { SystemConfig } from "../types.ts";
 
 export default class ${cls(`Sys_${s.id}`)} implements SystemConfig {
 ${Object.entries(omit(s, ["title", "desc", "levels"])).map(([k, v]) => `  readonly ${k}${k === "id" ? `: SystemConfig["id"]` : ""} = ${lit(v)};`).join("\n")}
-${own ? `  /** FTL writes these inline (no text ids); ours. */
-  readonly title = ${lit(own.title)};
-  readonly desc = ${lit(own.desc)};` : `  /** FTL's title and description, from the player's install. */
-  readonly text = ${lit(omit({ title: textId(n, "title"), desc: textId(n, "desc") }, []))};`}
+  /** ${own ? "Ours (FTL writes these inline)" : "FTL's"} title and description, and FTL's line for each level ("" where it shows none). */
+  readonly title = ${lit(own?.title ?? s.title ?? "")};
+  readonly desc = ${lit(own?.desc ?? s.desc ?? "")};
+  readonly levels: string[] = ${lit(s.levels ?? [])};
 }`);
   reg.push({ kind: "system", id: s.id, path: `./systems/${s.id}.ts` });
 }
+
+// FTL's crew name pool (and which names it lists as female, for their death cries), and the reactor's text.
+write(join(out, "names.ts"), `/** FTL's crew name pool (names.xml), and the names it lists as female (they get FTL's female death cries). */
+export const NAMES: string[] = ${lit(db.names, 0)};
+export const FEMALE_NAMES: string[] = ${lit(db.femaleNames ?? [], 0)};`);
+write(join(out, "text.ts"), `/** FTL's words used outside the classes. */
+export const REACTOR_DESC = ${lit(db.reactorDesc ?? "")};`);
 
 // The registry: every class, plus the hangar's and the enemy list's order.
 const groups: Record<string, string> = { ship: "SHIPS", weapon: "WEAPONS", drone: "DRONES", augment: "AUGMENTS", crew: "CREW", system: "SYSTEMS" };

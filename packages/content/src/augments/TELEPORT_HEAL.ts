@@ -8,8 +8,8 @@ export default class TELEPORT_HEAL implements AugmentConfig {
   readonly value = 1;
   readonly stackable = false;
   readonly rarity = 3;
+  /** FTL's description. */
+  readonly desc = "Crew gets fully healed by teleportation.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "Crew arrive fully healed whenever they teleport.";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_TELEPORT_HEAL_desc" };
 }

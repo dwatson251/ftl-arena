@@ -8,8 +8,8 @@ export default class HACKING_STUN implements AugmentConfig {
   readonly value = 0;
   readonly stackable = false;
   readonly rarity = 3;
+  /** FTL's description. */
+  readonly desc = "All crew inside a room during a Hacking Pulse will be stunned for the duration.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "Everyone in the hacked room is stunned for the length of a pulse.";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_HACKING_STUN_desc" };
 }

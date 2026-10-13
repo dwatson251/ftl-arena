@@ -8,8 +8,8 @@ export default class LIFE_SCANNER implements AugmentConfig {
   readonly value = 0;
   readonly stackable = false;
   readonly rarity = 3;
+  /** FTL's description. */
+  readonly desc = "Detects the location of any life forms, even when sensors don't function.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "See enemy crew even without sensors.";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_LIFE_SCANNER_desc" };
 }

@@ -8,8 +8,8 @@ export default class NANO_MEDBAY implements AugmentConfig {
   readonly value = 0.25;
   readonly stackable = false;
   readonly rarity = 0;
+  /** FTL's description. */
+  readonly desc = "Engi nano med-bots heal the crew outside of the med-bay (at a reduced speed).";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "Crew heal slowly anywhere outside the medbay.";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_NANO_MEDBAY_desc" };
 }

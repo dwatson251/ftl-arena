@@ -7,6 +7,8 @@ export default class Sys_teleporter implements SystemConfig {
   readonly startPower = 1;
   readonly upgradeCost = [30, 60];
   readonly cost = 90;
-  /** FTL's title and description, from the player's install. */
-  readonly text = { title: "system_teleporter_title", desc: "system_teleporter_desc" };
+  /** FTL's title and description, and FTL's line for each level ("" where it shows none). */
+  readonly title = "Crew Teleporter";
+  readonly desc = "Allows you to send your crew-members to board enemy vessels.";
+  readonly levels: string[] = ["\\1 sec cooldown", "\\1 sec cooldown", "\\1 sec cooldown"];
 }

@@ -8,8 +8,8 @@ export default class FTL_BOOSTER implements AugmentConfig {
   readonly value = 0.25;
   readonly stackable = true;
   readonly rarity = 2;
+  /** FTL's description. */
+  readonly desc = "The ship's FTL Drive powers up 25 percent faster.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_FTL_BOOSTER_desc" };
 }

@@ -43,5 +43,11 @@ describe("content classes", () => {
     expect(db.hangar).toEqual(old.hangar);
     expect(db.enemies).toEqual(old.enemies);
     for (const k of ["animSheets", "weaponAnims", "anims", "sounds", "music", "names", "femaleNames", "reactorDesc", "source"] as const) expect(db[k], k).toEqual(old[k]);
+    // FTL's words and names are in the classes themselves: the DB without any install has them too.
+    const bare = buildDb();
+    expect(bare.augments.ZOLTAN_BYPASS.desc).toBe(old.augments.ZOLTAN_BYPASS.desc);
+    expect(bare.systems.shields.levels).toEqual(old.systems.shields.levels);
+    expect(bare.names).toEqual(old.names);
+    expect(bare.reactorDesc).toBe(old.reactorDesc);
   });
 });

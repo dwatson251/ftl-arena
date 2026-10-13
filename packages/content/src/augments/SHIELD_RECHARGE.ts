@@ -8,8 +8,8 @@ export default class SHIELD_RECHARGE implements AugmentConfig {
   readonly value = 0.15;
   readonly stackable = true;
   readonly rarity = 2;
+  /** FTL's description. */
+  readonly desc = "Boosts the ship's shield recharge rate by 15 percent.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "Shield layers recharge 15% faster (stacks).";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_SHIELD_RECHARGE_desc" };
 }

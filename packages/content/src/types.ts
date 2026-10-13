@@ -1,7 +1,7 @@
 /**
  * The arena's own game content: one config class per blueprint (ships, weapons, drones, augments, crew,
- * systems). Mechanics, room layouts and stock loadouts live here, in the repo; the player's FTL install only
- * supplies art, sound, music and FTL's own prose (see Presentation).
+ * systems), with their room layouts, stock loadouts and FTL's words, plus the crew name pool. The player's
+ * FTL install only supplies art, sound and music (see Presentation).
  */
 import type { AugmentBP, CrewBP, DroneBP, ShipLayout, ShipSystemSlot, SystemBP, WeaponBP } from "@ftl/data";
 
@@ -72,7 +72,7 @@ export interface WeaponConfig extends WeaponBP {
 
 export interface DroneConfig extends DroneBP {}
 
-export interface AugmentConfig extends Omit<AugmentBP, "desc"> {
+export interface AugmentConfig extends AugmentBP {
   /** What it does in the arena (our words); empty when it has no effect in a 1v1 fight. */
   readonly effect: string;
 }
@@ -106,7 +106,8 @@ export interface CrewConfig extends CrewBP {
 }
 
 export interface SystemConfig extends Omit<SystemBP, "title" | "desc" | "levels"> {
-  /** Our own title and description, for a system FTL gives no text ids for (otherwise the install's words). */
-  readonly title?: string;
-  readonly desc?: string;
+  readonly title: string;
+  readonly desc: string;
+  /** FTL's line for each level (levels[0] = level 1; "" where it shows none). */
+  readonly levels: string[];
 }

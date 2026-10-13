@@ -115,12 +115,10 @@ one class per blueprint.
 - **Numbers** (weapons, drones, augments, crew traits, systems) are in their classes.
 - **The registry** is `registry.ts`: it lists every class, plus the hangar's and the enemy list's order. A
   new blueprint is a new class added there.
-- **What the player's install still supplies:**
-  - art and sound;
-  - the animation sheets (which frames make a sprite);
-  - the crew name pool;
-  - FTL's own prose: descriptions and level lines. The classes keep FTL's text ids, and we write our own
-    words where FTL has none.
+- **Words and names are ours too:** FTL's descriptions and level lines are in the classes, the crew name pool
+  is in `names.ts`, and the reactor's text is in `text.ts`.
+- **What the player's install still supplies:** the art and sound, plus the animation and sound tables that
+  describe them (`animations.xml`, `sounds.xml`). The client fetches those from its own `/assets/`.
 - **Without an install,** the same ships and rules run with flat shapes, and tests and CI run on the real
   content.
 - **Backup art:** `packages/content/art/img/...` serves files the install doesn't have, at the same paths.

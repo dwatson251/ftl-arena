@@ -33,7 +33,6 @@ export default class ZOLTAN_FIGHTER implements ShipConfig {
   readonly sprites: ShipConfig["sprites"] = { dir: "ships_glow", img: "energy_fighter", cloak: "energy_fighter" };
   readonly enemy: ShipConfig["enemy"] = {
     scale: 1,
-    // The bubble read high by eye (playtest, tuned from 2x close-ups).
     shieldNudge: { y: 10 },
     single: true,
     weaponPool: [

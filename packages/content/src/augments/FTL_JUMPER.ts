@@ -8,8 +8,8 @@ export default class FTL_JUMPER implements AugmentConfig {
   readonly value = 0;
   readonly stackable = false;
   readonly rarity = 3;
+  /** FTL's description. */
+  readonly desc = "Allows the ship to jump to any previously visited Beacon.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_FTL_JUMPER_desc" };
 }

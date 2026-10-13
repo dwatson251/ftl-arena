@@ -1167,6 +1167,14 @@ All the numbers are in `PRICING.tournament`, and none of this changes the other 
   - Two browser players had a battle on it, each drawn in their own FTL art (`tools/align/dedicated.ts`).
   - Tests: `dedicated.test.ts` (settings order; a no-FTL welcome carries no presentation).
 
+## Round 61: FTL's words and crew names move into the content
+- **In the classes:** FTL's descriptions, titles and level lines (augments, systems), the crew name pool
+  (`names.ts`, female names included) and the reactor's text (`text.ts`). The user's call: public information.
+- **What's left from an install:** the art and sound, plus the animation and sound tables
+  (`Presentation` = animation sheets, sounds and music). The extractor and the client fetch only those.
+- **On a server with no FTL:** crew names and descriptions are FTL's own now, not stand-ins.
+- **Tests:** the equivalence test checks the bare DB carries the words and names.
+
 ## Next
 - Parity pass against real FTL 1.6.14: needs the user's OK to drive the game (`um win record`).
 - v2 systems: drones, cloak, teleporter + crew combat, hacking, mind control, battery, clone bay, races,

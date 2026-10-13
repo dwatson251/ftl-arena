@@ -8,8 +8,8 @@ export default class AUTO_COOLDOWN implements AugmentConfig {
   readonly value = 0.1;
   readonly stackable = true;
   readonly rarity = 2;
+  /** FTL's description. */
+  readonly desc = "Cooldown between weapon shots is improved by 10 percent.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "Weapon charge ceilings 10% lower (stacks).";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_AUTO_COOLDOWN_desc" };
 }

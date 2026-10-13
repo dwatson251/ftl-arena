@@ -8,8 +8,8 @@ export default class FTL_JAMMER implements AugmentConfig {
   readonly value = 2;
   readonly stackable = false;
   readonly rarity = 3;
+  /** FTL's description. */
+  readonly desc = "Scramble enemy ships' FTL computers, doubling the time it takes for them to jump.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_FTL_JAMMER_desc" };
 }

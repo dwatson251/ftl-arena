@@ -8,8 +8,8 @@ export default class BACKUP_DNA implements AugmentConfig {
   readonly value = 0;
   readonly stackable = false;
   readonly rarity = 2;
+  /** FTL's description. */
+  readonly desc = "Your crew is safe in clone storage even if the system is off or broken.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "The clone bay keeps its queue while unpowered or destroyed.";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_BACKUP_DNA_desc" };
 }

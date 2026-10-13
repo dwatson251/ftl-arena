@@ -8,8 +8,8 @@ export default class REPAIR_ARM implements AugmentConfig {
   readonly value = 0.15;
   readonly stackable = false;
   readonly rarity = 3;
+  /** FTL's description. */
+  readonly desc = "Repairs your hull every time you collect scrap, but reduces scrap collected by 15 percent.";
   /** What it does in the arena ("" = no effect in a 1v1 fight). */
   readonly effect = "";
-  /** FTL's description, from the player's install. */
-  readonly text = { desc: "aug_REPAIR_ARM_desc" };
 }
